@@ -1,0 +1,7 @@
+{
+  "triggers": [
+    { "trigger": "some phrase", "response": "some response" },
+    ...
+  ],
+  "adminList": ["100023807453349", ...]
+}
