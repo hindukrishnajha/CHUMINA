@@ -1,7 +1,4 @@
 {
-  "triggers": [
-    { "trigger": "some phrase", "response": "some response" },
-    ...
-  ],
-  "adminList": ["100023807453349", ...]
+  "triggers": [],
+  "adminList": ["100023807453349"]
 }
