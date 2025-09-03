@@ -4,9 +4,10 @@ const path = require('path');
 module.exports = {
     saveCookies: (userId, cookieContent) => {
         try {
-            const cookiePath = path.join(__dirname, `../cookies_${userId}.txt`);
+            const cookiePath = path.join(__dirname, `../cookies/${userId}.json`);
+            fs.mkdirSync(path.join(__dirname, '../cookies'), { recursive: true }); // Ensure cookies directory exists
             fs.writeFileSync(cookiePath, cookieContent);
-            console.log(`Cookies saved for user ${userId}`);
+            console.log(`Cookies saved for user ${userId} at ${cookiePath}`);
             return true;
         } catch (err) {
             console.error(`Error saving cookies for user ${userId}:`, err);
