@@ -20,7 +20,7 @@ module.exports = {
 
         api.changeNickname(queue.nickname, threadID, userID, (err) => {
             if (err) {
-                console.error(`[ERROR] Nickname error for ${userID} in thread ${threadID}:`, err.message);
+                console.error(`[ERROR] Nickname change failed for ${userID} in thread ${threadID}:`, err.message);
             } else {
                 console.log(`[DEBUG] Nickname changed for ${userID} in thread ${threadID}`);
             }
@@ -30,11 +30,16 @@ module.exports = {
             if (queue.currentIndex === 0) {
                 nicknameTimers[threadID] = setTimeout(() => {
                     module.exports.processNicknameChange(threadID);
-                }, 30000);
-                api.sendMessage('✅ All nicknames updated. Starting new loop...', threadID);
+                }, queue.interval || 30000); // Use queue.interval, default to 30 seconds
+                api.sendMessage(`✅ All nicknames updated. Starting new loop in ${queue.interval / 1000} seconds...`, threadID);
             } else {
                 nicknameTimers[threadID] = setTimeout(() => {
                     module.exports.processNicknameChange(threadID);
+                }, queue.interval || 30000); // Use queue.interval, default to 30 seconds
+            }
+        });
+    }
+};                    module.exports.processNicknameChange(threadID);
                 }, 30000);
             }
         });
