@@ -1,5 +1,7 @@
+const { processNicknameChange } = require('../../utils/nicknameUtils');
+
 module.exports = {
-    handleNicknameLock: (api, threadID, args, botState, botUserId, processNicknameChange) => {
+    handleNicknameLock: (api, threadID, args, botState, botUserId) => {
         console.log(`[DEBUG] handleNicknameLock called: threadID=${threadID}, args=${JSON.stringify(args)}, botUserId=${botUserId}`);
         try {
             // Check botState initialization
@@ -81,30 +83,6 @@ module.exports = {
         } catch (e) {
             console.error(`[ERROR] handleNicknameLock error for thread ${threadID}:`, e.message);
             api.sendMessage('⚠️ Error in nickname lock command. Please try again.', threadID);
-        }
-    }
-};
-                    api.sendMessage(`🔒 Nickname lock enabled with nickname: ${nickname}`, threadID);
-                    processNicknameChange(threadID);
-                });
-            } else if (args[1] && args[1].toLowerCase() === 'off') {
-                if (botState.nicknameQueues[threadID]) {
-                    clearTimeout(botState.nicknameTimers[threadID]);
-                    delete botState.nicknameQueues[threadID];
-                    delete botState.nicknameTimers[threadID];
-                    console.log(`[DEBUG] Nickname lock disabled for thread ${threadID}`);
-                    api.sendMessage('🔓 Nickname lock disabled.', threadID);
-                } else {
-                    console.log(`[DEBUG] No active nickname lock for thread ${threadID}`);
-                    api.sendMessage('⚠️ No active nickname lock in this thread.', threadID);
-                }
-            } else {
-                console.log(`[DEBUG] Invalid nicknamelock command: ${args.join(' ')}`);
-                api.sendMessage('Usage: #nicknamelock on <nickname> or #nicknamelock off', threadID);
-            }
-        } catch (e) {
-            console.error(`[ERROR] handleNicknameLock error for thread ${threadID}:`, e.message);
-            api.sendMessage('⚠️ Error in nickname lock command.', threadID);
         }
     }
 };
