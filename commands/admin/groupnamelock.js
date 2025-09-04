@@ -13,7 +13,8 @@ module.exports = {
                 return;
             }
 
-            if (args[1].toLowerCase() === 'on') {
+            const command = args[1].toLowerCase();
+            if (command === 'on') {
                 const groupName = args.slice(2).join(' ');
                 if (!groupName) {
                     api.sendMessage('❌ Group name required. Usage: #groupnamelock on <name>', threadID);
@@ -30,7 +31,7 @@ module.exports = {
                     api.sendMessage(`🔒 Group name locked: ${groupName}`, threadID);
                     console.log(`Group name locked for thread ${threadID}: ${groupName}`);
                 });
-            } else if (args[1].toLowerCase() === 'off') {
+            } else if (command === 'off') {
                 if (botState.lockedGroups[threadID]) {
                     delete botState.lockedGroups[threadID];
                     api.sendMessage('🔓 Group name unlocked!', threadID);
