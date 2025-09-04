@@ -3,14 +3,15 @@ module.exports = {
         try {
             if (!event.messageReply || !event.messageReply.messageID) {
                 api.sendMessage('❌ Please reply to a message to unsend.', threadID);
+                console.log(`No messageReply for unsend in thread ${threadID}`);
                 return;
             }
 
             const repliedMessageId = event.messageReply.messageID;
             api.deleteMessage(repliedMessageId, threadID, (err) => {
                 if (err) {
-                    api.sendMessage('❌ Error deleting message. Ensure bot has admin permissions and the message is accessible.', threadID);
-                    console.error('Unsend error for thread', threadID, ':', err);
+                    api.sendMessage('❌ Error deleting message. Ensure bot has admin permissions and the message is not too old.', threadID);
+                    console.error(`Unsend error for thread ${threadID}, message ${repliedMessageId}:`, err.message || err);
                     return;
                 }
                 api.sendMessage(`✅ Message deleted by ${isMaster ? 'Shalender Hindu Ji' : 'Admin'}.`, threadID);
@@ -18,7 +19,7 @@ module.exports = {
             });
         } catch (e) {
             api.sendMessage('⚠️ Error in unsend command.', threadID);
-            console.error('Unsend error for thread', threadID, ':', e);
+            console.error(`Unsend error for thread ${threadID}:`, e.message || e);
         }
     }
 };
