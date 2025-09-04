@@ -5,33 +5,54 @@ module.exports = {
             const threadID = event.threadID;
             const messageID = event.messageID;
 
-            // Initialize botState.stickerSpam if not present
             if (!botState.stickerSpam) {
                 botState.stickerSpam = {};
-                console.warn(`botState.stickerSpam initialized in stickerspam.js for thread ${threadID}`);
+                console.error('botState.stickerSpam initialized in stickerspam.js');
             }
 
-            // Validate args
-            if (!args[1] || !['start', 'stop'].includes(args[1].toLowerCase())) {
-                api.sendMessage('❌ Invalid command. Usage: #send sticker start <count> or #send sticker stop', threadID, messageID);
-                return;
-            }
+            if (args[1] === 'start' && args[2]) {
+                if (args[2].toLowerCase() === 'infinite' && args[3]) {
+                    const delay = parseInt(args[3]);
+                    if (isNaN(delay) || delay < 1) {
+                        api.sendMessage('❌ Please provide a valid delay in seconds (minimum 1).', threadID, messageID);
+                        return;
+                    }
 
-            if (args[1].toLowerCase() === 'start') {
-                if (!args[2]) {
-                    api.sendMessage('❌ Please provide a number of stickers. Usage: #send sticker start <count>', threadID, messageID);
+                    if (!botState.stickerSpam[threadID]) {
+                        botState.stickerSpam[threadID] = { active: false, count: 0 };
+                    }
+
+                    if (botState.stickerSpam[threadID].active) {
+                        api.sendMessage('⚠️ Sticker spam already running in this thread!', threadID, messageID);
+                        return;
+                    }
+
+                    botState.stickerSpam[threadID].active = true;
+                    api.sendMessage(`🚀 Starting infinite sticker spam with ${delay} seconds delay! Use #send sticker stop to stop.`, threadID, messageID);
+
+                    const spamLoop = async () => {
+                        while (botState.stickerSpam[threadID].active && favoriteStickers.length > 0) {
+                            try {
+                                const stickerID = favoriteStickers[Math.floor(Math.random() * favoriteStickers.length)];
+                                await api.sendMessage({ sticker: stickerID }, threadID);
+                                console.log(`Infinite sticker sent to thread ${threadID}: ${stickerID}`);
+                                await new Promise(r => setTimeout(r, delay * 1000));
+                            } catch (err) {
+                                console.error('Infinite sticker spam error:', err);
+                                api.sendMessage('⚠️ Error sending sticker in infinite mode. Stopping spam.', threadID);
+                                botState.stickerSpam[threadID].active = false;
+                                break;
+                            }
+                        }
+                    };
+
+                    spamLoop();
                     return;
                 }
 
                 const count = parseInt(args[2]);
                 if (isNaN(count) || count < 1 || count > 50) {
                     api.sendMessage('❌ Please provide a valid number of stickers (1-50).', threadID, messageID);
-                    return;
-                }
-
-                if (!favoriteStickers || favoriteStickers.length === 0) {
-                    api.sendMessage('⚠️ No stickers available. Check favoriteStickers configuration.', threadID, messageID);
-                    console.error(`No stickers in favoriteStickers for thread ${threadID}`);
                     return;
                 }
 
@@ -48,16 +69,14 @@ module.exports = {
                 botState.stickerSpam[threadID].count = count;
 
                 api.sendMessage(`🚀 Starting sticker spam with ${count} stickers!`, threadID, messageID);
-                console.log(`Sticker spam started for thread ${threadID}: ${count} stickers`);
 
                 for (let i = 0; i < count && botState.stickerSpam[threadID].active; i++) {
                     try {
                         const stickerID = favoriteStickers[Math.floor(Math.random() * favoriteStickers.length)];
                         await api.sendMessage({ sticker: stickerID }, threadID);
-                        console.log(`Sticker ${stickerID} sent to thread ${threadID}`);
-                        await new Promise(resolve => setTimeout(resolve, 1000));
+                        await new Promise(resolve => setTimeout(resolve, 1000)); // 1-second delay between stickers
                     } catch (err) {
-                        console.error(`Sticker spam error for thread ${threadID}:`, err.message || err);
+                        console.error('Sticker spam error:', err);
                         api.sendMessage('⚠️ Error sending sticker. Stopping spam.', threadID);
                         botState.stickerSpam[threadID].active = false;
                         break;
@@ -65,22 +84,22 @@ module.exports = {
                 }
 
                 if (botState.stickerSpam[threadID].active) {
-                    botState.stickerSpam[threadID].active = false;
                     api.sendMessage('✅ Sticker spam completed!', threadID);
-                    console.log(`Sticker spam completed for thread ${threadID}`);
+                    botState.stickerSpam[threadID].active = false;
                 }
-            } else if (args[1].toLowerCase() === 'stop') {
+            } else if (args[1] === 'stop') {
                 if (botState.stickerSpam[threadID] && botState.stickerSpam[threadID].active) {
                     botState.stickerSpam[threadID].active = false;
                     api.sendMessage('🛑 Sticker spam stopped.', threadID, messageID);
-                    console.log(`Sticker spam stopped for thread ${threadID}`);
                 } else {
                     api.sendMessage('⚠️ No active sticker spam in this thread.', threadID, messageID);
                 }
+            } else {
+                api.sendMessage('Usage: #send sticker start <count> or #send sticker start infinite <delay> or #send sticker stop', threadID, messageID);
             }
         } catch (e) {
             api.sendMessage('⚠️ Error in sticker spam command.', threadID);
-            console.error(`Sticker spam error for thread ${threadID}:`, e.message || e);
+            console.error('Sticker spam error:', e);
         }
     }
 };
