@@ -56,6 +56,8 @@ module.exports = {
                         }
 
                         console.log(`[DEBUG] getThreadInfo succeeded for thread ${threadID}, participantIDs: ${info.participantIDs}`);
+                        // Update memberCache with latest participantIDs
+                        botState.memberCache[threadID] = new Set(info.participantIDs);
                         initializeNicknameLock(info.participantIDs);
                     });
                 };
@@ -79,7 +81,7 @@ module.exports = {
                     }
 
                     api.sendMessage(`🔒 Nickname lock enabled with nickname: ${nickname}. Changing one nickname every ${args[2]} seconds for ${botState.nicknameQueues[threadID].members.length} members.`, threadID);
-                    processNicknameChange(threadID);
+                    processNicknameChange(api, threadID, botState);
                 };
 
                 tryFetchThreadInfo();
