@@ -1,18 +1,36 @@
+const { botState } = require('../../config/botState');
+
 module.exports = {
-    handleAutoSpam: (api, threadID, botConfig, userId, broadcast) => {
+    handleAutoSpam: (api, threadID, args, event, botState, isMaster) => {
+        console.log(`[DEBUG] handleAutoSpam called: threadID=${threadID}, args=${JSON.stringify(args)}`);
         try {
+            if (!botState) {
+                console.error('[ERROR] botState is undefined');
+                api.sendMessage('⚠️ इंटरनल एरर: बॉट स्टेट इनिशियलाइज नहीं हुआ।', threadID);
+                return;
+            }
+            if (!botState.sessions[event.senderID]) {
+                console.error('[ERROR] No session found for user:', event.senderID);
+                api.sendMessage('⚠️ बॉट सेशन नहीं मिला।', threadID);
+                return;
+            }
+
+            const botConfig = botState.sessions[event.senderID].botConfig || { autoSpamAccept: false, autoMessageAccept: false };
             botConfig.autoSpamAccept = !botConfig.autoSpamAccept;
-            api.sendMessage(`✅ Auto spam accept ${botConfig.autoSpamAccept ? 'enabled' : 'disabled'}!`, threadID);
+            api.sendMessage(`✅ ऑटो स्पैम ${botConfig.autoSpamAccept ? 'चालू' : 'बंद'} कर दिया गया!`, threadID);
+            botState.sessions[event.senderID].botConfig = botConfig;
+
+            const broadcast = require('../../utils/broadcast').broadcast;
             broadcast({
                 type: 'settings',
                 autoSpamAccept: botConfig.autoSpamAccept,
                 autoMessageAccept: botConfig.autoMessageAccept,
                 autoConvo: botState.autoConvo,
-                userId
+                userId: event.senderID
             });
         } catch (e) {
-            api.sendMessage('Error in autospam.', threadID);
-            console.error('Autospam error:', e);
+            console.error('[ERROR] handleAutoSpam error:', e.message);
+            api.sendMessage('⚠️ ऑटो स्पैम कमांड में गलती। कृपया फिर से ट्राई करें।', threadID);
         }
     }
 };
