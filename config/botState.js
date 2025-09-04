@@ -1,14 +1,14 @@
-module.exports = {
-    botState: {
-        sessions: {},
-        abuseTargets: {},
-        autoConvo: false,
-        stickerSpam: {},
-        welcomeMessages: [],
-        goodbyeMessages: {
-            member: [],
-            admin: []
-        },
-        adminList: []
-    }
+const botState = {
+    sessions: {},
+    nicknameTimers: {},
+    nicknameQueues: {},
+    stickerSpam: {},
+    lockedGroups: {},
+    abuseTargets: {},
+    welcomeMessages: [],
+    adminList: [],
+    autoConvo: false,
+    memberCache: {} // Cache for group member IDs
 };
+
+module.exports = { botState };
