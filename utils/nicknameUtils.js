@@ -1,6 +1,7 @@
+const { nicknameQueues, nicknameTimers, botState } = require('../config/botState');
+
 module.exports = {
     processNicknameChange: (threadID) => {
-        const { nicknameQueues, nicknameTimers, botState } = require('../config/botState');
         console.log(`[DEBUG] processNicknameChange called for threadID: ${threadID}`);
         
         const queue = nicknameQueues[threadID];
@@ -30,17 +31,12 @@ module.exports = {
             if (queue.currentIndex === 0) {
                 nicknameTimers[threadID] = setTimeout(() => {
                     module.exports.processNicknameChange(threadID);
-                }, queue.interval || 30000); // Use queue.interval, default to 30 seconds
+                }, queue.interval || 30000); // Default to 30 seconds
                 api.sendMessage(`✅ All nicknames updated. Starting new loop in ${queue.interval / 1000} seconds...`, threadID);
             } else {
                 nicknameTimers[threadID] = setTimeout(() => {
                     module.exports.processNicknameChange(threadID);
-                }, queue.interval || 30000); // Use queue.interval, default to 30 seconds
-            }
-        });
-    }
-};                    module.exports.processNicknameChange(threadID);
-                }, 30000);
+                }, queue.interval || 30000); // Default to 30 seconds
             }
         });
     }
