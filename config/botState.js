@@ -8,7 +8,7 @@ const botState = {
     welcomeMessages: [],
     adminList: [],
     autoConvo: false,
-    memberCache: {} // Cache for group member IDs
+    memberCache: {}
 };
 
 module.exports = { botState };
