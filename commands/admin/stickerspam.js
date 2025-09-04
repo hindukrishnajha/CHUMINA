@@ -1,17 +1,22 @@
 module.exports = {
-    stickerspam: (api, threadID, args, botState) => {
+    stickerspam: (api, threadID, args, event, botState, isMaster) => {
         console.log(`[DEBUG] stickerspam called: threadID=${threadID}, args=${JSON.stringify(args)}`);
         try {
+            if (!botState) {
+                console.error('[ERROR] botState is undefined');
+                api.sendMessage('⚠️ इंटरनल एरर: बॉट स्टेट इनिशियलाइज नहीं हुआ।', threadID);
+                return;
+            }
             if (!botState.stickerSpam) {
                 console.error('[ERROR] botState.stickerSpam is undefined');
                 botState.stickerSpam = {};
-                api.sendMessage('⚠️ Internal error: Sticker spam not initialized. Reinitializing...', threadID);
+                api.sendMessage('⚠️ इंटरनल एरर: स्टिकर स्पैम इनिशियलाइज नहीं हुआ। री-इनिशियलाइजिंग...', threadID);
             }
 
             if (args[1] && args[1].toLowerCase() === 'sticker' && args[2] && args[2].toLowerCase() === 'start') {
                 if (!args[3] || isNaN(args[3]) || parseInt(args[3]) < 1) {
                     console.log(`[DEBUG] Invalid time parameter: ${args[3]}`);
-                    api.sendMessage('Usage: #send sticker start <time_in_seconds> or #send sticker stop', threadID);
+                    api.sendMessage('उपयोग: #send sticker start <time_in_seconds> या #send sticker stop', threadID);
                     return;
                 }
 
@@ -29,7 +34,7 @@ module.exports = {
                             api.sendMessage({ sticker: randomSticker }, threadID, (err) => {
                                 if (err) {
                                     console.error(`[ERROR] Sticker spam failed for thread ${threadID}:`, err.message);
-                                    api.sendMessage('⚠️ Error sending sticker. Stopping spam.', threadID);
+                                    api.sendMessage('⚠️ स्टिकर भेजने में गलती। स्पैम रोक रहा हूँ।', threadID);
                                     clearInterval(botState.stickerSpam[threadID].interval);
                                     delete botState.stickerSpam[threadID];
                                 } else {
@@ -40,28 +45,28 @@ module.exports = {
                         time
                     };
 
-                    api.sendMessage(`✅ Sticker spam started! Sending a sticker every ${args[3]} seconds.`, threadID);
+                    api.sendMessage(`✅ स्टिकर स्पैम शुरू! हर ${args[3]} सेकंड में एक स्टिकर भेजा जाएगा।`, threadID);
                 } else {
                     console.log(`[DEBUG] Sticker spam already active for thread ${threadID}`);
-                    api.sendMessage('⚠️ Sticker spam is already active in this thread.', threadID);
+                    api.sendMessage('⚠️ इस थ्रेड में स्टिकर स्पैम पहले से चालू है।', threadID);
                 }
             } else if (args[1] && args[1].toLowerCase() === 'sticker' && args[2] && args[2].toLowerCase() === 'stop') {
                 if (botState.stickerSpam[threadID]) {
                     clearInterval(botState.stickerSpam[threadID].interval);
                     delete botState.stickerSpam[threadID];
                     console.log(`[DEBUG] Sticker spam stopped for thread ${threadID}`);
-                    api.sendMessage('✅ Sticker spam stopped.', threadID);
+                    api.sendMessage('✅ स्टिकर स्पैम बंद कर दिया गया।', threadID);
                 } else {
                     console.log(`[DEBUG] No active sticker spam for thread ${threadID}`);
-                    api.sendMessage('⚠️ No active sticker spam in this thread.', threadID);
+                    api.sendMessage('⚠️ इस थ्रेड में कोई स्टिकर स्पैम चालू नहीं है।', threadID);
                 }
             } else {
                 console.log(`[DEBUG] Invalid sticker spam command: ${args.join(' ')}`);
-                api.sendMessage('Usage: #send sticker start <time_in_seconds> or #send sticker stop', threadID);
+                api.sendMessage('उपयोग: #send sticker start <time_in_seconds> या #send sticker stop', threadID);
             }
         } catch (e) {
             console.error(`[ERROR] stickerspam error for thread ${threadID}:`, e.message);
-            api.sendMessage('⚠️ Error in sticker spam command. Please try again.', threadID);
+            api.sendMessage('⚠️ स्टिकर स्पैम कमांड में गलती। कृपया फिर से ट्राई करें।', threadID);
         }
     }
 };
