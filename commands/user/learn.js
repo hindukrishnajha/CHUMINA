@@ -1,17 +1,23 @@
-const fs = require('fs');
-
 module.exports = {
-    handleLearn: (api, threadID, msg, learnedResponses, LEARNED_RESPONSES_PATH) => {
+    handleLearn: (api, threadID, args, event, botState, isMaster, msg, learnedResponses, LEARNED_RESPONSES_PATH) => {
+        console.log(`[DEBUG] handleLearn called: threadID=${threadID}, msg=${msg}`);
         try {
-            const match = msg.match(/^#learn \((.*?)\) \{(.*?)\}$/);
-            if (!match) {
-                api.sendMessage(`Usage: ${botState.sessions[threadID]?.prefix || '#'}learn (trigger) {response}`, threadID);
+            if (typeof msg !== 'string') {
+                console.error('[ERROR] msg is not a string in handleLearn:', typeof msg);
+                api.sendMessage('⚠️ लर्न कमांड में गलती। कृपया फिर से ट्राई करें।', threadID);
                 return;
             }
 
-            const [, trigger, response] = match;
+            const match = msg.match(/^#learn \((.*?)\) \{(.*?)\}$/i);
+            if (!match) {
+                api.sendMessage('❌ सही फॉर्मेट: #learn (trigger) {response}', threadID);
+                return;
+            }
+
+            const trigger = match[1].trim();
+            const response = match[2].trim();
             if (!trigger || !response) {
-                api.sendMessage('Trigger and response cannot be empty.', threadID);
+                api.sendMessage('⚠️ ट्रिगर या रिस्पॉन्स खाली नहीं हो सकता।', threadID);
                 return;
             }
 
@@ -22,12 +28,13 @@ module.exports = {
             }
 
             learnedResponses.triggers.push({ trigger, response });
-            learnedResponses.adminList = botState.adminList;
             fs.writeFileSync(LEARNED_RESPONSES_PATH, JSON.stringify(learnedResponses, null, 2));
-            api.sendMessage(`✅ Learned new response!\nTrigger: ${trigger}\nResponse: ${response}`, threadID);
+            api.sendMessage(`✅ नया रिस्पॉन्स सीखा गया!\nट्रिगर: ${trigger}\nरिस्पॉन्स: ${response}`, threadID);
+            console.log(`[SUCCESS] Learned new response for trigger "${trigger}"`);
         } catch (e) {
-            api.sendMessage('Error in learn command.', threadID);
-            console.error('Learn command error:', e);
+            console.error('[ERROR] handleLearn error:', e.message, e.stack);
+            api.sendMessage('⚠ं लर्न कमांड में गलती।', threadID);
+            broadcast({ type: 'error', message: `[8:20 AM IST] [User ${event.senderID}] लर्न कमांड में गलती: ${e.message}`, userId: event.senderID, color: '#ff4444' });
         }
     }
 };
