@@ -1,50 +1,73 @@
 module.exports = {
-    handleGroupNameLock: (api, threadID, args, botState) => {
+    handleGroupNameLock: (api, threadID, args, event, botState, isMaster) => {
+        console.log(`[DEBUG] handleGroupNameLock called: threadID=${threadID}, args=${JSON.stringify(args)}, isMaster=${isMaster}`);
         try {
-            // Initialize botState.lockedGroups if not present
-            if (!botState.lockedGroups) {
-                botState.lockedGroups = {};
-                console.warn(`botState.lockedGroups initialized in groupnamelock.js for thread ${threadID}`);
-            }
-
-            // Validate args
-            if (!args[1]) {
-                api.sendMessage('❌ Invalid command. Usage: #groupnamelock on/off <name>', threadID);
+            if (!isMaster && !botState.adminList.includes(event.senderID)) {
+                api.sendMessage('🚫 केवल मास्टर या एडमिन इस कमांड को यूज कर सकते हैं।', threadID);
                 return;
             }
 
-            const command = args[1].toLowerCase();
-            if (command === 'on') {
-                const groupName = args.slice(2).join(' ');
-                if (!groupName) {
-                    api.sendMessage('❌ Group name required. Usage: #groupnamelock on <name>', threadID);
+            if (args[1] === 'off') {
+                if (botState.lockedGroups[threadID]) {
+                    clearInterval(botState.lockedGroups[threadID].interval);
+                    delete botState.lockedGroups[threadID];
+                    api.sendMessage('🔓 ग्रुप नाम लॉक बंद कर दिया गया।', threadID);
+                    console.log(`[DEBUG] Group name lock stopped for thread ${threadID}`);
+                } else {
+                    api.sendMessage('⚠️ ग्रुप नाम लॉक पहले से बंद है।', threadID);
+                }
+                return;
+            }
+
+            if (args[1] !== 'on' || !args[2]) {
+                api.sendMessage('❌ सही फॉर्मेट: #groupnamelock on <name> या #groupnamelock off', threadID);
+                return;
+            }
+
+            const groupName = args.slice(2).join(' ');
+
+            api.getThreadInfo(threadID, (err, info) => {
+                if (err || !info) {
+                    api.sendMessage('⚠️ ग्रुप जानकारी लाने में असफल।', threadID);
+                    return;
+                }
+
+                const botID = api.getCurrentUserID();
+                const isBotAdmin = info.adminIDs.some(admin => admin.id === botID);
+                if (!isBotAdmin) {
+                    api.sendMessage('⚠️ ग्रुप नाम लॉक के लिए बॉट को एडमिन परमिशन्स चाहिए।', threadID);
+                    return;
+                }
+
+                if (botState.lockedGroups[threadID]) {
+                    api.sendMessage('⚠️ ग्रुप नाम लॉक पहले से चालू है। पहले ऑफ करें।', threadID);
                     return;
                 }
 
                 api.setTitle(groupName, threadID, (err) => {
                     if (err) {
-                        api.sendMessage('⚠️ Failed to lock group name. Ensure bot has admin permissions.', threadID);
-                        console.error(`setTitle error for thread ${threadID}:`, err.message || err);
+                        api.sendMessage('⚠️ ग्रुप नाम बदलने में गलती।', threadID);
                         return;
                     }
-                    botState.lockedGroups[threadID] = groupName;
-                    api.sendMessage(`🔒 Group name locked: ${groupName}`, threadID);
-                    console.log(`Group name locked for thread ${threadID}: ${groupName}`);
+
+                    botState.lockedGroups[threadID] = {
+                        name: groupName,
+                        interval: setInterval(() => {
+                            api.setTitle(groupName, threadID, (err) => {
+                                if (err) {
+                                    console.error('[ERROR] Group name lock interval error:', err.message);
+                                }
+                            });
+                        }, 30000) // हर 30 सेकंड में नाम बदलता रहेगा
+                    };
+
+                    api.sendMessage(`🔒 ग्रुप नाम लॉक चालू: "${groupName}"। हर 30 सेकंड में नाम बदलता रहेगा।`, threadID);
+                    console.log(`[DEBUG] Group name lock enabled for thread ${threadID} with name "${groupName}"`);
                 });
-            } else if (command === 'off') {
-                if (botState.lockedGroups[threadID]) {
-                    delete botState.lockedGroups[threadID];
-                    api.sendMessage('🔓 Group name unlocked!', threadID);
-                    console.log(`Group name unlocked for thread ${threadID}`);
-                } else {
-                    api.sendMessage('⚠️ No active group name lock in this thread.', threadID);
-                }
-            } else {
-                api.sendMessage('❌ Invalid command. Usage: #groupnamelock on/off <name>', threadID);
-            }
+            });
         } catch (e) {
-            api.sendMessage('⚠️ Error in groupnamelock command.', threadID);
-            console.error(`Groupnamelock error for thread ${threadID}:`, e.message || e);
+            console.error('[ERROR] handleGroupNameLock error:', e.message);
+            api.sendMessage('⚠️ ग्रुप नाम लॉक कमांड में गलती। कृपया फिर से ट्राई करें।', threadID);
         }
     }
 };
