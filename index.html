@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bot Control Panel</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f0f2f5;
+            margin: 0;
+            padding: 20px;
+            color: #333;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background-color: #fff;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            text-align: center;
+            color: #1a73e8;
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        input[type="text"], textarea {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            box-sizing: border-box;
+        }
+        button {
+            background-color: #1a73e8;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-right: 10px;
+        }
+        button:hover {
+            background-color: #1557b0;
+        }
+        #log-container {
+            margin-top: 20px;
+            max-height: 300px;
+            overflow-y: auto;
+            border: 1px solid #ccc;
+            padding: 10px;
+            background-color: #f9f9f9;
+            border-radius: 4px;
+        }
+        .log-entry {
+            margin-bottom: 5px;
+        }
+        .log-error {
+            color: red;
+            font-weight: bold;
+        }
+        .log-success {
+            color: green;
+            font-weight: bold;
+        }
+        #status {
+            margin-top: 10px;
+            font-weight: bold;
+        }
+        .status-running {
+            color: green;
+        }
+        .status-stopped {
+            color: red;
+        }
+        .settings-group {
+            margin-top: 20px;
+            border-top: 1px solid #ccc;
+            padding-top: 10px;
+        }
+        .settings-group label {
+            display: inline-block;
+            margin-right: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Bot Control Panel</h1>
+        <div class="form-group">
+            <label for="user-id">User ID:</label>
+            <input type="text" id="user-id" placeholder="Enter User ID">
+        </div>
+        <div class="form-group">
+            <label for="prefix">Prefix:</label>
+            <input type="text" id="prefix" placeholder="Enter Prefix (default: #)">
+        </div>
+        <div class="form-group">
+            <label for="admin-id">Admin ID:</label>
+            <input type="text" id="admin-id" placeholder="Enter Admin ID">
+        </div>
+        <div class="form-group">
+            <label for="cookie-content">Cookies:</label>
+            <textarea id="cookie-content" rows="5" placeholder="Paste your cookies here"></textarea>
+        </div>
+        <button onclick="startBot()">Start Bot</button>
+        <button onclick="stopBot()">Stop Bot</button>
+        <button onclick="checkStatus()">Check Status</button>
+        <div class="form-group settings-group">
+            <label>Settings:</label>
+            <input type="checkbox" id="auto-spam-accept" onclick="saveSettings()"> Auto Spam Accept
+            <input type="checkbox" id="auto-message-accept" onclick="saveSettings()"> Auto Message Accept
+            <input type="checkbox" id="auto-convo" onclick="saveSettings()"> Auto Convo
+        </div>
+        <div class="form-group">
+            <label for="abuse-content">Abuse Messages:</label>
+            <textarea id="abuse-content" rows="5" placeholder="Enter abuse messages (one per line)"></textarea>
+            <button onclick="uploadAbuse()">Upload Abuse Messages</button>
+        </div>
+        <div class="form-group">
+            <label for="welcome-content">Welcome Messages:</label>
+            <textarea id="welcome-content" rows="5" placeholder="Enter welcome messages (one per line)"></textarea>
+            <button onclick="saveWelcome()">Save Welcome Messages</button>
+        </div>
+        <div id="status">Status: Unknown</div>
+        <div id="log-container"></div>
+    </div>
+
+    <script>
+        let ws;
+        const userStatus = {};
+
+        function connectWebSocket() {
+            ws = new WebSocket(`ws://${window.location.host}`);
+
+            ws.onopen = () => {
+                console.log('WebSocket connected');
+                addLog('WebSocket connected', 'log-success');
+                checkStatus();
+            };
+
+            ws.onmessage = (event) => {
+                try {
+                    const data = JSON.parse(event.data);
+                    console.log('WebSocket message received:', data);
+
+                    if (data.type === 'heartbeat') {
+                        ws.send(JSON.stringify({ type: 'heartbeat' }));
+                        return;
+                    }
+
+                    if (data.type === 'log') {
+                        addLog(data.message, 'log-entry', data.userId);
+                    } else if (data.type === 'error') {
+                        addLog(data.message, 'log-error', data.userId);
+                    } else if (data.type === 'status') {
+                        userStatus[data.userId] = { running: data.running, message: data.message };
+                        updateStatus();
+                    } else if (data.type === 'activeUsers') {
+                        addLog(`Active users: ${data.users.length > 0 ? data.users.join(', ') : 'None'}`, 'log-entry');
+                    } else if (data.type === 'settings') {
+                        document.getElementById('auto-spam-accept').checked = data.autoSpamAccept;
+                        document.getElementById('auto-message-accept').checked = data.autoMessageAccept;
+                        document.getElementById('auto-convo').checked = data.autoConvo;
+                        addLog('Settings loaded from server', 'log-entry');
+                    }
+                } catch (err) {
+                    console.error('Error parsing WebSocket message:', err);
+                    addLog(`Error parsing WebSocket message: ${err.message}`, 'log-error');
+                }
+            };
+
+            ws.onclose = () => {
+                console.log('WebSocket disconnected, attempting to reconnect...');
+                addLog('WebSocket disconnected, attempting to reconnect...', 'log-error');
+                setTimeout(connectWebSocket, 5000);
+            };
+
+            ws.onerror = (err) => {
+                console.error('WebSocket error:', err);
+                addLog(`WebSocket error: ${err.message || 'Unknown error'}`, 'log-error');
+            };
+        }
+
+        function addLog(message, className, userId = '') {
+            const logContainer = document.getElementById('log-container');
+            const logEntry = document.createElement('div');
+            const timestamp = new Date().toLocaleTimeString('en-US', { hour12: true });
+            logEntry.className = className;
+            logEntry.textContent = `[${timestamp}]${userId ? ` [User ${userId}] ` : ' '} ${message}`;
+            logContainer.appendChild(logEntry);
+            logContainer.scrollTop = logContainer.scrollHeight;
+        }
+
+        function updateStatus() {
+            const statusDiv = document.getElementById('status');
+            const userId = document.getElementById('user-id').value.trim();
+            if (userId && userStatus[userId]) {
+                const { running, message } = userStatus[userId];
+                statusDiv.textContent = `Status: ${message || (running ? 'Bot is running' : 'Bot is not running')}`;
+                statusDiv.className = running ? 'status-running' : 'status-stopped';
+                addLog(message || (running ? 'Bot is running' : 'Bot is not running'), running ? 'log-success' : 'log-error', userId);
+            } else {
+                statusDiv.textContent = 'Status: Unknown';
+                statusDiv.className = '';
+            }
+        }
+
+        function startBot() {
+            const userId = document.getElementById('user-id').value.trim();
+            const prefix = document.getElementById('prefix').value.trim();
+            const adminId = document.getElementById('admin-id').value.trim();
+            const cookieContent = document.getElementById('cookie-content').value.trim();
+
+            if (!userId || !cookieContent) {
+                addLog('Please provide User ID and Cookies', 'log-error');
+                return;
+            }
+
+            addLog('Reading cookie file...', 'log-entry', userId);
+            setTimeout(() => {
+                addLog('Cookie file read, sending to server...', 'log-entry', userId);
+                ws.send(JSON.stringify({
+                    type: 'start',
+                    userId,
+                    cookieContent,
+                    prefix,
+                    adminId
+                }));
+            }, 1000);
+        }
+
+        function stopBot() {
+            const userId = document.getElementById('user-id').value.trim();
+            if (!userId) {
+                addLog('Please provide User ID', 'log-error');
+                return;
+            }
+
+            ws.send(JSON.stringify({
+                type: 'stop',
+                userId
+            }));
+        }
+
+        function checkStatus() {
+            const userId = document.getElementById('user-id').value.trim();
+            if (!userId) {
+                addLog('Please provide User ID to check status', 'log-error');
+                return;
+            }
+
+            ws.send(JSON.stringify({
+                type: 'checkStatus',
+                userId
+            }));
+        }
+
+        function uploadAbuse() {
+            const content = document.getElementById('abuse-content').value.trim();
+            if (!content) {
+                addLog('Please provide abuse messages', 'log-error');
+                return;
+            }
+
+            ws.send(JSON.stringify({
+                type: 'uploadAbuse',
+                content
+            }));
+        }
+
+        function saveWelcome() {
+            const content = document.getElementById('welcome-content').value.trim();
+            if (!content) {
+                addLog('Please provide welcome messages', 'log-error');
+                return;
+            }
+
+            ws.send(JSON.stringify({
+                type: 'saveWelcome',
+                content
+            }));
+        }
+
+        function saveSettings() {
+            const autoSpamAccept = document.getElementById('auto-spam-accept').checked;
+            const autoMessageAccept = document.getElementById('auto-message-accept').checked;
+            const autoConvo = document.getElementById('auto-convo').checked;
+
+            ws.send(JSON.stringify({
+                type: 'saveSettings',
+                autoSpamAccept,
+                autoMessageAccept,
+                autoConvo
+            }));
+        }
+
+        // Initialize WebSocket connection
+        connectWebSocket();
+    </script>
+</body>
+  </html>
