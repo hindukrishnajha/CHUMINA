@@ -1,79 +1,72 @@
 module.exports = {
-    handleLoder: (api, threadID, args, event, botState, abuseMessages, MASTER_ID) => {
+    handleLoder: (api, threadID, args, event, botState, isMaster, abuseMessages, MASTER_ID) => {
         try {
-            if (args[1] === 'target' && args[2] === 'on' && event.mentions) {
-                const targetID = Object.keys(event.mentions)[0];
-                if (!targetID) return api.sendMessage('Mention a user with @.', threadID);
-                if (targetID === MASTER_ID) return api.sendMessage('❌ Cannot target Master ID!', threadID);
-                if (!botState.abuseTargets[threadID]) {
-                    botState.abuseTargets[threadID] = {};
-                }
-                botState.abuseTargets[threadID][targetID] = true;
+            if (!isMaster && !botState.adminList.includes(event.senderID)) {
+                api.sendMessage('🚫 केवल मास्टर या एडमिन इस कमांड को यूज कर सकते हैं।', threadID);
+                return;
+            }
 
-                if (!abuseMessages || abuseMessages.length === 0) {
-                    api.sendMessage('❌ Error: abuse.txt is empty or not loaded. Please add abuse messages.', threadID);
-                    console.log('Abuse messages empty or not loaded');
+            if (args[1] === 'stop') {
+                if (botState.abuseTargets[threadID]) {
+                    delete botState.abuseTargets[threadID];
+                    api.sendMessage('🛑 टारगेटिंग बंद कर दी गई।', threadID);
+                    broadcast({ type: 'log', message: `[7:55 AM IST] [User ${event.senderID}] Stopped loder in thread ${threadID}`, userId: event.senderID, color: '#00ff00' });
+                } else {
+                    api.sendMessage('⚠️ कोई टारगेटिंग चल नहीं रही।', threadID);
+                }
+                return;
+            }
+
+            if (args[1] !== 'target' || args[2] !== 'on' || !event.mentions || Object.keys(event.mentions).length === 0) {
+                api.sendMessage('❌ सही फॉर्मेट: #loder target on @user', threadID);
+                return;
+            }
+
+            const targetID = Object.keys(event.mentions)[0];
+            if (targetID === MASTER_ID) {
+                api.sendMessage('🚫 मास्टर को टारगेट नहीं किया जा सकता!', threadID);
+                return;
+            }
+
+            if (!abuseMessages.length) {
+                api.sendMessage('⚠️ कोई गाली मैसेजेस उपलब्ध नहीं हैं। पहले abuse.txt अपलोड करें।', threadID);
+                return;
+            }
+
+            if (!botState.abuseTargets[threadID]) botState.abuseTargets[threadID] = {};
+            if (botState.abuseTargets[threadID][targetID]) {
+                api.sendMessage('⚠️ ये यूजर पहले से टारगेटेड है।', threadID);
+                return;
+            }
+
+            botState.abuseTargets[threadID][targetID] = true;
+            api.getUserInfo(targetID, (err, ret) => {
+                if (err || !ret || !ret[targetID]) {
+                    api.sendMessage('⚠️ यूजर जानकारी लाने में असफल।', threadID);
                     return;
                 }
+                const name = ret[targetID].name || 'User';
+                api.sendMessage(`😈 ${name} को टारगेट किया गया! अब हर 2 मिनट में गालियां आएंगी!`, threadID);
 
-                api.getUserInfo(targetID, (err, ret) => {
-                    if (err) {
-                        api.sendMessage('Failed to get target info.', threadID);
-                        console.error('UserInfo error for loder:', err);
-                        return;
+                const spamLoop = async () => {
+                    while (botState.abuseTargets[threadID]?.[targetID] && abuseMessages.length > 0) {
+                        const randomMsg = abuseMessages[Math.floor(Math.random() * abuseMessages.length)];
+                        const mentionTag = `@${name.split(' ')[0]}`;
+                        await api.sendMessage({
+                            body: `${mentionTag} ${randomMsg}`,
+                            mentions: [{ tag: mentionTag, id: targetID }]
+                        }, threadID);
+                        await new Promise(r => setTimeout(r, 120000));
                     }
-                    const name = ret?.[targetID]?.name || 'User';
-                    api.sendMessage(`🎯 ${name} को टारगेट कर दिया गया है! अब हर 2 मिनट में गालियां आएंगी!`, threadID);
-                    console.log(`Target set: ${name} (${targetID}) in thread ${threadID}`);
+                };
+                spamLoop();
+            });
 
-                    const spamLoop = async () => {
-                        while (botState.abuseTargets[threadID]?.[targetID] && abuseMessages.length > 0) {
-                            try {
-                                const randomMsg = abuseMessages[Math.floor(Math.random() * abuseMessages.length)];
-                                const mentionTag = `@${name.split(' ')[0]}`;
-                                await api.sendMessage({
-                                    body: `${mentionTag} ${randomMsg}`,
-                                    mentions: [{ tag: mentionTag, id: targetID }]
-                                }, threadID);
-                                console.log(`Abuse sent to ${name} (${targetID}) in thread ${threadID}`);
-                                await new Promise(r => setTimeout(r, 120000));
-                            } catch (err) {
-                                console.error('Abuse loop error:', err);
-                                api.sendMessage('⚠️ Error sending abuse message. Retrying in 2 minutes...', threadID);
-                                await new Promise(r => setTimeout(r, 120000));
-                            }
-                        }
-                    };
-
-                    spamLoop();
-                });
-            } else if (args[1] === 'stop') {
-                if (botState.abuseTargets[threadID]) {
-                    const targets = Object.keys(botState.abuseTargets[threadID]);
-                    delete botState.abuseTargets[threadID];
-
-                    if (targets.length > 0) {
-                        api.getUserInfo(targets, (err, ret) => {
-                            if (err) {
-                                api.sendMessage('Failed to get target info.', threadID);
-                                console.error('UserInfo error for loder stop:', err);
-                                return;
-                            }
-                            const names = targets.map(id => ret?.[id]?.name || 'User').join(', ');
-                            api.sendMessage(`🎯 ${names} को टारगेट से हटा दिया गया है! बच गए ये लोग!`, threadID);
-                        });
-                    } else {
-                        api.sendMessage('No active targets.', threadID);
-                    }
-                } else {
-                    api.sendMessage('No active targets.', threadID);
-                }
-            } else {
-                api.sendMessage(`Usage: ${botState.sessions[threadID]?.prefix || '#'}loder target on @user or ${botState.sessions[threadID]?.prefix || '#'}loder stop`, threadID);
-            }
-        } catch (e) {
-            api.sendMessage('Error in loder command.', threadID);
-            console.error('Loder command error:', e);
+            broadcast({ type: 'log', message: `[7:55 AM IST] [User ${event.senderID}] Started loder on user ${targetID} in thread ${threadID}`, userId: event.senderID, color: '#00ff00' });
+        } catch (err) {
+            console.error('[ERROR] loder कमांड में गलती:', err.message, err.stack);
+            api.sendMessage('⚠️ loder कमांड चलाने में गलती।', threadID);
+            broadcast({ type: 'error', message: `[7:55 AM IST] [User ${event.senderID}] loder कमांड में गलती: ${err.message}`, userId: event.senderID, color: '#ff4444' });
         }
     }
 };
