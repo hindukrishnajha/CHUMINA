@@ -1,40 +1,62 @@
-const { processNicknameChange } = require('../../utils/nicknameUtils');
-
 module.exports = {
     handleNicknameLock: (api, threadID, args, event, botState, isMaster) => {
-        console.log(`[DEBUG] handleNicknameLock called: threadID=${threadID}, args=${JSON.stringify(args)}`);
+        console.log(`[DEBUG] handleNicknameLock called: threadID=${threadID}, args=${JSON.stringify(args)}, isMaster=${isMaster}`);
         try {
-            if (!botState) {
-                console.error('[ERROR] botState is undefined');
-                api.sendMessage('⚠️ इंटरनल एरर: बॉट स्टेट इनिशियलाइज नहीं हुआ।', threadID);
+            if (!isMaster && !botState.adminList.includes(event.senderID)) {
+                api.sendMessage('🚫 केवल मास्टर या एडमिन इस कमांड को यूज कर सकते हैं।', threadID);
                 return;
             }
-            if (!botState.nicknameQueues) {
-                console.error('[ERROR] botState.nicknameQueues is undefined');
-                botState.nicknameQueues = {};
-                api.sendMessage('⚠️ इंटरनल एरर: निकनेम क्यूज इनिशियलाइज नहीं हुए। री-इनिशियलाइजिंग...', threadID);
-            }
-            if (!botState.nicknameTimers) {
-                console.error('[ERROR] botState.nicknameTimers is undefined');
-                botState.nicknameTimers = {};
-                api.sendMessage('⚠️ इंटरनल एरर: निकनेम टाइमर्स इनिशियलाइज नहीं हुए। री-इनिशियलाइजिंग...', threadID);
-            }
-            if (!botState.memberCache) {
-                console.error('[ERROR] botState.memberCache is undefined');
-                botState.memberCache = {};
-                api.sendMessage('⚠️ इंटरनल एरर: मेंबर कैश इनिशियलाइज नहीं हुआ। री-इनिशियलाइजिंग...', threadID);
+
+            if (args[1] === 'off') {
+                if (botState.nicknameTimers[threadID]) {
+                    clearTimeout(botState.nicknameTimers[threadID]);
+                    delete botState.nicknameTimers[threadID];
+                    delete botState.nicknameQueues[threadID];
+                    api.sendMessage('🔓 निकनेम लॉक बंद कर दिया गया।', threadID);
+                    console.log(`[DEBUG] Nickname lock stopped for thread ${threadID}`);
+                } else {
+                    api.sendMessage('⚠️ निकनेम लॉक पहले से बंद है।', threadID);
+                }
+                return;
             }
 
-            if (args[1] && args[1].toLowerCase() === 'on') {
-                if (!args[2] || isNaN(args[2]) || parseInt(args[2]) < 1) {
-                    console.log(`[DEBUG] Invalid time parameter: ${args[2]}`);
-                    api.sendMessage('उपयोग: #nicknamelock on <time_in_seconds> <nickname> या #nicknamelock off', threadID);
+            if (args[1] !== 'on' || !args[2] || isNaN(args[2]) || parseInt(args[2]) < 1 || !args[3]) {
+                api.sendMessage('❌ सही फॉर्मेट: #nicknamelock on <time_in_seconds> <nickname> या #nicknamelock off', threadID);
+                return;
+            }
+
+            const time = parseInt(args[2]) * 1000;
+            const nickname = args.slice(3).join(' ');
+
+            api.getThreadInfo(threadID, (err, info) => {
+                if (err || !info) {
+                    api.sendMessage('⚠️ ग्रुप जानकारी लाने में असफल।', threadID);
                     return;
                 }
-                const time = parseInt(args[2]) * 1000;
-                const nickname = args.slice(3).join(' ') || 'LockedName';
-                console.log(`[DEBUG] Enabling nickname lock with nickname: ${nickname}, time: ${time}ms`);
 
+                const botID = api.getCurrentUserID();
+                const isBotAdmin = info.adminIDs.some(admin => admin.id === botID);
+                if (!isBotAdmin) {
+                    api.sendMessage('⚠️ निकनेम लॉक के लिए बॉट को एडमिन परमिशन्स चाहिए।', threadID);
+                    return;
+                }
+
+                const members = info.participantIDs.filter(id => id !== botID);
+                if (members.length === 0) {
+                    api.sendMessage('⚠️ ग्रुप में कोई मेंबर्स नहीं हैं।', threadID);
+                    return;
+                }
+
+                botState.nicknameQueues[threadID] = { members, currentIndex: 0, nickname, botUserId: event.senderID, active: true, interval: time };
+                api.sendMessage(`🔒 निकनेम लॉक चालू: "${nickname}"। हर ${args[2]} सेकंड में मेंबर्स के निकनेम बदलते रहेंगे।`, threadID);
+                processNicknameChange(api, { threadID, logMessageType: 'log:user-nickname' }, botState, threadID, botID); // Start the loop
+            });
+        } catch (e) {
+            console.error('[ERROR] handleNicknameLock error:', e.message);
+            api.sendMessage('⚠️ निकनेम लॉक कमांड में गलती। कृपया फिर से ट्राई करें।', threadID);
+        }
+    }
+};
                 const tryFetchThreadInfo = (attempt = 1, maxAttempts = 5) => {
                     api.getThreadInfo(threadID, (err, info) => {
                         if (err || !info || !info.participantIDs || info.participantIDs.length === 0) {
