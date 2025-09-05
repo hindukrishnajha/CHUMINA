@@ -8,24 +8,37 @@ module.exports = {
                 return;
             }
 
-            api.getThreadInfo(threadID, (err, info) => {
-                if (err || !info) {
-                    console.error('[ERROR] getThreadInfo failed for processNicknameChange:', err?.message);
-                    api.sendMessage('⚠️ ग्रुप जानकारी लाने में असफल।', threadID);
-                    return;
-                }
+            // मेंबर लिस्ट कैश से लो, अगर नहीं है तो API कॉल करो
+            const members = botState.memberCache[threadID]
+                ? Array.from(botState.memberCache[threadID])
+                : null;
 
-                const isBotAdmin = info.adminIDs.some(admin => admin.id === botID);
-                if (!isBotAdmin) {
-                    console.error(`[ERROR] Bot is not admin in thread ${threadID}`);
-                    api.sendMessage('⚠️ निकनेम रिस्टोर करने में गलती। बॉट को एडमिन परमिशन्स चाहिए।', threadID);
-                    delete botState.nicknameQueues[threadID];
-                    return;
-                }
+            if (!members) {
+                api.getThreadInfo(threadID, (err, info) => {
+                    if (err || !info) {
+                        console.error('[ERROR] getThreadInfo failed for processNicknameChange:', err?.message);
+                        api.sendMessage('⚠️ ग्रुप जानकारी लाने में असफल।', threadID);
+                        return;
+                    }
 
-                const members = info.participantIDs.filter(id => id !== botID);
-                queue.members = members; // ग्रुप मेंबर्स अपडेट करो
+                    const isBotAdmin = info.adminIDs.some(admin => admin.id === botID);
+                    if (!isBotAdmin) {
+                        console.error(`[ERROR] Bot is not admin in thread ${threadID}`);
+                        api.sendMessage('⚠️ निकनेम रिस्टोर करने में गलती। बॉट को एडमिन परमिशन्स चाहिए।', threadID);
+                        delete botState.nicknameQueues[threadID];
+                        return;
+                    }
 
+                    botState.memberCache[threadID] = new Set(info.participantIDs);
+                    queue.members = info.participantIDs.filter(id => id !== botID);
+                    processNickname(queue);
+                });
+            } else {
+                queue.members = members.filter(id => id !== botID);
+                processNickname(queue);
+            }
+
+            function processNickname(queue) {
                 if (queue.currentIndex >= queue.members.length) {
                     queue.currentIndex = 0; // लूप के लिए इंडेक्स रीसेट
                     console.log(`[DEBUG] Reset nickname queue index for thread ${threadID}`);
@@ -42,12 +55,11 @@ module.exports = {
                         console.log(`[DEBUG] Changed nickname for user ${targetID} to "${queue.nickname}" in thread ${threadID}`);
                     }
 
-                    // अगला निकनेम चेंज शेड्यूल करो
                     botState.nicknameTimers[threadID] = setTimeout(() => {
                         processNicknameChange(api, event, botState, threadID, botID);
                     }, queue.interval);
                 });
-            });
+            }
         } catch (e) {
             console.error('[ERROR] processNicknameChange error:', e.message, e.stack);
             api.sendMessage('⚠️ निकनेम लॉक प्रोसेस में गलती।', threadID);
