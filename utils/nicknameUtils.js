@@ -9,10 +9,9 @@ module.exports = {
         return;
       }
 
-      const changedUserID = event.logMessageData.participant_id; // चेंज हुए यूजर का ID
-      if (!changedUserID || changedUserID === botID) return; // बॉट खुद को इग्नोर
+      const changedUserID = event.logMessageData.participant_id; // चेंज हुए यूजर
+      if (!changedUserID || changedUserID === botID) return; // बॉट को इग्नोर
 
-      // मेंबर कैश चेक
       const members = botState.memberCache[threadID] ? Array.from(botState.memberCache[threadID]) : [];
       if (members.length === 0) {
         api.getThreadInfo(threadID, (err, info) => {
