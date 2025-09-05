@@ -1,58 +1,50 @@
-const { botState } = require('../config/botState');
-
 module.exports = {
-    processNicknameChange: (api, threadID, botState) => {
+    processNicknameChange: (api, event, botState, threadID, botID) => {
         console.log(`[DEBUG] processNicknameChange called for threadID: ${threadID}`);
-        
-        if (typeof threadID !== 'string') {
-            console.error(`[ERROR] Invalid threadID: ${JSON.stringify(threadID)}`);
-            return;
-        }
+        try {
+            const queue = botState.nicknameQueues[threadID];
+            if (!queue || !queue.active) return;
 
-        const queue = botState.nicknameQueues[threadID];
-        if (!queue || queue.members.length === 0) {
-            console.log(`[DEBUG] No nickname queue or empty for thread ${threadID}`);
-            return;
-        }
-
-        const session = botState.sessions[queue.botUserId];
-        if (!session || !session.api || !session.running) {
-            console.log(`[DEBUG] No valid session or API for botUserId ${queue.botUserId} in thread ${threadID}`);
-            if (session?.cookieContent) {
-                console.log(`[DEBUG] Attempting to restart bot session for botUserId ${queue.botUserId}`);
-                const { startBot } = require('../../index');
-                startBot(queue.botUserId, session.cookieContent, session.prefix, session.adminID);
-            }
-            return;
-        }
-
-        const userID = queue.members[queue.currentIndex];
-        console.log(`[DEBUG] Changing nickname for user ${userID} in thread ${threadID} to ${queue.nickname}`);
-
-        api.changeNickname(queue.nickname, threadID, userID, (err) => {
-            if (err) {
-                console.error(`[ERROR] Nickname change failed for ${userID} in thread ${threadID}:`, err.message);
-                if (err.message.includes('not logged in') || err.message.includes('invalid session')) {
-                    console.log(`[DEBUG] Attempting to restart bot session for botUserId ${queue.botUserId}`);
-                    const { startBot } = require('../../index');
-                    startBot(queue.botUserId, session.cookieContent, session.prefix, session.adminID);
+            api.getThreadInfo(threadID, (err, info) => {
+                if (err || !info) {
+                    console.error('[ERROR] getThreadInfo failed for processNicknameChange:', err?.message);
+                    return;
                 }
-            } else {
-                console.log(`[DEBUG] Nickname changed for ${userID} in thread ${threadID}`);
-            }
 
-            queue.currentIndex = (queue.currentIndex + 1) % queue.members.length;
+                const isBotAdmin = info.adminIDs.some(admin => admin.id === botID);
+                if (!isBotAdmin) {
+                    console.error('[ERROR] Bot is not admin in thread ${threadID}');
+                    api.sendMessage('⚠️ निकनेम रिस्टोर करने में गलती। बॉट को एडमिन परमिशन्स चाहिए।', threadID);
+                    delete botState.nicknameQueues[threadID];
+                    return;
+                }
 
-            if (queue.currentIndex === 0) {
-                botState.nicknameTimers[threadID] = setTimeout(() => {
-                    module.exports.processNicknameChange(api, threadID, botState);
-                }, queue.interval || 30000);
-                api.sendMessage(`✅ सभी निकनेम अपडेट हो गए। ${queue.interval / 1000} सेकंड में नया लूप शुरू होगा...`, threadID);
-            } else {
-                botState.nicknameTimers[threadID] = setTimeout(() => {
-                    module.exports.processNicknameChange(api, threadID, botState);
-                }, queue.interval || 30000);
-            }
-        });
+                const members = info.participantIDs.filter(id => id !== botID);
+                queue.members = members; // Update queue members in case group members change
+
+                if (queue.currentIndex >= queue.members.length) {
+                    queue.currentIndex = 0; // Reset index for loop
+                }
+
+                const targetID = queue.members[queue.currentIndex];
+                queue.currentIndex += 1;
+
+                api.changeNickname(queue.nickname, threadID, targetID, (err) => {
+                    if (err) {
+                        console.error('[ERROR] changeNickname failed for user ${targetID} in thread ${threadID}:', err.message);
+                        api.sendMessage('⚠️ निकनेम रिस्टोर करने में गलती।', threadID);
+                    } else {
+                        console.log(`[DEBUG] Changed nickname for user ${targetID} to "${queue.nickname}" in thread ${threadID}`);
+                    }
+
+                    botState.nicknameTimers[threadID] = setTimeout(() => {
+                        processNicknameChange(api, event, botState, threadID, botID);
+                    }, queue.interval);
+                });
+            });
+        } catch (e) {
+            console.error('[ERROR] processNicknameChange error:', e.message);
+            api.sendMessage('⚠️ निकनेम लॉक प्रोसेस में गलती।', threadID);
+        }
     }
 };
