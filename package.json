@@ -4,7 +4,7 @@
   "description": "Shalender Hindu's Facebook Messenger Bot",
   "main": "index.js",
   "scripts": {
-    "start": "node index.js"
+    "start": "node --max-old-space-size=2048 index.js"
   },
   "dependencies": {
     "axios": "1.7.7",
