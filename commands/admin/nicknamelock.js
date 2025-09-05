@@ -67,7 +67,7 @@ module.exports = {
           }
 
           api.sendMessage(`🔒 निकनेम लॉक चालू: "${nickname}"। सभी ${botState.nicknameQueues[threadID].members.length} मेंबर्स के निकनेम ${timeArg} सेकंड के गैप से सेट हो जाएंगे।`, threadID);
-          setNextNicknameChange(api, botState, threadID, botUserId); // शुरू में चेन शुरू करो
+          setNextNicknameChange(api, botState, threadID, botUserId); // शुरू में चेन शुरू
         };
 
         tryFetchThreadInfo();
@@ -90,13 +90,13 @@ module.exports = {
   }
 };
 
-// हेल्पर फंक्शन: अगला निकनेम चेंज सेट करो
+// हेल्पर फंक्शन: अगला निकनेम चेंज सेट
 function setNextNicknameChange(api, botState, threadID, botUserId) {
   const queue = botState.nicknameQueues[threadID];
   if (!queue || !queue.active || queue.completed) return;
 
   if (queue.currentIndex >= queue.members.length) {
-    queue.completed = true; // सबके निकनेम सेट हो गए, अब रुक जाओ
+    queue.completed = true; // सबके निकनेम सेट, रुक जाओ
     console.log(`[DEBUG] Initial nickname setup completed for thread ${threadID}`);
     api.sendMessage('✅ सभी निकनेम लॉक हो गए। अब सिर्फ चेंज होने पर रिस्टोर होगा।', threadID);
     return;
@@ -113,9 +113,8 @@ function setNextNicknameChange(api, botState, threadID, botUserId) {
       console.log(`[DEBUG] Changed nickname for ${targetID} to "${queue.nickname}"`);
     }
 
-    // अगला चेंज टाइमर से सेट करो
     botState.nicknameTimers[threadID] = setTimeout(() => {
       setNextNicknameChange(api, botState, threadID, botUserId);
     }, queue.interval);
   });
-                }
+}
