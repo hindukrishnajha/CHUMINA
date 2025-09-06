@@ -8,42 +8,27 @@ module.exports = {
         return;
       }
 
-      const changedUserID = event.logMessageData.participant_id;
+      const changedUserID = event.logMessageData.participant_id; // जिसका नाम बदला गया
       if (!changedUserID || changedUserID === botID) return;
 
-      const members = botState.memberCache[threadID] ? Array.from(botState.memberCache[threadID]) : [];
-      if (members.length === 0) {
-        api.getThreadInfo(threadID, (err, info) => {
-          if (err || !info) {
-            console.error('[ERROR] getThreadInfo failed:', err?.message);
-            api.sendMessage('⚠️ ग्रुप जानकारी लाने में असफल।', threadID);
-            return;
-          }
-          botState.memberCache[threadID] = new Set(info.participantIDs);
-          restoreNickname(changedUserID);
-        });
-      } else {
-        restoreNickname(changedUserID);
-      }
-
-      function restoreNickname(targetID) {
-        if (!queue.changedUsers.has(targetID)) {
-          api.changeNickname(queue.nickname, threadID, targetID, (err) => {
-            if (err) {
-              console.error(`[ERROR] changeNickname failed for ${targetID}: ${err.message}`);
-              api.sendMessage('⚠️ निकनेम रिस्टोर में गलती।', threadID);
-            } else {
-              console.log(`[DEBUG] Restored nickname for ${targetID} to "${queue.nickname}"`);
-              queue.changedUsers.add(targetID); // नए यूजर को ट्रैक करें
-              api.sendMessage(`🔒 निकनेम रिस्टोर हो गया: "${queue.nickname}" (यूजर ने चेंज किया था)`, threadID);
-            }
-          });
+      // सिर्फ चेंज होने पर रिस्टोर, अगर पहले से लॉक नाम नहीं है
+      if (!queue.changedUsers.has(changedUserID) || queue.nickname !== event.logMessageData.new_nickname) {
+        if (!botState.nicknameTimers[threadID]) {
+          botState.nicknameTimers[threadID] = setTimeout(() => {
+            api.changeNickname(queue.nickname, threadID, changedUserID, (err) => {
+              if (err) {
+                console.error(`[ERROR] changeNickname failed for ${changedUserID}: ${err.message}`);
+              } else {
+                console.log(`[DEBUG] Restored nickname for ${changedUserID} to "${queue.nickname}"`);
+                queue.changedUsers.add(changedUserID); // अब लॉक माना जाएगा
+              }
+              delete botState.nicknameTimers[threadID]; // टाइमर हटाओ
+            });
+          }, queue.interval); // 30 सेकंड डिले
         }
       }
     } catch (e) {
- Feast
       console.error('[ERROR] processNicknameChange error:', e.message);
-      api.sendMessage('⚠️ निकनेम रिस्टोर में गलती।', threadID);
     }
   }
 };
