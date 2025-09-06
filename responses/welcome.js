@@ -1,3 +1,4 @@
+// responses/welcome.js
 module.exports = {
     welcomeMessages: [
         "{name} आया है जलिल होने इस ग्रुप में 🌟",
