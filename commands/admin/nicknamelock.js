@@ -12,11 +12,10 @@ module.exports = {
 
       if (!botState.nicknameQueues) botState.nicknameQueues = {};
       if (!botState.nicknameTimers) botState.nicknameTimers = {};
-      if (!botState.memberCache) botState.memberCache = {};
 
       if (args[1] && args[1].toLowerCase() === 'on') {
-        const nickname = args.slice(2).join(' ') || 'LockedName'; // डिफॉल्ट निकनेम
-        const interval = 20000; // डिफॉल्ट 20 सेकंड
+        const nickname = args.slice(2).join(' ') || 'LockedName';
+        const interval = 30000; // 30 सेकंड
         console.log(`[DEBUG] Enabling nickname lock with nickname: ${nickname}, interval: ${interval}ms`);
 
         const tryFetchThreadInfo = (attempt = 1, maxAttempts = 5) => {
@@ -26,12 +25,8 @@ module.exports = {
               if (attempt < maxAttempts) {
                 setTimeout(() => tryFetchThreadInfo(attempt + 1, maxAttempts), Math.pow(2, attempt) * 5000);
               } else {
-                const members = botState.memberCache[threadID] ? Array.from(botState.memberCache[threadID]) : [];
-                if (members.length === 0) {
-                  api.sendMessage('⚠️ कोई ग्रुप मेंबर्स नहीं मिले।', threadID);
-                  return;
-                }
-                initializeNicknameLock(members);
+                api.sendMessage('⚠️ ग्रुप मेंबर्स लोड करने में असफल।', threadID);
+                return;
               }
               return;
             }
@@ -50,7 +45,7 @@ module.exports = {
             botUserId,
             active: true,
             completed: false,
-            changedUsers: new Set(), // ट्रैक करने के लिए
+            changedUsers: new Set(),
             interval
           };
 
@@ -60,7 +55,7 @@ module.exports = {
             return;
           }
 
-          api.sendMessage(`🔒 निकनेम लॉक चालू: "${nickname}"। सभी ${botState.nicknameQueues[threadID].members.length} मेंबर्स के निकनेम हर 20 सेकंड में सेट हो जाएंगे।`, threadID);
+          api.sendMessage(`🔒 निकनेम लॉक चालू: "${nickname}"। अब 30 सेकंड में निकनेम चेंज होंगे।`, threadID);
           setNextNicknameChange(api, botState, threadID, botUserId);
         };
 
@@ -86,13 +81,15 @@ module.exports = {
 
 function setNextNicknameChange(api, botState, threadID, botUserId) {
   const queue = botState.nicknameQueues[threadID];
-  if (!queue || !queue.active || queue.completed) return;
+  if (!queue || !queue.active) return;
 
   if (queue.currentIndex >= queue.members.length) {
-    queue.completed = true;
-    console.log(`[DEBUG] Initial nickname setup completed for thread ${threadID}`);
-    api.sendMessage('✅ सभी निकनेम लॉक हो गए। अब सिर्फ चेंज होने पर या नए यूजर के लिए रिस्टोर होगा।', threadID);
-    return;
+    if (!queue.completed) {
+      queue.completed = true;
+      console.log(`[DEBUG] Initial nickname setup completed for thread ${threadID}`);
+      api.sendMessage('✅ सबके निकनेम बदल गए हैं। अब सिर्फ चेंज होने पर रिस्टोर होगा।', threadID);
+    }
+    return; // active रहने देगा
   }
 
   const targetID = queue.members[queue.currentIndex];
@@ -104,18 +101,17 @@ function setNextNicknameChange(api, botState, threadID, botUserId) {
     return;
   }
 
-  api.changeNickname(queue.nickname, threadID, targetID, (err) => {
-    if (err) {
-      console.error(`[ERROR] changeNickname failed for ${targetID}: ${err.message}`);
-      api.sendMessage('⚠️ निकनेम बदलने में गलती।', threadID);
-    } else {
-      console.log(`[DEBUG] Changed nickname for ${targetID} to "${queue.nickname}"`);
-      queue.changedUsers.add(targetID); // यूजर को ट्रैक करें
+  botState.nicknameTimers[threadID] = setTimeout(() => {
+    api.changeNickname(queue.nickname, threadID, targetID, (err) => {
+      if (err) {
+        console.error(`[ERROR] changeNickname failed for ${targetID}: ${err.message}`);
+        api.sendMessage('⚠️ निकनेम बदलने में गलती।', threadID);
+      } else {
+        console.log(`[DEBUG] Changed nickname for ${targetID} to "${queue.nickname}"`);
+        queue.changedUsers.add(targetID);
+      }
+      queue.currentIndex += 1;
+      setNextNicknameChange(api, botState, threadID, botUserId); // अगला कॉल
+    });
+  }, queue.interval); // 30 सेकंड डिले
     }
-
-    queue.currentIndex += 1;
-    botState.nicknameTimers[threadID] = setTimeout(() => {
-      setNextNicknameChange(api, botState, threadID, botUserId);
-    }, queue.interval);
-  });
-}
