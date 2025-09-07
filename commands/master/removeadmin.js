@@ -1,5 +1,5 @@
 const fs = require('fs');
-const { LEARNED_RESPONSES_PATH } = require('../../config/constants');
+const { LEARNED_RESPONSES_PATH, MASTER_ID } = require('../../config/constants');
 
 module.exports = {
   name: "removeadmin",
@@ -38,7 +38,7 @@ module.exports = {
       // यूजर की जानकारी लेना
       api.getUserInfo(targetID, (err, ret) => {
         if (err || !ret?.[targetID]) {
-          console.error(`Removeadmin user info error for UID ${targetID}:`, err?.message || err);
+          console.error(`Removeadmin user info error for UID ${targetID} in thread ${threadID}:`, err?.message || err);
           api.sendMessage('❌ यूजर की जानकारी लेने में असफल। कृपया फिर से कोशिश करें।', threadID);
           return;
         }
@@ -58,12 +58,12 @@ module.exports = {
           fs.writeFileSync(LEARNED_RESPONSES_PATH, JSON.stringify(learnedResponses, null, 2));
           api.sendMessage(`✅ ${name} (${targetID}) को Shalender Hindu Ji ने एडमिन लिस्ट से हटा दिया!`, threadID);
         } catch (fileErr) {
-          console.error(`Removeadmin file write error for UID ${targetID}:`, fileErr.message);
+          console.error(`Removeadmin file write error for UID ${targetID} in thread ${threadID}:`, fileErr.message);
           api.sendMessage('❌ फाइल अपडेट करने में गलती। कृपया फिर से कोशिश करें।', threadID);
         }
       });
     } catch (e) {
-      console.error(`Removeadmin general error for thread ${threadID}:`, e.message);
+      console.error(`Removeadmin general error for thread ${threadID}, sender ${event.senderID}:`, e.message);
       api.sendMessage('❌ removeadmin कमांड में त्रुटि। कृपया फिर से कोशिश करें या डेवलपर से संपर्क करें।', threadID);
     }
   }
