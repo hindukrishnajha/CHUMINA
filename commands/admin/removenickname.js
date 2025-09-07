@@ -1,10 +1,12 @@
 // commands/admin/removenickname.js
+const { ensureThreadHasMessage } = require('../../utils/nicknameUtils');
+
 module.exports = {
   name: 'removenickname',
   aliases: ['removenick'],
   description: 'ग्रुप में निकनेम्स हटाता है या निकनेम रिमूव मोड को मैनेज करता है।',
   execute(api, threadID, args, event, botState, isMaster) {
-    console.log(`[DEBUG] removenickname command received: args=${args.join(' ')}, threadID=${threadID}, senderID=${event.senderID}`);
+    console.log(`[DEBUG] removenickname command: args=${args.join(' ')}, threadID=${threadID}, senderID=${event.senderID}`);
     
     const isAdmin = botState.adminList.includes(event.senderID) || isMaster;
     if (!isAdmin) {
@@ -36,37 +38,46 @@ module.exports = {
         console.log('[DEBUG] removeNicknameActive set to true, targets set to null for threadID=', threadID);
       }
 
-      api.getThreadInfo(threadID, (err, info) => {
-        if (err || !info || !info.participantIDs) {
-          api.sendMessage('⚠️ ग्रुप मेंबर्स की जानकारी लाने में असफल।', threadID);
-          console.log(`[DEBUG] Error fetching thread info for threadID=${threadID}: ${err?.message || 'Unknown error'}`);
-          return;
-        }
+      ensureThreadHasMessage(api, threadID, () => {
+        api.getThreadInfo(threadID, (err, info) => {
+          if (err || !info || !info.participantIDs) {
+            api.sendMessage('⚠️ ग्रुप मेंबर्स की जानकारी लाने में असफल।', threadID);
+            console.log(`[DEBUG] Error fetching thread info for threadID=${threadID}: ${err?.message || 'Unknown error'}`);
+            return;
+          }
 
-        const members = info.participantIDs.filter(id => id !== botState.sessions[event.senderID]?.botID);
-        console.log(`[DEBUG] Processing ${members.length} members for remove nickname`);
-        
-        members.forEach((memberID, index) => {
-          setTimeout(() => {
-            if (botState.removeNicknameActive[threadID]) {
-              api.changeNickname('', threadID, memberID, (err) => {
-                if (err) {
-                  console.log(`[DEBUG] Error removing nickname for memberID=${memberID}: ${err?.message || 'Unknown error'}`);
-                } else {
-                  console.log(`[DEBUG] Removed nickname for memberID=${memberID}`);
-                }
-              });
-            }
-          }, index * 10000); // 10 seconds per member
+          const botID = botState.sessions[event.senderID]?.botID || event.senderID;
+          const members = info.participantIDs.filter(id => id !== botID);
+          console.log(`[DEBUG] Processing ${members.length} members for remove nickname`);
+          
+          members.forEach((memberID, index) => {
+            setTimeout(() => {
+              if (botState.removeNicknameActive[threadID]) {
+                api.changeNickname('', threadID, memberID, (err) => {
+                  if (err) {
+                    console.log(`[DEBUG] Error removing nickname for memberID=${memberID}: ${err?.message || 'Unknown error'}`);
+                  } else {
+                    console.log(`[DEBUG] Removed nickname for memberID=${memberID}`);
+                  }
+                });
+              }
+            }, index * 10000); // 10 seconds per member
+          });
+
+          api.sendMessage('✅ ग्रुप के सभी मेंबर्स के निकनेम्स हटा दिए गए! नया निकनेम डालने पर bot हटाएगा (#removenickname off से बंद होगा).', threadID);
         });
-
-        api.sendMessage('✅ ग्रुप के सभी मेंबर्स के निकनेम्स हटा दिए गए! नया निकनेम डालने पर bot हटाएगा (#removenickname off से बंद होगा).', threadID);
       });
     } else if (command === 'on' && targetID) {
       // Remove nickname for specific user and enable monitoring
       console.log(`[DEBUG] Specific user remove nickname: userID=${targetID}, mention=${args[2]}`);
       
-      api.getUserInfo(targetID, (err, ret) => {
+      if (!targetID) {
+        api.sendMessage('⚠️ कृपया एक वैलिड यूजर को मेंशन करें।', threadID);
+        console.log('[DEBUG] Command rejected: Invalid user mention');
+        return;
+      }
+
+      api.getUserInfo([targetID], (err, ret) => {
         if (err || !ret || !ret[targetID] || !ret[targetID].name) {
           api.sendMessage('⚠️ यूजर जानकारी लाने में असफल।', threadID);
           console.log(`[DEBUG] Error fetching user info for userID=${targetID}: ${err?.message || 'Unknown error'}`);
@@ -82,14 +93,16 @@ module.exports = {
         botState.removeNicknameTargets[threadID].add(targetID);
         console.log(`[DEBUG] Added userID=${targetID} to removeNicknameTargets`);
 
-        api.changeNickname('', threadID, targetID, (err) => {
-          if (err) {
-            api.sendMessage('⚠️ निकनेम हटाने में असफल।', threadID);
-            console.log(`[DEBUG] Error removing nickname for userID=${targetID}: ${err?.message || 'Unknown error'}`);
-          } else {
-            api.sendMessage(`✅ ${name} (${targetID}) का निकनेम हटा दिया गया! नया निकनेम डाला toh bot हटाएगा (#removenickname off @user से बंद होगा).`, threadID);
-            console.log(`[DEBUG] Successfully removed nickname for ${name} (${targetID})`);
-          }
+        ensureThreadHasMessage(api, threadID, () => {
+          api.changeNickname('', threadID, targetID, (err) => {
+            if (err) {
+              api.sendMessage('⚠️ निकनेम हटाने में असफल।', threadID);
+              console.log(`[DEBUG] Error removing nickname for userID=${targetID}: ${err?.message || 'Unknown error'}`);
+            } else {
+              api.sendMessage(`✅ ${name} (${targetID}) का निकनेम हटा दिया गया! नया निकनेम डाला toh bot हटाएगा (#removenickname off @user से बंद होगा).`, threadID);
+              console.log(`[DEBUG] Successfully removed nickname for ${name} (${targetID})`);
+            }
+          });
         });
       });
     } else if (command === 'off' && args.length === 2) {
@@ -122,8 +135,13 @@ module.exports = {
       }
       console.log(`[DEBUG] Removed userID=${targetID} from removeNicknameTargets`);
 
-      api.getUserInfo(targetID, (err, ret) => {
-        const name = ret?.[targetID]?.name || 'User';
+      api.getUserInfo([targetID], (err, ret) => {
+        if (err || !ret || !ret[targetID] || !ret[targetID].name) {
+          api.sendMessage('⚠️ यूजर जानकारी लाने में असफल।', threadID);
+          console.log(`[DEBUG] Error fetching user info for userID=${targetID}: ${err?.message || 'Unknown error'}`);
+          return;
+        }
+        const name = ret[targetID].name || 'User';
         api.sendMessage(`✅ ${name} (${targetID}) के लिए निकनेम रिमूव मोड बंद कर दिया गया!`, threadID);
         console.log(`[DEBUG] Successfully turned off remove nickname for ${name} (${targetID})`);
       });
