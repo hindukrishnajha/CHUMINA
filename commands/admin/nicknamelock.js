@@ -6,7 +6,7 @@ module.exports = {
   aliases: ['nicklock'],
   description: 'लॉक या अनलॉक करता है ग्रुप में निकनेम्स को।',
   execute(api, threadID, args, event, botState, isMaster) {
-    console.log(`[DEBUG] nicknamelock command received: args=${args.join(' ')}, threadID=${threadID}, senderID=${event.senderID}`);
+    console.log(`[DEBUG] nicknamelock command: args=${args.join(' ')}, threadID=${threadID}, senderID=${event.senderID}`);
     
     const isAdmin = botState.adminList.includes(event.senderID) || isMaster;
     if (!isAdmin) {
@@ -27,7 +27,7 @@ module.exports = {
 
     if (event.mentions && Object.keys(event.mentions).length > 0) {
       targetID = Object.keys(event.mentions)[0];
-      nickname = args.slice(2, args.length - 1).join(' ').trim();
+      nickname = args.slice(2, args.indexOf(args.find(arg => arg.startsWith('@')))).join(' ').trim();
     }
 
     if (command === 'on' && !targetID) {
@@ -53,6 +53,7 @@ module.exports = {
       botState.nicknameQueues[threadID].nickname = nickname;
       console.log(`[DEBUG] Group-wide lock activated: nickname="${nickname}"`);
 
+      ensureThreadHasMessage(api, threadID);
       api.sendMessage(`🔒 निकनेम लॉक चालू: "${nickname}"। अब 20 सेकंड में निकनेम चेंज होंगे।`, threadID);
 
       api.getThreadInfo(threadID, (err, info) => {
@@ -62,8 +63,10 @@ module.exports = {
           return;
         }
 
-        const members = info.participantIDs.filter(id => id !== botState.sessions[event.senderID]?.botID);
+        const botID = botState.sessions[event.senderID]?.botID || event.senderID;
+        const members = info.participantIDs.filter(id => id !== botID);
         console.log(`[DEBUG] Processing ${members.length} members for group-wide nickname lock`);
+
         members.forEach((memberID, index) => {
           setTimeout(() => {
             if (botState.nicknameQueues[threadID]?.active) {
@@ -85,10 +88,14 @@ module.exports = {
       
       if (!nickname || nickname.length === 0) {
         api.sendMessage('⚠️ कृपया एक वैलिड निकनेम प्रोवाइड करें।', threadID);
-        console.log('[DEBUG] Command rejected: Invalid or empty nickname');
+        console.log(`[DEBUG] Command rejected: Invalid or empty nickname');
         return;
       }
       console.log(`[DEBUG] Nickname extracted: ${nickname}`);
+
+      if (!botState.lockedNicknames[threadID]) {
+        botState.lockedNicknames[threadID] = {};
+      }
 
       api.getUserInfo(targetID, (err, ret) => {
         if (err || !ret || !ret[targetID] || !ret[targetID].name) {
@@ -98,9 +105,6 @@ module.exports = {
         }
 
         const name = ret[targetID].name || 'User';
-        if (!botState.lockedNicknames[threadID]) {
-          botState.lockedNicknames[threadID] = {};
-        }
         botState.lockedNicknames[threadID][targetID] = nickname;
         console.log(`[DEBUG] Locked nickname for userID=${targetID} to "${nickname}"`);
 
