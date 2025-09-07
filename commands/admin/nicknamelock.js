@@ -26,13 +26,14 @@ module.exports = {
           return;
         }
 
-        // Extract nickname by joining all args after @user and removing brackets
+        // Extract nickname by joining all args after @user
         let nickname = args.slice(2).join(' ').trim();
         // Remove surrounding brackets if present
         if (nickname.startsWith('(') && nickname.endsWith(')')) {
           nickname = nickname.slice(1, -1).trim();
         }
-        if (!nickname) {
+        // Allow Hindi and other Unicode characters, but ensure it's not empty
+        if (!nickname || nickname.length === 0) {
           api.sendMessage('⚠️ कृपया एक वैलिड निकनेम प्रोवाइड करें।', threadID);
           return;
         }
@@ -64,7 +65,8 @@ module.exports = {
         if (nickname.startsWith('(') && nickname.endsWith(')')) {
           nickname = nickname.slice(1, -1).trim();
         }
-        if (!nickname) {
+        // Allow Hindi and other Unicode characters, but ensure it's not empty
+        if (!nickname || nickname.length === 0) {
           api.sendMessage('⚠️ कृपया एक वैलिड निकनेम प्रोवाइड करें।', threadID);
           return;
         }
