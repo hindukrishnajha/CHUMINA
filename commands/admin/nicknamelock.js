@@ -1,3 +1,6 @@
+// commands/admin/nicknamelock.js
+const { ensureThreadHasMessage } = require('../../utils/nicknameUtils');
+
 module.exports = {
   name: 'nicknamelock',
   aliases: ['nicklock'],
@@ -12,17 +15,23 @@ module.exports = {
       return;
     }
 
-    if (args.length < 1) {
+    if (args.length < 2) {
       api.sendMessage('उपयोग: #nicknamelock on <nickname> या #nicknamelock on <nickname> @user या #nicknamelock off या #nicknamelock off @user', threadID);
       console.log('[DEBUG] Command rejected: Insufficient arguments');
       return;
     }
 
-    const command = args[0].toLowerCase();
+    const command = args[1].toLowerCase();
+    let nickname = args.slice(2).join(' ').trim();
+    let targetID = null;
 
-    if (command === 'on' && !args[args.length - 1].startsWith('@')) {
+    if (event.mentions && Object.keys(event.mentions).length > 0) {
+      targetID = Object.keys(event.mentions)[0];
+      nickname = args.slice(2, args.length - 1).join(' ').trim();
+    }
+
+    if (command === 'on' && !targetID) {
       // Group-wide nickname lock
-      let nickname = args.slice(1).join(' ').trim();
       if (!nickname || nickname.length === 0) {
         api.sendMessage('⚠️ कृपया एक वैलिड निकनेम प्रोवाइड करें।', threadID);
         console.log('[DEBUG] Command rejected: Invalid or empty nickname for group-wide lock');
@@ -35,7 +44,7 @@ module.exports = {
           active: false,
           nickname: '',
           changedUsers: new Set(),
-          interval: 30000,
+          interval: 20000, // 20 seconds
           botUserId: botState.sessions[event.senderID]?.botID || event.senderID
         };
       }
@@ -44,7 +53,7 @@ module.exports = {
       botState.nicknameQueues[threadID].nickname = nickname;
       console.log(`[DEBUG] Group-wide lock activated: nickname="${nickname}"`);
 
-      api.sendMessage(`🔒 निकनेम लॉक चालू: "${nickname}"। अब 30 सेकंड में निकनेम चेंज होंगे।`, threadID);
+      api.sendMessage(`🔒 निकनेम लॉक चालू: "${nickname}"। अब 20 सेकंड में निकनेम चेंज होंगे।`, threadID);
 
       api.getThreadInfo(threadID, (err, info) => {
         if (err || !info || !info.participantIDs) {
@@ -67,21 +76,13 @@ module.exports = {
                 }
               });
             }
-          }, index * 1000);
+          }, index * 20000); // 20 seconds per member
         });
       });
-    } else if (command === 'on' && args[args.length - 1].startsWith('@') && event.mentions && Object.keys(event.mentions).length > 0) {
+    } else if (command === 'on' && targetID) {
       // Specific user nickname lock
-      const userID = Object.keys(event.mentions)[0];
-      console.log(`[DEBUG] Specific user lock: userID=${userID}, mention=${args[args.length - 1]}`);
+      console.log(`[DEBUG] Specific user lock: userID=${targetID}, mention=${args[args.length - 1]}`);
       
-      if (!userID) {
-        api.sendMessage('⚠️ कृपया एक वैलिड यूजर को मेंशन करें।', threadID);
-        console.log('[DEBUG] Command rejected: Invalid user mention');
-        return;
-      }
-
-      let nickname = args.slice(1, -1).join(' ').trim();
       if (!nickname || nickname.length === 0) {
         api.sendMessage('⚠️ कृपया एक वैलिड निकनेम प्रोवाइड करें।', threadID);
         console.log('[DEBUG] Command rejected: Invalid or empty nickname');
@@ -89,31 +90,31 @@ module.exports = {
       }
       console.log(`[DEBUG] Nickname extracted: ${nickname}`);
 
-      api.getUserInfo(userID, (err, ret) => {
-        if (err || !ret || !ret[userID] || !ret[userID].name) {
+      api.getUserInfo(targetID, (err, ret) => {
+        if (err || !ret || !ret[targetID] || !ret[targetID].name) {
           api.sendMessage('⚠️ यूजर जानकारी लाने में असफल।', threadID);
-          console.log(`[DEBUG] Error fetching user info for userID=${userID}: ${err?.message || 'Unknown error'}`);
+          console.log(`[DEBUG] Error fetching user info for userID=${targetID}: ${err?.message || 'Unknown error'}`);
           return;
         }
 
-        const name = ret[userID].name || 'User';
+        const name = ret[targetID].name || 'User';
         if (!botState.lockedNicknames[threadID]) {
           botState.lockedNicknames[threadID] = {};
         }
-        botState.lockedNicknames[threadID][userID] = nickname;
-        console.log(`[DEBUG] Locked nickname for userID=${userID} to "${nickname}"`);
+        botState.lockedNicknames[threadID][targetID] = nickname;
+        console.log(`[DEBUG] Locked nickname for userID=${targetID} to "${nickname}"`);
 
-        api.changeNickname(nickname, threadID, userID, (err) => {
+        api.changeNickname(nickname, threadID, targetID, (err) => {
           if (err) {
             api.sendMessage('⚠️ निकनेम लॉक करने में असफल।', threadID);
-            console.log(`[DEBUG] Error setting nickname for userID=${userID}: ${err?.message || 'Unknown error'}`);
+            console.log(`[DEBUG] Error setting nickname for userID=${targetID}: ${err?.message || 'Unknown error'}`);
           } else {
-            api.sendMessage(`✅ ${name} (${userID}) का निकनेम "${nickname}" पे लॉक कर दिया गया!`, threadID);
-            console.log(`[DEBUG] Successfully locked nickname for ${name} (${userID}) to "${nickname}"`);
+            api.sendMessage(`✅ ${name} (${targetID}) का निकनेम "${nickname}" पे लॉक कर दिया गया!`, threadID);
+            console.log(`[DEBUG] Successfully locked nickname for ${name} (${targetID}) to "${nickname}"`);
           }
         });
       });
-    } else if (command === 'off' && args.length === 1) {
+    } else if (command === 'off' && args.length === 2) {
       // Group-wide nickname unlock
       if (!botState.nicknameQueues[threadID]?.active) {
         api.sendMessage('⚠️ निकनेम लॉक पहले से बंद है।', threadID);
@@ -129,41 +130,34 @@ module.exports = {
       }
       api.sendMessage('🔓 निकनेम लॉक बंद हो गया।', threadID);
       console.log('[DEBUG] Group-wide nickname lock deactivated');
-    } else if (command === 'off' && args[1]?.startsWith('@') && event.mentions && Object.keys(event.mentions).length > 0) {
+    } else if (command === 'off' && targetID) {
       // Specific user nickname unlock
-      const userID = Object.keys(event.mentions)[0];
-      console.log(`[DEBUG] Specific user unlock: userID=${userID}, mention=${args[1]}`);
+      console.log(`[DEBUG] Specific user unlock: userID=${targetID}, mention=${args[2]}`);
       
-      if (!userID) {
-        api.sendMessage('⚠️ कृपया एक वैलिड यूजर को मेंशन करें।', threadID);
-        console.log('[DEBUG] Command rejected: Invalid user mention');
-        return;
-      }
-
-      if (!botState.lockedNicknames[threadID]?.[userID]) {
+      if (!botState.lockedNicknames[threadID]?.[targetID]) {
         api.sendMessage('⚠️ इस यूजर का निकनेम लॉक नहीं है।', threadID);
-        console.log(`[DEBUG] Command rejected: No nickname lock for userID=${userID}`);
+        console.log(`[DEBUG] Command rejected: No nickname lock for userID=${targetID}`);
         return;
       }
 
-      api.getUserInfo(userID, (err, ret) => {
-        if (err || !ret || !ret[userID] || !ret[userID].name) {
+      api.getUserInfo(targetID, (err, ret) => {
+        if (err || !ret || !ret[targetID] || !ret[targetID].name) {
           api.sendMessage('⚠️ यूजर जानकारी लाने में असफल।', threadID);
-          console.log(`[DEBUG] Error fetching user info for userID=${userID}: ${err?.message || 'Unknown error'}`);
+          console.log(`[DEBUG] Error fetching user info for userID=${targetID}: ${err?.message || 'Unknown error'}`);
           return;
         }
 
-        const name = ret[userID].name || 'User';
-        delete botState.lockedNicknames[threadID][userID];
-        console.log(`[DEBUG] Removed nickname lock for userID=${userID}`);
+        const name = ret[targetID].name || 'User';
+        delete botState.lockedNicknames[threadID][targetID];
+        console.log(`[DEBUG] Removed nickname lock for userID=${targetID}`);
 
-        api.changeNickname('', threadID, userID, (err) => {
+        api.changeNickname('', threadID, targetID, (err) => {
           if (err) {
             api.sendMessage('⚠️ निकनेम हटाने में असफल।', threadID);
-            console.log(`[DEBUG] Error removing nickname for userID=${userID}: ${err?.message || 'Unknown error'}`);
+            console.log(`[DEBUG] Error removing nickname for userID=${targetID}: ${err?.message || 'Unknown error'}`);
           } else {
-            api.sendMessage(`✅ ${name} (${userID}) का निकनेम लॉक हटा दिया गया!`, threadID);
-            console.log(`[DEBUG] Successfully removed nickname lock for ${name} (${userID})`);
+            api.sendMessage(`✅ ${name} (${targetID}) का निकनेम लॉक हटा दिया गया!`, threadID);
+            console.log(`[DEBUG] Successfully removed nickname lock for ${name} (${targetID})`);
           }
         });
       });
