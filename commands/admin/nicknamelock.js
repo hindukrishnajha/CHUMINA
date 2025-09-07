@@ -20,7 +20,7 @@ module.exports = {
 
     const command = args[0].toLowerCase();
 
-    if (command === 'on' && args.length >= 2 && !args[args.length - 1].startsWith('@')) {
+    if (command === 'on' && !args[args.length - 1].startsWith('@')) {
       // Group-wide nickname lock
       let nickname = args.slice(1).join(' ').trim();
       if (!nickname || nickname.length === 0) {
@@ -70,7 +70,7 @@ module.exports = {
           }, index * 1000);
         });
       });
-    } else if (command === 'on' && args.length >= 2 && args[args.length - 1].startsWith('@') && event.mentions && Object.keys(event.mentions).length > 0) {
+    } else if (command === 'on' && args[args.length - 1].startsWith('@') && event.mentions && Object.keys(event.mentions).length > 0) {
       // Specific user nickname lock
       const userID = Object.keys(event.mentions)[0];
       console.log(`[DEBUG] Specific user lock: userID=${userID}, mention=${args[args.length - 1]}`);
