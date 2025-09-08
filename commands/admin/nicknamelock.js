@@ -74,17 +74,12 @@ module.exports = {
             const members = info.participantIDs.filter(id => id !== botID);
             console.log(`[DEBUG] Processing ${members.length} members for group-wide nickname lock`);
 
-            const batchSize = 10;
+            const batchSize = 5;
             for (let i = 0; i < members.length; i += batchSize) {
               setTimeout(() => {
                 if (botState.nicknameQueues[threadID]?.active) {
                   members.slice(i, i + batchSize).forEach(memberID => {
-                    const lastChange = botState.lastNicknameChange?.[`${threadID}:${memberID}`] || 0;
-                    if (Date.now() - lastChange < 20000) {
-                      console.log(`[DEBUG] Skipped nickname change for ${memberID} due to cooldown`);
-                      return;
-                    }
-                    retryNicknameChange(api, threadID, memberID, nickname, 3, (success) => {
+                    retryNicknameChange(api, threadID, memberID, nickname, 2, (success) => {
                       if (success) {
                         botState.nicknameQueues[threadID].changedUsers.add(memberID);
                         botState.lastNicknameChange = botState.lastNicknameChange || {};
@@ -94,7 +89,7 @@ module.exports = {
                     });
                   });
                 }
-              }, (i / batchSize) * 1000);
+              }, (i / batchSize) * 2000); // 2 seconds per batch
             }
             sendMessageWithCooldown(api, threadID, `🔒 निकनेम लॉक चालू: "${nickname}"। अब 20 सेकंड में निकनेम चेंज होंगे।`);
           });
@@ -121,7 +116,7 @@ module.exports = {
           botState.lockedNicknames[threadID][targetID] = nickname;
           console.log(`[DEBUG] Locked nickname for userID=${targetID} to "${nickname}"`);
 
-          retryNicknameChange(api, threadID, targetID, nickname, 3, (success) => {
+          retryNicknameChange(api, threadID, targetID, nickname, 2, (success) => {
             if (success) {
               sendMessageWithCooldown(api, threadID, `✅ ${name} (${targetID}) का निकनेम "${nickname}" पे लॉक कर दिया गया!`);
               botState.lastNicknameChange = botState.lastNicknameChange || {};
@@ -151,7 +146,7 @@ module.exports = {
         console.log(`[DEBUG] Group-wide nickname lock deactivated and cleared`);
         sendMessageWithCooldown(api, threadID, '🔓 निकनेम लॉक बंद हो गया।');
       } else if (command === 'off' && targetID) {
-        // Specific user nickname unlock
+        // Specific user nickname unlock - No nickname change
         if (!botState.lockedNicknames?.[threadID]?.[targetID]) {
           sendMessageWithCooldown(api, threadID, '⚠️ इस यूजर का निकनेम लॉक नहीं है।');
           console.log(`[DEBUG] Command rejected: No nickname lock for userID=${targetID}`);
@@ -171,18 +166,8 @@ module.exports = {
             delete botState.lockedNicknames[threadID];
           }
           console.log(`[DEBUG] Removed nickname lock for userID=${targetID}`);
-
-          retryNicknameChange(api, threadID, targetID, '', 3, (success) => {
-            if (success) {
-              sendMessageWithCooldown(api, threadID, `✅ ${name} (${targetID}) का निकनेम लॉक हटा दिया गया!`);
-              botState.lastNicknameChange = botState.lastNicknameChange || {};
-              botState.lastNicknameChange[`${threadID}:${targetID}`] = Date.now();
-              console.log(`[DEBUG] Successfully removed nickname lock for ${name} (${targetID})`);
-            } else {
-              sendMessageWithCooldown(api, threadID, '⚠️ निकनेम हटाने में असफल। बाद में ट्राई करें।');
-              console.log(`[DEBUG] Error removing nickname for userID=${targetID}`);
-            }
-          });
+          sendMessageWithCooldown(api, threadID, `✅ ${name} (${targetID}) का निकनेम लॉक हटा दिया गया!`);
+          console.log(`[DEBUG] Successfully removed nickname lock for ${name} (${targetID})`);
         });
       } else {
         sendMessageWithCooldown(api, threadID, 'उपयोग: #nicklock on <nickname> या #nicklock on @user <nickname> या #nicklock off या #nicklock off @user');
