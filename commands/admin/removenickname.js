@@ -4,7 +4,7 @@ module.exports = {
   name: 'removenick',
   aliases: ['removenickname'],
   description: 'ग्रुप में निकनेम्स हटाता है या निकनेम रिमूव मोड को मैनेज करता है।',
-  execute(api, threadID, args, event, botState = {}) => {
+  execute(api, threadID, args, event, botState = {}, isMaster = false) => {
     console.log(`[DEBUG] removenick command: args=${args.join(' ')}, threadID=${threadID}, senderID=${event.senderID}`);
     
     botState.adminList = botState.adminList || [];
