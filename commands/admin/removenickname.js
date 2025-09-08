@@ -4,9 +4,10 @@ module.exports = {
   name: 'removenick',
   aliases: ['removenickname'],
   description: 'ग्रुप में निकनेम्स हटाता है या निकनेम रिमूव मोड को मैनेज करता है।',
-  execute(api, threadID, args, event, botState, isMaster) {
+  execute(api, threadID, args, event, botState = {}) => {
     console.log(`[DEBUG] removenick command: args=${args.join(' ')}, threadID=${threadID}, senderID=${event.senderID}`);
     
+    botState.adminList = botState.adminList || [];
     const isAdmin = botState.adminList.includes(event.senderID) || isMaster;
     if (!isAdmin) {
       sendMessageWithCooldown(api, threadID, '🚫 ये कमांड सिर्फ एडमिन्स या मास्टर के लिए है!');
@@ -24,10 +25,12 @@ module.exports = {
     let targetID = Object.keys(event.mentions)[0] || null;
 
     try {
+      botState.removeNicknameActive = botState.removeNicknameActive || {};
+      botState.removeNicknameTargets = botState.removeNicknameTargets || {};
+      botState.lastNicknameChange = botState.lastNicknameChange || {};
+
       if (command === 'on' && args[2] === '@everyone') {
         // Remove nicknames for all members and enable monitoring
-        if (!botState.removeNicknameActive) botState.removeNicknameActive = {};
-        if (!botState.removeNicknameTargets) botState.removeNicknameTargets = {};
         botState.removeNicknameActive[threadID] = true;
         botState.removeNicknameTargets[threadID] = null; // null means apply to everyone
         console.log('[DEBUG] removeNicknameActive set to true, targets set to null for threadID=', threadID);
@@ -49,16 +52,20 @@ module.exports = {
               setTimeout(() => {
                 if (botState.removeNicknameActive[threadID]) {
                   members.slice(i, i + batchSize).forEach(memberID => {
+                    const lastChange = botState.lastNicknameChange[`${threadID}:${memberID}`] || 0;
+                    if (Date.now() - lastChange < 60000) {
+                      console.log(`[DEBUG] Skipped nickname removal for ${memberID} due to cooldown`);
+                      return;
+                    }
                     retryNicknameChange(api, threadID, memberID, '', 2, (success) => {
                       if (success) {
-                        botState.lastNicknameChange = botState.lastNicknameChange || {};
                         botState.lastNicknameChange[`${threadID}:${memberID}`] = Date.now();
                         console.log(`[DEBUG] Removed nickname for memberID=${memberID}`);
                       }
                     });
                   });
                 }
-              }, (i / batchSize) * 2000); // 2 seconds per batch
+              }, (i / batchSize) * 3000); // 3 seconds per batch
             }
             sendMessageWithCooldown(api, threadID, '✅ ग्रुप के सभी मेंबर्स के निकनेम्स हटा दिए गए! नया निकनेम डालने पर bot हटाएगा (#removenick off से बंद होगा).');
           });
@@ -79,8 +86,6 @@ module.exports = {
           }
 
           const name = ret[targetID].name || 'User';
-          if (!botState.removeNicknameActive) botState.removeNicknameActive = {};
-          if (!botState.removeNicknameTargets) botState.removeNicknameTargets = {};
           if (!botState.removeNicknameActive[threadID]) {
             botState.removeNicknameActive[threadID] = true;
             botState.removeNicknameTargets[threadID] = new Set();
@@ -91,7 +96,6 @@ module.exports = {
           retryNicknameChange(api, threadID, targetID, '', 2, (success) => {
             if (success) {
               sendMessageWithCooldown(api, threadID, `✅ ${name} (${targetID}) का निकनेम हटा दिया गया! नया निकनेम डाला toh bot हटाएगा (#removenick off @user से बंद होगा).`);
-              botState.lastNicknameChange = botState.lastNicknameChange || {};
               botState.lastNicknameChange[`${threadID}:${targetID}`] = Date.now();
               console.log(`[DEBUG] Successfully removed nickname for ${name} (${targetID})`);
             } else {
@@ -141,7 +145,7 @@ module.exports = {
         console.log('[DEBUG] Command rejected: Invalid command');
       }
     } catch (e) {
-      console.error(`[ERROR] removenick error: ${e.message}`);
+      console.error(`[ERROR] removenick error: ${e?.message || 'Unknown error'}`);
       sendMessageWithCooldown(api, threadID, '⚠️ कुछ गड़बड़ हुई, बाद में ट्राई करें।');
     }
   }
