@@ -28,6 +28,7 @@ module.exports = {
 
     try {
       // यूट्यूब पर गाना सर्च करें
+      api.sendMessage(`🔍 "${query}" सर्च कर रहा हूँ...`, threadID);
       const searchResults = await yts(query);
       const video = searchResults.videos[0];
       if (!video) {
@@ -48,6 +49,7 @@ module.exports = {
       await new Promise((resolve, reject) => {
         writeStream.on('finish', resolve);
         writeStream.on('error', reject);
+        stream.on('error', reject);
       });
 
       const message = {
@@ -65,7 +67,9 @@ module.exports = {
       botState.commandCooldowns[threadID] = { music: true };
       setTimeout(() => delete botState.commandCooldowns[threadID]?.music, 30000);
     } catch (err) {
-      api.sendMessage(`❌ गाना भेजने में गलती हुई: ${err.message}`, threadID);
+      api.sendMessage(`❌ गाना भेजने में गलती हुई: ${err.message || 'कुछ गड़बड़ हुई, दोबारा ट्राई करो!'}`,
+        threadID
+      );
     } finally {
       // ऑडियो फाइल तुरंत डिलीट करें
       if (fs.existsSync(audioPath)) {
