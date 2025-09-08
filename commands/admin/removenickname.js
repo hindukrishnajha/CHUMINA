@@ -1,4 +1,3 @@
-// commands/admin/removenickname.js
 const { ensureThreadHasMessage } = require('../../utils/nicknameUtils');
 
 module.exports = {
@@ -22,16 +21,10 @@ module.exports = {
     }
 
     const command = args[1].toLowerCase();
-    let targetID = null;
-
-    if (event.mentions && Object.keys(event.mentions).length > 0) {
-      targetID = Object.keys(event.mentions)[0];
-    }
+    const targetID = Object.keys(event.mentions)[0] || null;
 
     if (command === 'on' && args[2] === '@everyone') {
       // Remove nicknames for all members and enable monitoring
-      console.log('[DEBUG] Activating remove nickname mode for @everyone');
-      
       if (!botState.removeNicknameActive[threadID]) {
         botState.removeNicknameActive[threadID] = true;
         botState.removeNicknameTargets[threadID] = null; // null means apply to everyone
@@ -46,16 +39,17 @@ module.exports = {
             return;
           }
 
-          const botID = botState.sessions[event.senderID]?.botID || event.senderID;
+          const botID = api.getCurrentUserID();
           const members = info.participantIDs.filter(id => id !== botID);
           console.log(`[DEBUG] Processing ${members.length} members for remove nickname`);
-          
+
           members.forEach((memberID, index) => {
             setTimeout(() => {
               if (botState.removeNicknameActive[threadID]) {
                 api.changeNickname('', threadID, memberID, (err) => {
                   if (err) {
                     console.log(`[DEBUG] Error removing nickname for memberID=${memberID}: ${err?.message || 'Unknown error'}`);
+                    api.sendMessage('⚠️ निकनेम हटाने में असफल।', threadID);
                   } else {
                     console.log(`[DEBUG] Removed nickname for memberID=${memberID}`);
                   }
@@ -63,14 +57,11 @@ module.exports = {
               }
             }, index * 10000); // 10 seconds per member
           });
-
           api.sendMessage('✅ ग्रुप के सभी मेंबर्स के निकनेम्स हटा दिए गए! नया निकनेम डालने पर bot हटाएगा (#removenickname off से बंद होगा).', threadID);
         });
       });
     } else if (command === 'on' && targetID) {
       // Remove nickname for specific user and enable monitoring
-      console.log(`[DEBUG] Specific user remove nickname: userID=${targetID}, mention=${args[2]}`);
-      
       if (!targetID) {
         api.sendMessage('⚠️ कृपया एक वैलिड यूजर को मेंशन करें।', threadID);
         console.log('[DEBUG] Command rejected: Invalid user mention');
@@ -105,7 +96,7 @@ module.exports = {
           });
         });
       });
-    } else if (command === 'off' && args.length === 2) {
+    } else if (command === 'off' && !targetID) {
       // Stop remove nickname mode for group
       if (!botState.removeNicknameActive[threadID]) {
         api.sendMessage('⚠️ निकनेम हटाने का मोड पहले से बंद है।', threadID);
@@ -116,12 +107,9 @@ module.exports = {
       botState.removeNicknameActive[threadID] = false;
       delete botState.removeNicknameTargets[threadID];
       console.log('[DEBUG] Deactivated remove nickname mode and cleared targets for threadID=', threadID);
-      
       api.sendMessage('✅ निकनेम हटाने का मोड बंद कर दिया गया!', threadID);
     } else if (command === 'off' && targetID) {
       // Stop remove nickname mode for specific user
-      console.log(`[DEBUG] Specific user remove nickname off: userID=${targetID}, mention=${args[2]}`);
-      
       if (!botState.removeNicknameTargets[threadID]?.has(targetID)) {
         api.sendMessage('⚠️ इस यूजर के लिए निकनेम रिमूव मोड पहले से बंद है।', threadID);
         console.log(`[DEBUG] Command rejected: No remove nickname target for userID=${targetID}`);
