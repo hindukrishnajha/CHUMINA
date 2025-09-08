@@ -1,5 +1,6 @@
+// utils/nicknameUtils.js
 const messageCooldowns = new Map();
-const changeCooldown = 60000; // 60 seconds cooldown for nickname changes
+const changeCooldown = 20000; // 20 seconds cooldown for nickname changes
 
 module.exports = {
   ensureThreadHasMessage: (api, threadID, callback) => {
@@ -51,55 +52,62 @@ module.exports = {
         return;
       }
 
-      // User-specific nickname lock
-      if (botState.lockedNicknames[threadID]?.[changedUserID]) {
-        const lockedNickname = botState.lockedNicknames[threadID][changedUserID];
-        module.exports.retryNicknameChange(api, threadID, changedUserID, lockedNickname, 2, (success, name) => {
-          if (success) {
-            module.exports.sendMessageWithCooldown(api, threadID, `🔒 ${name} का निकनेम "${lockedNickname}" पे वापस सेट कर दिया गया!`);
-            botState.lastNicknameChange[`${threadID}:${changedUserID}`] = Date.now();
-          } else {
-            module.exports.sendMessageWithCooldown(api, threadID, '⚠️ निकनेम रीस्टोर करने में असफल। बाद में ट्राई करें।');
-          }
-        });
-        return;
-      }
-
-      // Group-wide nickname lock
-      if (botState.nicknameQueues[threadID]?.active) {
-        const queue = botState.nicknameQueues[threadID];
-        if (!queue.changedUsers.has(changedUserID)) {
-          module.exports.retryNicknameChange(api, threadID, changedUserID, queue.nickname, 2, (success, name) => {
-            if (success) {
-              queue.changedUsers.add(changedUserID);
-              module.exports.sendMessageWithCooldown(api, threadID, `🔒 ${name} का निकनेम "${queue.nickname}" पे वापस सेट कर दिया गया!`);
-              botState.lastNicknameChange[`${threadID}:${changedUserID}`] = Date.now();
-            } else {
-              module.exports.sendMessageWithCooldown(api, threadID, '⚠️ निकनेम रीस्टोर करने में असफल। बाद में ट्राई करें।');
-            }
-            delete botState.nicknameTimers?.[threadID];
-          }, 20000);
+      // Check admin permission once to save calls
+      api.getThreadInfo(threadID, (err, info) => {
+        if (err || !info || !info.adminIDs.some(admin => admin.id === botID)) {
+          module.exports.sendMessageWithCooldown(api, threadID, '⚠️ निकनेम चेंज करने के लिए बॉट को एडमिन परमिशन चाहिए।');
+          return;
         }
-        return;
-      }
 
-      // Remove nickname mode
-      if (botState.removeNicknameActive[threadID]) {
-        const isTargeted = !botState.removeNicknameTargets[threadID] || botState.removeNicknameTargets[threadID].has(changedUserID);
-        if (isTargeted) {
-          module.exports.retryNicknameChange(api, threadID, changedUserID, '', 2, (success, name) => {
+        // User-specific lock
+        if (botState.lockedNicknames[threadID]?.[changedUserID]) {
+          const lockedNickname = botState.lockedNicknames[threadID][changedUserID];
+          module.exports.retryNicknameChange(api, threadID, changedUserID, lockedNickname, 1, (success, name) => {
             if (success) {
-              module.exports.sendMessageWithCooldown(api, threadID, `🔒 ${name} का निकनेम हटा दिया गया, क्योंकि रिमूव मोड एक्टिव है!`);
+              module.exports.sendMessageWithCooldown(api, threadID, `🔒 ${name} का निकनेम "${lockedNickname}" पे वापस सेट कर दिया गया!`);
               botState.lastNicknameChange[`${threadID}:${changedUserID}`] = Date.now();
             } else {
-              module.exports.sendMessageWithCooldown(api, threadID, '⚠️ निकनेम हटाने में असफल। बाद में ट्राई करें।');
+              module.exports.sendMessageWithCooldown(api, threadID, '⚠️ निकनेम रीस्टोर करने में असफल।');
             }
           });
+          return;
         }
-      }
+
+        // Group-wide lock
+        if (botState.nicknameQueues[threadID]?.active) {
+          const queue = botState.nicknameQueues[threadID];
+          if (!queue.changedUsers.has(changedUserID)) {
+            module.exports.retryNicknameChange(api, threadID, changedUserID, queue.nickname, 1, (success, name) => {
+              if (success) {
+                queue.changedUsers.add(changedUserID);
+                module.exports.sendMessageWithCooldown(api, threadID, `🔒 ${name} का निकनेम "${queue.nickname}" पे वापस सेट कर दिया गया!`);
+                botState.lastNicknameChange[`${threadID}:${changedUserID}`] = Date.now();
+              } else {
+                module.exports.sendMessageWithCooldown(api, threadID, '⚠️ निकनेम रीस्टोर करने में असफल।');
+              }
+            });
+          }
+          return;
+        }
+
+        // Remove mode
+        if (botState.removeNicknameActive[threadID]) {
+          const isTargeted = !botState.removeNicknameTargets[threadID] || botState.removeNicknameTargets[threadID].has(changedUserID);
+          if (isTargeted) {
+            module.exports.retryNicknameChange(api, threadID, changedUserID, '', 1, (success, name) => {
+              if (success) {
+                module.exports.sendMessageWithCooldown(api, threadID, `🔒 ${name} का निकनेम हटा दिया गया!`);
+                botState.lastNicknameChange[`${threadID}:${changedUserID}`] = Date.now();
+              } else {
+                module.exports.sendMessageWithCooldown(api, threadID, '⚠️ निकनेम हटाने में असफल।');
+              }
+            });
+          }
+        }
+      });
     } catch (e) {
       console.error(`[ERROR] processNicknameChange error: ${e?.message || 'Unknown error'}`);
-      module.exports.sendMessageWithCooldown(api, threadID, '⚠️ कुछ गड़बड़ हुई, बाद में ट्राई करें।');
+      module.exports.sendMessageWithCooldown(api, threadID, '⚠️ कुछ गड़बड़ हुई।');
     }
   },
   retryNicknameChange: (api, threadID, userID, nickname, retries, callback, delay = 0) => {
@@ -109,13 +117,13 @@ module.exports = {
         api.changeNickname(nickname, threadID, userID, (err) => {
           if (err && retries > 0) {
             console.log(`[DEBUG] Retry ${retries} for userID=${userID}: ${err?.message || 'Unknown error'}`);
-            setTimeout(() => module.exports.retryNicknameChange(api, threadID, userID, nickname, retries - 1, callback, delay), 5000);
+            setTimeout(() => module.exports.retryNicknameChange(api, threadID, userID, nickname, retries - 1, callback, delay), 20000); // 20s retry delay
           } else if (err) {
             console.error(`[ERROR] changeNickname failed for ${userID}: ${err?.message || 'Unknown error'}`);
             callback(false);
           } else {
             console.log(`[DEBUG] ${nickname ? 'Set' : 'Removed'} nickname for userID=${userID} to "${nickname}"`);
-            api.getUserInfo(userID, (err, ret) => {
+            api.getUserInfo([userID], (err, ret) => {
               const name = ret?.[userID]?.name || 'User';
               callback(true, name);
             });
@@ -132,12 +140,13 @@ module.exports = {
   }
 };
 
-// Clear botState on exit
+// Clear botState on exit (already in index.js, but reinforced)
 process.on('exit', () => {
   botState.lockedNicknames = {};
   botState.nicknameQueues = {};
   botState.removeNicknameActive = {};
   botState.removeNicknameTargets = {};
   botState.lastNicknameChange = {};
+  botState.nicknameTimers = {};
   console.log('[DEBUG] Cleared botState on exit');
 });
