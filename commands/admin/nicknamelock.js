@@ -4,7 +4,7 @@ module.exports = {
   name: 'nicklock',
   aliases: ['nicknamelock'],
   description: 'लॉक या अनलॉक करता है ग्रुप में निकनेम्स को।',
-  execute(api, threadID, args, event, botState = {}) => {
+  execute(api, threadID, args, event, botState = {}, isMaster = false) => {
     console.log(`[DEBUG] nicklock command: args=${args.join(' ')}, threadID=${threadID}, senderID=${event.senderID}`);
     
     botState.adminList = botState.adminList || [];
