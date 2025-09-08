@@ -4,9 +4,10 @@ module.exports = {
   name: 'nicklock',
   aliases: ['nicknamelock'],
   description: 'लॉक या अनलॉक करता है ग्रुप में निकनेम्स को।',
-  execute(api, threadID, args, event, botState, isMaster) {
+  execute(api, threadID, args, event, botState = {}) => {
     console.log(`[DEBUG] nicklock command: args=${args.join(' ')}, threadID=${threadID}, senderID=${event.senderID}`);
     
+    botState.adminList = botState.adminList || [];
     const isAdmin = botState.adminList.includes(event.senderID) || isMaster;
     if (!isAdmin) {
       sendMessageWithCooldown(api, threadID, '🚫 ये कमांड सिर्फ एडमिन्स या मास्टर के लिए है!');
@@ -38,6 +39,10 @@ module.exports = {
     }
 
     try {
+      botState.nicknameQueues = botState.nicknameQueues || {};
+      botState.lockedNicknames = botState.lockedNicknames || {};
+      botState.lastNicknameChange = botState.lastNicknameChange || {};
+
       if (command === 'on' && !targetID) {
         // Group-wide nickname lock
         if (!nickname || nickname.length === 0) {
@@ -46,7 +51,6 @@ module.exports = {
           return;
         }
 
-        if (!botState.nicknameQueues) botState.nicknameQueues = {};
         if (!botState.nicknameQueues[threadID]) {
           botState.nicknameQueues[threadID] = {
             active: false,
@@ -79,17 +83,21 @@ module.exports = {
               setTimeout(() => {
                 if (botState.nicknameQueues[threadID]?.active) {
                   members.slice(i, i + batchSize).forEach(memberID => {
+                    const lastChange = botState.lastNicknameChange[`${threadID}:${memberID}`] || 0;
+                    if (Date.now() - lastChange < 60000) {
+                      console.log(`[DEBUG] Skipped nickname change for ${memberID} due to cooldown`);
+                      return;
+                    }
                     retryNicknameChange(api, threadID, memberID, nickname, 2, (success) => {
                       if (success) {
                         botState.nicknameQueues[threadID].changedUsers.add(memberID);
-                        botState.lastNicknameChange = botState.lastNicknameChange || {};
                         botState.lastNicknameChange[`${threadID}:${memberID}`] = Date.now();
                         console.log(`[DEBUG] Set nickname for memberID=${memberID} to "${nickname}"`);
                       }
                     });
                   });
                 }
-              }, (i / batchSize) * 2000); // 2 seconds per batch
+              }, (i / batchSize) * 3000); // 3 seconds per batch
             }
             sendMessageWithCooldown(api, threadID, `🔒 निकनेम लॉक चालू: "${nickname}"। अब 20 सेकंड में निकनेम चेंज होंगे।`);
           });
@@ -102,7 +110,6 @@ module.exports = {
           return;
         }
 
-        if (!botState.lockedNicknames) botState.lockedNicknames = {};
         if (!botState.lockedNicknames[threadID]) botState.lockedNicknames[threadID] = {};
 
         api.getUserInfo(targetID, (err, ret) => {
@@ -119,7 +126,6 @@ module.exports = {
           retryNicknameChange(api, threadID, targetID, nickname, 2, (success) => {
             if (success) {
               sendMessageWithCooldown(api, threadID, `✅ ${name} (${targetID}) का निकनेम "${nickname}" पे लॉक कर दिया गया!`);
-              botState.lastNicknameChange = botState.lastNicknameChange || {};
               botState.lastNicknameChange[`${threadID}:${targetID}`] = Date.now();
               console.log(`[DEBUG] Successfully locked nickname for ${name} (${targetID}) to "${nickname}"`);
             } else {
@@ -174,7 +180,7 @@ module.exports = {
         console.log('[DEBUG] Command rejected: Invalid command');
       }
     } catch (e) {
-      console.error(`[ERROR] nicklock error: ${e.message}`);
+      console.error(`[ERROR] nicklock error: ${e?.message || 'Unknown error'}`);
       sendMessageWithCooldown(api, threadID, '⚠️ कुछ गड़बड़ हुई, बाद में ट्राई करें।');
     }
   }
