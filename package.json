@@ -14,7 +14,7 @@
     "fca-mafiya": "latest",
     "gtts": "^0.2.1",
     "ws": "^8.18.0",
-    "ytdl-core": "^4.11.5",
+    "play-dl": "^1.9.7",
     "yt-search": "^2.12.1"
   },
   "engines": {
