@@ -16,22 +16,6 @@ module.exports = {
       }
     });
   },
-  checkAdminPermission: (api, threadID, callback) => {
-    api.getThreadInfo(threadID, (err, info) => {
-      if (err || !info) {
-        console.error(`[ERROR] Failed to get thread info for ${threadID}: ${err?.message || 'Unknown error'}`);
-        api.sendMessage('⚠️ थ्रेड जानकारी लाने में असफल।', threadID);
-        return callback(false);
-      }
-      const botID = api.getCurrentUserID();
-      const isAdmin = info.adminIDs.some(admin => admin.id === botID);
-      if (!isAdmin) {
-        api.sendMessage('⚠️ इस कमांड के लिए बॉट को एडमिन परमिशन चाहिए।', threadID);
-        console.log(`[DEBUG] Bot is not admin in thread ${threadID}`);
-      }
-      callback(isAdmin);
-    });
-  },
   processNicknameChange: (api, threadID, changedUserID, botState) => {
     console.log(`[DEBUG] processNicknameChange called for threadID: ${threadID}, userID: ${changedUserID}`);
     try {
