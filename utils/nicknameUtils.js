@@ -3,6 +3,7 @@ const changeCooldown = 60000; // 60 seconds cooldown for nickname changes
 
 module.exports = {
   ensureThreadHasMessage: (api, threadID, callback) => {
+    console.log(`[DEBUG] ensureThreadHasMessage called for threadID: ${threadID}`);
     api.getThreadInfo(threadID, (err, info) => {
       if (err || !info || info.messageCount === 0) {
         console.log(`[DEBUG] Thread ${threadID} has no messages, sending dummy message`);
@@ -18,7 +19,7 @@ module.exports = {
       }
     });
   },
-  sendMessageWithCooldown: (api, threadID, message, cooldown = 15000) => { // 15 seconds
+  sendMessageWithCooldown: (api, threadID, message, cooldown = 20000) => { // 20 seconds
     const key = `${threadID}:${message}`;
     const lastSent = messageCooldowns.get(key) || 0;
     if (Date.now() - lastSent < cooldown) {
@@ -102,6 +103,7 @@ module.exports = {
     }
   },
   retryNicknameChange: (api, threadID, userID, nickname, retries, callback, delay = 0) => {
+    console.log(`[DEBUG] retryNicknameChange called for userID: ${userID}, nickname: ${nickname}, retries: ${retries}, delay: ${delay}`);
     const attempt = () => {
       module.exports.ensureThreadHasMessage(api, threadID, () => {
         api.changeNickname(nickname, threadID, userID, (err) => {
