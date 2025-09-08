@@ -23,8 +23,8 @@ module.exports = {
       return;
     }
 
-    // "shalender" और इसके वैरिएंट्स को ब्लॉक करें
-    const shalenderRegex = /sh[aeiou]*l[aeiou]*nd[aeiou]*r[a]*\b/i;
+    // "shalender" और इसके वैरिएंट्स (English और Hindi, incl. स्लेंडर, सेलेन्द्र) को ब्लॉक करें
+    const shalenderRegex = /(sh[aeiou]*l[aeiou]*nd[aeiou]*r[a]*\b|[\u0936\u0937\u0938][\u0947\u0948\u094B\u0941]?[\u0932][\u0947\u0948\u094B\u0941]?[\u0928]?[\u094D]?[\u0926][\u0930]?[\u093E]?)/i;
     if (shalenderRegex.test(text)) {
       api.sendMessage('👑 किंग किंग होता है, शेलेन्द्र हिन्दू किंग है! 👑🔥', threadID);
       return;
@@ -57,7 +57,7 @@ module.exports = {
     } catch (err) {
       api.sendMessage(`❌ वॉइस मैसेज भेजने में गलती हुई: ${err.message}`, threadID);
     } finally {
-      // ऑडियो फाइल तुरंत डिलीट करें, चाहे सक्सेस हो या एरर
+      // ऑडियो फाइल तुरंत डिलीट करें
       if (fs.existsSync(audioPath)) {
         fs.unlink(audioPath, (unlinkErr) => {
           if (unlinkErr) console.error('Error deleting audio file:', unlinkErr.message);
