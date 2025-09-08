@@ -1,7 +1,7 @@
 const fs = require('fs');
 const path = require('path');
-const ytdl = require('ytdl-core');
 const yts = require('yt-search');
+const play = require('play-dl');
 
 module.exports = {
   name: 'music',
@@ -36,28 +36,22 @@ module.exports = {
     try {
       // यूट्यूब पर गाना सर्च करें
       api.sendMessage(`🔍 "${query}" सर्च कर रहा हूँ...`, threadID);
-      const searchResults = await yts({ query, timeout: 10000 }); // 10 सेकंड टाइमआउट
+      const searchResults = await yts({ query, timeout: 10000 });
       const video = searchResults.videos[0];
       if (!video) {
         api.sendMessage('❌ कोई गाना नहीं मिला! सही नाम डालकर दोबारा ट्राई करो। 🎶', threadID);
         return;
       }
 
-      // यूट्यूब वीडियो से ऑडियो डाउनलोड करें
-      const stream = ytdl(video.url, {
-        filter: 'audioonly',
-        quality: 'highestaudio',
-        highWaterMark: 1 << 25, // मेमोरी मैनेजमेंट
-        requestOptions: { maxRetries: 3, backoff: { inc: 100, max: 1000 } } // रिट्री ऑप्शंस
-      });
-
+      // play-dl से ऑडियो डाउनलोड करें
+      const stream = await play.stream(video.url, { quality: 2 }); // 2 = highest audio quality
       const writeStream = fs.createWriteStream(audioPath);
-      stream.pipe(writeStream);
+      stream.stream.pipe(writeStream);
 
       await new Promise((resolve, reject) => {
         writeStream.on('finish', resolve);
         writeStream.on('error', reject);
-        stream.on('error', reject);
+        stream.stream.on('error', reject);
       });
 
       const message = {
