@@ -6,14 +6,14 @@ module.exports = {
     try {
       api.getThreadInfo(threadID, (err, info) => {
         if (err || !info?.participantIDs) {
-          api.sendMessage('Failed to get group info.', threadID);
+          api.sendMessage('ग्रुप की जानकारी नहीं मिली!', threadID);
           console.error('ThreadInfo error for pair:', err);
           return;
         }
 
         const members = info.participantIDs.filter(id => id !== botID);
         if (members.length < 2) {
-          api.sendMessage('Not enough members to pair.', threadID);
+          api.sendMessage('जोड़ा बनाने के लिए कम से कम 2 लोग चाहिए!', threadID);
           return;
         }
 
@@ -25,7 +25,7 @@ module.exports = {
 
         api.getUserInfo([random1, random2], async (err, ret) => {
           if (err || !ret) {
-            api.sendMessage('Failed to get user info.', threadID);
+            api.sendMessage('यूज़र की जानकारी नहीं मिली!', threadID);
             console.error('UserInfo error for pair:', err);
             return;
           }
@@ -42,7 +42,7 @@ module.exports = {
           ];
           const randomMsg = pairMessages[Math.floor(Math.random() * pairMessages.length)];
 
-          const msgBody = `💑 ये लो तुम्हारा जोड़ा! ${name1} और ${name2}!\n${randomMsg}`;
+          const msgBody = `💑 ये लो तुम्हारा जोड़ा! ${name1} और ${name2}!\n${randomMsg}\nये दोनों बेस्ट बड्डीज़ बन सकते हैं, साथ में मस्ती करो यार! 😎\nवाह! ये दोस्ती की जोड़ी है, एक-दूसरे का साथ निभाओ! ❤️\nये दोनों एक-दूसरे के लिए परफेक्ट दोस्त हैं, मजा आ जाएगा! 🔥\nअरे वाह! ये जोड़ी तो गज़ब की दोस्ती की मिसाल बनेगी! 🎉\nये दोनों एक-दूसरे के दुष्मन बन सकते हैं, लेकिन मज़े की बात है! 😂\nये बड्डीज़ मिलें तो हर पल हंसी-मजाक से भरा होगा! 😄`;
           const mentions = [
             { tag: name1, id: random1 },
             { tag: name2, id: random2 }
@@ -75,7 +75,7 @@ module.exports = {
         });
       });
     } catch (e) {
-      api.sendMessage('Error in pair command.', threadID);
+      api.sendMessage('जोड़ा बनाने में एरर हुआ!', threadID);
       console.error('Pair command error:', e);
     }
   }
