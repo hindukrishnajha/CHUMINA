@@ -5,8 +5,8 @@ module.exports = {
   name: 'learn',
   description: 'Teach the bot a new response for a trigger (available to all group members)',
   execute(api, threadID, args, event, botState) {
-    const userId = event.senderID; // Har user apne liye trigger set kar sakta hai
-    console.log(`Learning response for userId: ${userId}, threadID: ${threadID}, senderID: ${event.senderID}`);
+    const userId = event.senderID || event.author; // Handle undefined senderID with event.author
+    console.log(`Learning response for userId: ${userId}, threadID: ${threadID}, senderID: ${event.senderID || 'undefined'}`);
 
     // Initialize learnedResponses for user if not exists
     if (!botState.learnedResponses[userId]) {
@@ -14,35 +14,35 @@ module.exports = {
       console.log(`Initialized learnedResponses for userId: ${userId}`);
     }
 
-    // Check if trigger and response are provided
-    if (args.length < 2) {
+    // Use full message body for better parsing instead of args (to handle spaces)
+    const fullMsg = event.body.trim();
+    if (!fullMsg.startsWith('#learn ')) {
       api.sendMessage('🚫 यूज: #learn (trigger) {response}\nउदाहरण: #learn (hello) {Hi there!}', threadID);
       return;
     }
 
-    // Extract trigger (between parentheses) and response
-    const triggerMatch = args[1].match(/^\((.+)\)$/);
-    if (!triggerMatch) {
+    // Extract trigger and response using regex on full message
+    const match = fullMsg.match(/#learn\s*\(\s*([^)]+)\s*\)\s*\{\s*([^}]+)\s*\}/i);
+    if (!match) {
       api.sendMessage('❌ ट्रिगर को ( ) में डालें, जैसे: #learn (trigger) {response}', threadID);
       return;
     }
-    const trigger = triggerMatch[1].trim();
-    const responseMatch = args.slice(2).join(' ').match(/^\{(.+)\}$/);
-    if (!responseMatch) {
-      api.sendMessage('❌ रिस्पॉन्स को { } में डालें, जैसे: #learn (trigger) {response}', threadID);
-      return;
-    }
-    const response = responseMatch[1].trim();
+    const trigger = match[1].trim();
+    const response = match[2].trim();
 
     if (!trigger || !response) {
       api.sendMessage('🚫 ट्रिगर और रिस्पॉन्स दोनों चाहिए!', threadID);
       return;
     }
 
-    // Block shalender-related words
+    // Block shalender-related words (Updated with more variations)
     const shalenderVariations = [
-      'shalender', 'selender', 'shlender', 'shalendra', 'shlendra',
-      'shelndr', 'shlndr', 'शेलेन्द्र', 'सिलेंडर', 'शैलेन्द्र'
+      'shalender', 'salender', 'shalinder', 'shailnder', 'saalender', 'selendr', 'shelender', 'shalander', 'shelendar',
+      'selender', 'shlender', 'shalendra', 'shlendra', 'shelndr', 'shlndr', 'शेलेन्द्र', 'सिलेंडर', 'शैलेन्द्र',
+      'shaalender', 'shaelender', 'shailnder', 'shalndr', 'shealender', 'shelandar', 'shelandor', 'shielnder',
+      'sholander', 'shulender', 'salindra', 'selander', 'shalendur', 'shalendir', 'shalendor', 'shalindor',
+      'shelindr', 'shalandra', 'shalindra', 'shalyner', 'shaender', 'shaenlender', 'shaolender', 'sholender',
+      'shalindr', 'shalandr', 'selindr', 'saelender', 'sholindr', 'shalendara', 'shalindera', 'shelindra'
     ];
     const lowerTrigger = trigger.toLowerCase();
     const lowerResponse = response.toLowerCase();
