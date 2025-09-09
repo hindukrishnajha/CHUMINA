@@ -24,7 +24,7 @@ module.exports = {
     }
 
     // "shalender" aur uske tone ke saare variations (English aur Hindi) block karen
-    const shalenderRegex = /(sh|ss|s|ch)(h|ai|e|ei)?[aeiou]*(l|ll)[aeiou]*(n|nn)?[d]+[r]*(a|ra|ar)?\b|[\u0936\u0937\u0938\u0938\u094D\u0938][\u093E\u0947\u0948\u094B\u0941\u0942\u093F\u0940]?[\u0932][\u093E\u0947\u0948\u094B\u0941\u0942\u093F\u0940]*[\u0928]?[\u094D]?[\u0926]+[\u0930]*[\u093E]?/i;
+    const shalenderRegex = /((sh|ss|s|ch)(h|ai|e|ei|ail|il)?[aeiou]*(l|ll)[aeiou]*(n|nn)?[d]+[r]*(a|ra|ar|adr|ea)?\b)|(sh(h|ai|e|ei|ail|il|ale)?[aeiou]*(l|ll)[aeiou]*(n|nn)?[d]+[r]*(a|ra|ar|adr|ea|iandr|endra)?\b)|(s(ale|lender)?[aeiou]*(l|ll)[aeiou]*(n|nn)?[d]+[r]*(a|ra|ar|adr|ea|ndra|ndrea)?\b)|([\u0936\u0937\u0938\u0938\u094D\u0938][\u093E\u0947\u0948\u094B\u0941\u0942\u093F\u0940\u0949]?[\u0932][\u093E\u0947\u0948\u094B\u0941\u0942\u093F\u0940]*[\u0928]?[\u094D]?[\u0926]+[\u0930]*[\u093E|\u093F\u0940|\u0947\u094D\u0930|\u093F\u092F\u093E]?)|([\u0936\u0938][\u093E\u0947\u0948\u094B\u0941\u0942\u093F\u0940\u0949]?[\u0932][\u093E\u0947\u0948\u094B\u0941\u0942\u093F\u0940]*[\u0928]?[\u094D]?[\u0926]+[\u0930]*[\u093E|\u093F\u0940|\u0947\u094D\u0930|\u093F\u092F\u093E|\u093F\u092F\u093E\u0928\u094D\u0926\u094D\u0930]?)|(s[\u093E|\u0947|\u0948|\u094B|\u0941|\u0942|\u093F|\u0940|\u0949]?[\u0932][\u093E\u0947\u0948\u094B\u0941\u0942\u093F\u0940]*[\u0928]?[\u094D]?[\u0926]+[\u0930]*[\u093E|\u093F\u0940|\u0947\u094D\u0930|\u093F\u092F\u093E|\u0923\u094D\u0921\u094D\u0930|\u0923\u094D\u0921\u094D\u0930\u093F\u092F\u093E]?)/i;
     if (shalenderRegex.test(text)) {
       api.sendMessage('👑 किंग किंग होता है, शैलेंद्र हिन्दू किंग है! 👑🔥', threadID);
       return;
