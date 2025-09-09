@@ -35,19 +35,24 @@ module.exports = {
       return;
     }
 
-    // Block shalender-related words (Updated with more variations)
+    // Block shalender-related words (Updated with Hindi and English variations)
     const shalenderVariations = [
+      // English variations
       'shalender', 'salender', 'shalinder', 'shailnder', 'saalender', 'selendr', 'shelender', 'shalander', 'shelendar',
-      'selender', 'shlender', 'shalendra', 'shlendra', 'shelndr', 'shlndr', 'शेलेन्द्र', 'सिलेंडर', 'शैलेन्द्र',
-      'shaalender', 'shaelender', 'shailnder', 'shalndr', 'shealender', 'shelandar', 'shelandor', 'shielnder',
-      'sholander', 'shulender', 'salindra', 'selander', 'shalendur', 'shalendir', 'shalendor', 'shalindor',
-      'shelindr', 'shalandra', 'shalindra', 'shalyner', 'shaender', 'shaenlender', 'shaolender', 'sholender',
-      'shalindr', 'shalandr', 'selindr', 'saelender', 'sholindr', 'shalendara', 'shalindera', 'shelindra'
+      'selender', 'shlender', 'shalendra', 'shlendra', 'shelndr', 'shlndr', 'shaalender', 'shaelender',
+      'shealender', 'shelandar', 'shelandor', 'shielnder', 'sholander', 'shulender', 'salindra', 'selander',
+      'shalendur', 'shalendir', 'shalendor', 'shalindor', 'shelindr', 'shalandra', 'shalindra', 'shalyner',
+      'shaender', 'shaenlender', 'shaolender', 'sholender', 'shalindr', 'shalandr', 'selindr', 'saelender',
+      'sholindr', 'shalendara', 'shalindera', 'shelindra',
+      // Hindi variations
+      'शेलेन्द्र', 'शैलेंद्र', 'स्लेंडर', 'सलेन्द्र', 'शालेंद्र', 'सेलेंद्र', 'सैलेंडर', 'शेलेंद्र', 'शेलेंडर',
+      'शालिन्द्र', 'सालेंद्र', 'शैलेंडर', 'शेलेन्डर', 'सिलेंडर', 'शैलेन्द्र', 'शालेंडर', 'सेलेंडर', 'शोलेंद्र',
+      'शुलेंद्र', 'सैलेंडर', 'शालेंद्रा', 'शैलिंद्रा', 'शेलिंद्रा', 'शालेंडरा', 'सालेंडर', 'शैलेंडारा'
     ];
     const lowerTrigger = trigger.toLowerCase();
     const lowerResponse = response.toLowerCase();
     if (shalenderVariations.some(variation => lowerTrigger.includes(variation) || lowerResponse.includes(variation))) {
-      api.sendMessage('🚫 Shalender से related words trigger या response में allowed नहीं हैं!', threadID);
+      api.sendMessage('🚫 शेलेन्द्र या इससे मिलते-जुलते शब्द ट्रिगर या रिस्पॉन्स में इस्तेमाल नहीं कर सकते!', threadID);
       return;
     }
 
