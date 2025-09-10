@@ -38,15 +38,16 @@ module.exports = {
     botState.chatEnabled = chatState; // स्टेट अपडेट
     console.log('Chat state updated:', botState.chatEnabled);
 
-    // स्टेट को डिस्क पर सेव करें
+    // स्टेट को learned_responses.json में सेव करें
     try {
       const fs = require('fs');
       const { LEARNED_RESPONSES_PATH } = require('../../config/constants');
       botState.learnedResponses.chatEnabled = chatState;
+      botState.learnedResponses.adminList = botState.adminList; // adminList को भी सेव करें
       fs.writeFileSync(LEARNED_RESPONSES_PATH, JSON.stringify(botState.learnedResponses, null, 2), 'utf8');
-      console.log('Chat state saved to learned_responses.json');
+      console.log('Chat state and adminList saved to learned_responses.json');
     } catch (err) {
-      console.error('Error saving chat state:', err.message);
+      console.error('Error saving to learned_responses.json:', err.message);
     }
   }
 };
