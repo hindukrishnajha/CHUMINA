@@ -4,10 +4,17 @@ const gTTS = require('gtts');
 
 module.exports = {
   name: 'voice',
-  description: 'Sends a voice message in Hindi.',
+  description: 'हिंदी में वॉइस मैसेज भेजता है।',
   async execute(api, threadID, args, event, botState, isMaster) {
-    // 30 सेकंड कूलडाउन चेक
-    if (botState.commandCooldowns[threadID]?.voice) {
+    // threadID के लिए commandCooldowns को इनिशियलाइज़ करें
+    if (!botState.commandCooldowns[threadID]) {
+      botState.commandCooldowns[threadID] = {};
+      console.log(`[DEBUG] commandCooldowns इनिशियलाइज़ किया गया threadID: ${threadID}`);
+    }
+
+    // कूलडाउन चेक
+    if (botState.commandCooldowns[threadID].voice) {
+      console.log(`[DEBUG] वॉइस कमांड कूलडाउन पर है threadID: ${threadID}`);
       api.sendMessage(
         '👑 किंग के नियमों के हिसाब से अगली वॉइस का इस्तमाल करने के लिए आपको 30 सेकंड का इंतज़ार करना होगा। इन 30 सेकंड में आप किंग की महानता के बारे में सोचें, वो कितने दिलेर, कितने महान, कितने शूरवीर, कितने परमवीर हैं! 👑🔥',
         threadID
@@ -23,7 +30,7 @@ module.exports = {
       return;
     }
 
-    // "shalender" aur uske tone ke saare variations (English aur Hindi) block karen
+    // "shalender" और इसके टोन के सारे वैरिएशन्स (अंग्रेजी और हिंदी) ब्लॉक करें
     const shalenderRegex = /((sh|ss|s|ch)(h|ai|e|ei|ail|il)?[aeiou]*(l|ll)[aeiou]*(n|nn)?[d]+[r]*(a|ra|ar|adr|ea)?)|(sh(h|ai|e|ei|ail|il|ale)?[aeiou]*(l|ll)[aeiou]*(n|nn)?[d]+[r]*(a|ra|ar|adr|ea|iandr|endra)?)|(s(ale|lender)?[aeiou]*(l|ll)[aeiou]*(n|nn)?[d]+[r]*(a|ra|ar|adr|ea|ndra|ndrea)?)|([\u0936\u0937\u0938\u0938\u094D\u0938][\u093E\u0947\u0948\u094B\u0941\u0942\u093F\u0940\u0949]?[\u0932][\u093E\u0947\u0948\u094B\u0941\u0942\u093F\u0940]*[\u0928]?[\u094D]?[\u0926]+[\u0930]*[\u093E|\u093F\u0940|\u0947\u094D\u0930|\u093F\u092F\u093E]?)|([\u0936\u0938][\u093E\u0947\u0948\u094B\u0941\u0942\u093F\u0940\u0949]?[\u0932][\u093E\u0947\u0948\u094B\u0941\u0942\u093F\u0940]*[\u0928]?[\u094D]?[\u0926]+[\u0930]*[\u093E|\u093F\u0940|\u0947\u094D\u0930|\u093F\u092F\u093E|\u093F\u092F\u093E\u0928\u094D\u0926\u094D\u0930]?)|(s[\u093E|\u0947|\u0948|\u094B|\u0941|\u0942|\u093F|\u0940|\u0949]?[\u0932][\u093E\u0947\u0948\u094B\u0941\u0942\u093F\u0940]*[\u0928]?[\u094D]?[\u0926]+[\u0930]*[\u093E|\u093F\u0940|\u0947\u094D\u0930|\u093F\u092F\u093E|\u0923\u094D\u0921\u094D\u0930|\u0923\u094D\u0921\u094D\u0930\u093F\u092F\u093E]?)/i;
     if (shalenderRegex.test(text)) {
       api.sendMessage('👑 किंग किंग होता है, शैलेंद्र हिन्दू किंग है! 👑🔥', threadID);
@@ -52,15 +59,22 @@ module.exports = {
       });
 
       // कूलडाउन सेट करें
-      botState.commandCooldowns[threadID] = { voice: true };
-      setTimeout(() => delete botState.commandCooldowns[threadID]?.voice, 30000);
+      botState.commandCooldowns[threadID].voice = true;
+      console.log(`[DEBUG] वॉइस कमांड कूलडाउन सेट किया गया threadID: ${threadID}`);
+      setTimeout(() => {
+        if (botState.commandCooldowns[threadID]) {
+          delete botState.commandCooldowns[threadID].voice;
+          console.log(`[DEBUG] वॉइस कमांड कूलडाउन हटाया गया threadID: ${threadID}`);
+        }
+      }, 30000);
     } catch (err) {
+      console.error(`[ERROR] वॉइस मैसेज भेजने में गलती: ${err.message}`);
       api.sendMessage(`❌ वॉइस मैसेज भेजने में गलती हुई: ${err.message}`, threadID);
     } finally {
-      // ऑडियो फाइल तुरंत डिलीट करें
+      // ऑडियो फाइल डिलीट करें
       if (fs.existsSync(audioPath)) {
         fs.unlink(audioPath, (unlinkErr) => {
-          if (unlinkErr) console.error('Error deleting audio file:', unlinkErr.message);
+          if (unlinkErr) console.error(`[ERROR] ऑडियो फाइल डिलीट करने में गलती: ${unlinkErr.message}`);
         });
       }
     }
