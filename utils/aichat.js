@@ -21,7 +21,7 @@ async function getAIResponse(message) {
         },
         {
           role: 'user',
-          content: message
+          content: message || 'हाय भाई, कुछ बोलो!' // डिफॉल्ट मैसेज
         }
       ],
       model: 'llama-3.1-8b-instant', // फ्री और तेज़ मॉडल
