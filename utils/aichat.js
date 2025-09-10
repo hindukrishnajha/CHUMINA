@@ -1,4 +1,3 @@
-// utils/aichat.js
 const Groq = require('groq-sdk');
 
 // Groq Client Initialization
@@ -6,10 +5,13 @@ const groq = new Groq({
   apiKey: process.env.GROQ_API_KEY
 });
 
+// API Key की जांच
+console.log('Groq API Key:', process.env.GROQ_API_KEY ? 'Set' : 'Not set');
 console.log('Groq AI initialized successfully');
 
 // Function to get response from Groq AI
 async function getAIResponse(message) {
+  console.log('AI request - Message:', message); // डिबगिंग के लिए
   try {
     const chatCompletion = await groq.chat.completions.create({
       messages: [
@@ -27,7 +29,9 @@ async function getAIResponse(message) {
       max_tokens: 100 // छोटा जवाब
     });
 
-    return chatCompletion.choices[0]?.message?.content || 'सॉरी भाई, कुछ समझ नहीं आया!';
+    const response = chatCompletion.choices[0]?.message?.content || 'सॉरी भाई, कुछ समझ नहीं आया!';
+    console.log('AI response:', response); // डिबगिंग के लिए
+    return response;
   } catch (err) {
     console.error('Groq API error:', err.message);
     return '⚠️ कुछ गड़बड़ हो गई, बाद में ट्राई कर!';
