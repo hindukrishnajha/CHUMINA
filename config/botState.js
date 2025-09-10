@@ -9,7 +9,10 @@ const botState = {
   adminList: [],
   autoConvo: false,
   memberCache: {},
-  commandCooldowns: {} // commandCooldowns को शुरू में जोड़ा
+  commandCooldowns: {}, // शुरू में खाली ऑब्जेक्ट
+  learnedResponses: {},
+  eventProcessed: {},
+  chatEnabled: {}
 };
 
 module.exports = { botState };
