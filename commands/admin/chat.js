@@ -6,7 +6,7 @@ module.exports = {
     console.log('Chat command - SenderID:', event.senderID, 'isMaster:', isMaster, 'AdminList:', botState.adminList, 'Args:', args);
 
     if (!botState.adminList.includes(event.senderID) && !isMaster) {
-      api.sendMessage('🚫 ये कमांड सिर्फ एडमिन्स या मास्टर के लिए है!', threadID);
+      api.sendMessage('🚫 ये कमांड सिर्फ किंग के खास सिपहसालारों (एडमिन्स) या मास्टर के लिए है! 🕉️', threadID);
       return;
     }
 
@@ -15,20 +15,20 @@ module.exports = {
 
     if (command === 'on' || command === 'chaton') {
       if (chatState[threadID]) {
-        api.sendMessage('✅ चैट मोड पहले से ऑन है! #ai या @ai यूज करो।', threadID);
+        api.sendMessage('🌟 चैट मोड पहले से ऑन है, भाई! #ai या @ai के साथ मस्ती शुरू करो, जैसे: #ai जय श्री राम! 🚩', threadID);
         return;
       }
       chatState[threadID] = true;
-      api.sendMessage('✅ चैट मोड ऑन! अब #ai या @ai के साथ बात करो, जैसे: #ai हाय भाई!', threadID);
+      api.sendMessage('🔥 चैट मोड ऑन! अब किंग के गुलाम AI से बात करो #ai या @ai के साथ, जैसे: #ai हाय भाई, क्या हाल है? 😎 जय श्री राम! 🙏', threadID);
     } else if (command === 'off' || command === 'chatoff') {
       if (!chatState[threadID]) {
-        api.sendMessage('✅ चैट मोड पहले से ऑफ है!', threadID);
+        api.sendMessage('🌙 चैट मोड पहले से ऑफ है, मालिक! केवल कमांड्स चालू हैं। 🕉️', threadID);
         return;
       }
       chatState[threadID] = false;
-      api.sendMessage('❌ चैट मोड ऑफ! अब सिर्फ कमांड्स काम करेंगी।', threadID);
+      api.sendMessage('❌ चैट मोड ऑफ! अब सिर्फ किंग के कमांड्स काम करेंगे। शांति से जय श्री राम बोलो! 🙏', threadID);
     } else {
-      api.sendMessage('❓ यूज: #chat on या #chat off (या #chaton, #chatoff)', threadID);
+      api.sendMessage('❓ यूज करो: #chat on या #chat off (या #chaton, #chatoff)। किंग के नियम समझो! 🕉️', threadID);
       return;
     }
 
@@ -44,7 +44,7 @@ module.exports = {
       console.log('Chat state and adminList saved to learned_responses.json');
     } catch (err) {
       console.error('Error saving to learned_responses.json:', err.message);
-      api.sendMessage('⚠️ चैट स्टेट सेव करने में गड़बड़!', threadID);
+      api.sendMessage('⚠️ चैट स्टेट सेव करने में गड़बड़! किंग को बताओ! 🕉️', threadID);
     }
   }
 };
