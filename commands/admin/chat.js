@@ -13,13 +13,21 @@ module.exports = {
     }
 
     // कमांड और aliases हैंडल करें
-    const command = args[1] ? args[1].toLowerCase() : args[0].toLowerCase().replace('#', '');
+    const command = args[1] ? args[1].toLowerCase() : args[0].toLowerCase().replace(/^#/, '');
     let chatState = botState.chatEnabled || { [threadID]: false }; // डिफॉल्ट स्टेट
 
     if (command === 'on' || command === 'chaton') {
+      if (chatState[threadID]) {
+        api.sendMessage('✅ चैट मोड पहले से ही ऑन है!', threadID);
+        return;
+      }
       chatState[threadID] = true;
       api.sendMessage('✅ अब मैं एक्टिव हूँ! नॉर्मल बातचीत के लिए #ai या @bot के साथ मैसेज भेजो।', threadID);
     } else if (command === 'off' || command === 'chatoff') {
+      if (!chatState[threadID]) {
+        api.sendMessage('✅ चैट मोड पहले से ही ऑफ है!', threadID);
+        return;
+      }
       chatState[threadID] = false;
       api.sendMessage('❌ मालिक, अब केवल कमांड्स वर्क करेंगी, मैं जवाब नहीं दूंगा।', threadID);
     } else {
@@ -29,5 +37,16 @@ module.exports = {
 
     botState.chatEnabled = chatState; // स्टेट अपडेट
     console.log('Chat state updated:', botState.chatEnabled);
+
+    // स्टेट को डिस्क पर सेव करें
+    try {
+      const fs = require('fs');
+      const { LEARNED_RESPONSES_PATH } = require('../../config/constants');
+      botState.learnedResponses.chatEnabled = chatState;
+      fs.writeFileSync(LEARNED_RESPONSES_PATH, JSON.stringify(botState.learnedResponses, null, 2), 'utf8');
+      console.log('Chat state saved to learned_responses.json');
+    } catch (err) {
+      console.error('Error saving chat state:', err.message);
+    }
   }
 };
