@@ -1,40 +1,37 @@
 const Groq = require('groq-sdk');
 
-// Groq Client Initialization
 const groq = new Groq({
   apiKey: process.env.GROQ_API_KEY
 });
 
-// API Key की जांच
 console.log('Groq API Key:', process.env.GROQ_API_KEY ? 'Set' : 'Not set');
 console.log('Groq AI initialized successfully');
 
-// Function to get response from Groq AI
 async function getAIResponse(message) {
-  console.log('AI request - Message:', message); // डिबगिंग के लिए
+  console.log('AI request - Message:', message);
   try {
     const chatCompletion = await groq.chat.completions.create({
       messages: [
         {
           role: 'system',
-          content: 'आप एक दोस्ताना AI हैं जो हिंदी में नॉर्मल और मजेदार तरीके से जवाब देता है। जवाब को छोटा और साधारण रखें।'
+          content: 'आप एक दोस्ताना AI हैं जो हिंदी में मजेदार और साधारण तरीके से जवाब देता है। जवाब छोटा, मस्ती भरा, और Shalender Hindu के स्टाइल में हो।'
         },
         {
           role: 'user',
-          content: message || 'हाय भाई, कुछ बोलो!' // डिफॉल्ट मैसेज
+          content: message || 'अरे भाई, कुछ मस्ती करो ना! 😎'
         }
       ],
-      model: 'llama-3.1-8b-instant', // फ्री और तेज़ मॉडल
-      temperature: 0.7, // थोड़ी क्रिएटिविटी
-      max_tokens: 100 // छोटा जवाब
+      model: 'llama-3.1-8b-instant',
+      temperature: 0.7,
+      max_tokens: 100
     });
 
-    const response = chatCompletion.choices[0]?.message?.content || 'सॉरी भाई, कुछ समझ नहीं आया!';
-    console.log('AI response:', response); // डिबगिंग के लिए
+    const response = chatCompletion.choices[0]?.message?.content || 'अरे भाई, कुछ गड़बड़ हो गई, फिर से बोलो! 😜';
+    console.log('AI response:', response);
     return response;
   } catch (err) {
     console.error('Groq API error:', err.message);
-    return '⚠️ कुछ गड़बड़ हो गई, बाद में ट्राई कर!';
+    return '⚠️ ओहो, कुछ तो गड़बड़ है! थोड़ा रुक, फिर ट्राई कर! 😅';
   }
 }
 
