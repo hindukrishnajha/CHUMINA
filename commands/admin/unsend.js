@@ -4,11 +4,19 @@ const messageStore = require('../../utils/messageStore');
 module.exports = {
   name: "unsend",
   execute(api, threadID, args, event, botState, isMaster) {
-    console.log(`[DEBUG] unsend called: threadID=${threadID}, senderID=${event.senderID}, hasReply=${!!event.messageReply}`);
+    console.log(`[DEBUG] unsend called: threadID=${threadID}, senderID=${event.senderID}, hasReply=${!!event.messageReply}, replyMessageID=${event.messageReply?.messageID}`);
     try {
       // Check if sender is master or admin
       if (!isMaster && !botState.adminList.includes(event.senderID)) {
         api.sendMessage('🚫 केवल मास्टर या एडमिन इस कमांड को यूज कर सकते हैं।', threadID);
+        return;
+      }
+
+      // Get botID from botState
+      const botID = botState.botID;
+      if (!botID) {
+        console.error('[ERROR] Bot ID not found in botState');
+        api.sendMessage('⚠️ बॉट ID नहीं मिला। कृपया बॉट को रीस्टार्ट करें।', threadID);
         return;
       }
 
@@ -20,8 +28,8 @@ module.exports = {
           return;
         }
 
-        const botID = botState.botID;
-        const isBotAdmin = info.adminIDs.some(admin => admin.id === botID);
+        // Robust admin check
+        const isBotAdmin = Array.isArray(info.adminIDs) && info.adminIDs.some(admin => admin.id === botID);
         if (!isBotAdmin) {
           console.log(`[DEBUG] Bot (ID: ${botID}) is not admin in thread ${threadID}`);
           api.sendMessage('मालिक, मुझे एडमिन बनाओ ताकि मैं मैसेज डिलीट कर सकूं! 🙏', threadID);
@@ -30,8 +38,9 @@ module.exports = {
 
         let targetMessage;
         // Check if command is replying to a bot message
-        if (event.messageReply && event.messageReply.senderID === botState.botID) {
-          targetMessage = messageStore.getBotMessageByReply(event.messageReply.messageID);
+        if (event.messageReply && event.messageReply.senderID === botID) {
+          targetMessage = messageStore.getBotMessageByReply(event.messageReply.messageID) || 
+                         messageStore.botMessages.find(msg => msg.messageID === event.messageReply.messageID);
         }
 
         // Fallback to last bot message if no reply or invalid reply
