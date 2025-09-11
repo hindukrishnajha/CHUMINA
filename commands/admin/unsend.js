@@ -1,4 +1,6 @@
 // commands/admin/unsend.js
+const messageStore = require('../../utils/messageStore');
+
 module.exports = {
   name: "unsend",
   execute(api, threadID, args, event, botState, isMaster) {
@@ -9,34 +11,21 @@ module.exports = {
         return;
       }
 
-      if (!event.messageReply) {
-        api.sendMessage('❌ कृपया उस मैसेज को रिप्लाई करें जिसे डिलीट करना है।', threadID);
+      const lastBotMessage = messageStore.getLastBotMessage(threadID);
+      if (!lastBotMessage) {
+        api.sendMessage('❌ कोई हाल का बॉट मैसेज नहीं मिला।', threadID);
         return;
       }
 
-      api.getThreadInfo(threadID, (err, info) => {
-        if (err || !info) {
-          console.error('[ERROR] getThreadInfo failed for unsend:', err?.message);
-          api.sendMessage('⚠️ ग्रुप जानकारी लाने में असफल।', threadID);
+      api.unsendMessage(lastBotMessage.messageID, (err) => {
+        if (err) {
+          console.error('[ERROR] Unsend failed:', err.message);
+          api.sendMessage(`❌ मैसेज डिलीट करने में गलती: ${err.message} (शायद 10 मिनट से पुराना है)।`, threadID);
           return;
         }
-
-        const botID = api.getCurrentUserID();
-        const isBotAdmin = info.adminIDs.some(admin => admin.id === botID);
-        if (!isBotAdmin) {
-          api.sendMessage('⚠️ मैसेज डिलीट करने के लिए बॉट को एडमिन परमिशन्स चाहिए।', threadID);
-          return;
-        }
-
-        const repliedMessageId = event.messageReply.messageID;
-        api.deleteMessage(repliedMessageId, threadID, (err) => {
-          if (err) {
-            api.sendMessage('❌ मैसेज डिलीट करने में गलती। सुनिश्चित करें कि मैसेज हाल का है।', threadID);
-            console.error('Unsend error:', err);
-            return;
-          }
-          api.sendMessage(`✅ मैसेज ${isMaster ? 'मास्टर' : 'एडमिन'} द्वारा डिलीट किया गया।`, threadID);
-        });
+        api.sendMessage(`✅ बॉट का मैसेज डिलीट किया गया: "${lastBotMessage.content}"`, threadID);
+        // Remove from store
+        messageStore.botMessages = messageStore.botMessages.filter(msg => msg.messageID !== lastBotMessage.messageID);
       });
     } catch (e) {
       console.error('[ERROR] unsend error:', e.message);
