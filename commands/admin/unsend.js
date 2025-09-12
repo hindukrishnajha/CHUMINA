@@ -32,7 +32,7 @@ module.exports = {
       }
 
       // Case 2: No reply, delete last 3 bot messages with 2-3 second delays
-      api.getThreadHistory(threadID, 50, null, (err, history) => {  // Fetch last 50 to ensure we get recent ones
+      api.getThreadHistory(threadID, 50, null, (err, history) => {
         if (err) {
           console.error('[ERROR] Failed to fetch thread history:', err.message);
           api.sendMessage('⚠️ ग्रुप हिस्ट्री लाने में गलती। 🕉️', threadID);
@@ -41,9 +41,9 @@ module.exports = {
 
         // Filter last 3 messages sent by the bot (senderID === botID)
         const botMessages = history
-          .filter(msg => msg.senderID === botID && msg.messageID)  // Only bot's messages with valid ID
-          .slice(0, 3)  // Get the most recent 3 (history is recent first)
-          .reverse();  // Reverse to delete oldest first (if needed, but order doesn't matter much)
+          .filter(msg => msg.senderID === botID && msg.messageID)
+          .slice(0, 3)
+          .reverse();
 
         if (botMessages.length === 0) {
           api.sendMessage('❌ कोई बॉट मैसेज नहीं मिला डिलीट करने के लिए। 🕉️', threadID);
@@ -54,14 +54,14 @@ module.exports = {
 
         // Delete with 2-3 second random delays
         botMessages.forEach((msg, index) => {
-          const delay = (Math.random() * 1000) + 2000;  // 2000-3000 ms (2-3 seconds)
+          const delay = (Math.random() * 1000) + 2000; // 2000-3000 ms
           setTimeout(() => {
             api.deleteMessage(msg.messageID, (err) => {
               if (err) {
                 console.error(`[ERROR] Failed to delete bot message ${msg.messageID}:`, err.message);
               }
             });
-          }, index * delay);  // Staggered delays: 0, 2-3s, 4-6s
+          }, index * delay);
         });
       });
     });
