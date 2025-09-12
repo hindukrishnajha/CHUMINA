@@ -1,5 +1,5 @@
-const MAX_AGE = 60 * 60 * 1000; // 1 hour
-const CLEANUP_INTERVAL = 10 * 60 * 1000; // 10 min
+const MAX_AGE = 2 * 60 * 60 * 1000; // 2 hours
+const CLEANUP_INTERVAL = 15 * 60 * 1000; // 15 min
 
 const messageStore = {
   messages: {}, // All messages
