@@ -1,71 +1,69 @@
-const messageStore = require('../../utils/messageStore');
-
+// ./commands/admin/unsend.js
 module.exports = {
-  name: "unsend",
-  execute(api, threadID, args, event, botState, isMaster, botID) {
-    console.log(`[DEBUG] unsend called: threadID=${threadID}, senderID=${event.senderID}, botID=${botID}, hasReply=${!!event.messageReply}, replyMessageID=${event.messageReply?.messageID}`);
-    try {
-      if (!isMaster && !botState.adminList.includes(event.senderID)) {
-        console.log(`[DEBUG] Sender ${event.senderID} is not master or admin`);
-        api.sendMessage('🚫 केवल मास्टर या एडमिन इस कमांड को यूज कर सकते हैं।', threadID);
+  name: 'unsend',
+  description: 'Delete a replied-to message or the last 3 bot messages if no reply',
+  execute(api, threadID, args, event, botState, isMaster, botID, stopBot) {
+    // Check if bot is admin in the group
+    api.getThreadInfo(threadID, (err, info) => {
+      if (err) {
+        console.error('[ERROR] Failed to fetch thread info:', err.message);
+        api.sendMessage('⚠️ ग्रुप जानकारी लाने में गलती। 🕉️', threadID);
         return;
       }
 
-      if (!botID) {
-        console.error('[ERROR] Bot ID not found');
-        api.sendMessage('⚠️ बॉट ID नहीं मिला। कृपया बॉट को रीस्टार्ट करें।', threadID);
+      const isBotAdmin = Array.isArray(info.adminIDs) && info.adminIDs.some(admin => admin.id === botID);
+      if (!isBotAdmin) {
+        api.sendMessage('🚫 मुझे एडमिन बनाओ ताकि मैं मैसेज डिलीट कर सकूं! 🙏', threadID);
         return;
       }
 
-      api.getThreadInfo(threadID, (err, info) => {
-        if (err) {
-          console.error('[ERROR] Failed to fetch thread info:', err.message);
-          api.sendMessage('⚠️ ग्रुप जानकारी लाने में गलती।', threadID);
-          return;
-        }
-
-        const isBotAdmin = Array.isArray(info.adminIDs) && info.adminIDs.some(admin => admin.id === botID);
-        if (!isBotAdmin) {
-          console.log(`[DEBUG] Bot (ID: ${botID}) is not admin in thread ${threadID}`);
-          api.sendMessage('मालिक, मुझे एडमिन बनाओ ताकि मैं मैसेज डिलीट कर सकूं! 🙏', threadID);
-          return;
-        }
-
-        let targetMessage;
-        if (event.messageReply && event.messageReply.senderID === botID) {
-          targetMessage = messageStore.getBotMessageByReply(event.messageReply.messageID);
-          console.log(`[DEBUG] Reply message check: targetMessage=${JSON.stringify(targetMessage)}`);
-          if (!targetMessage) {
-            targetMessage = messageStore.botMessages.find(msg => msg.messageID === event.messageReply.messageID);
-            console.log(`[DEBUG] Fallback reply message check: targetMessage=${JSON.stringify(targetMessage)}`);
-          }
-        }
-
-        if (!targetMessage) {
-          targetMessage = messageStore.getLastBotMessage(threadID);
-          console.log(`[DEBUG] Last bot message check: targetMessage=${JSON.stringify(targetMessage)}`);
-        }
-
-        if (!targetMessage) {
-          console.log(`[DEBUG] No bot message found for threadID=${threadID}`);
-          api.sendMessage('❌ कोई हाल का बॉट मैसेज नहीं मिला।', threadID);
-          return;
-        }
-
-        api.unsendMessage(targetMessage.messageID, (err) => {
+      // Case 1: If command is replied to a message, delete that specific message
+      if (event.messageReply && event.messageReply.messageID) {
+        const messageIDToDelete = event.messageReply.messageID;
+        api.deleteMessage(messageIDToDelete, (err) => {
           if (err) {
-            console.error('[ERROR] Unsend failed:', err.message);
-            api.sendMessage(`❌ मैसेज डिलीट करने में गलती: ${err.message} (शायद 10 मिनट से पुराना है)।`, threadID);
+            console.error('[ERROR] Failed to delete replied message:', err.message);
+            api.sendMessage(`❌ मैसेज डिलीट करने में गलती: ${err.message} 🕉️`, threadID);
             return;
           }
-          api.sendMessage(`मालिक, मैंने मैसेज डिलीट कर दिया: "${targetMessage.content.slice(0, 50)}..." 🙏`, threadID);
-          messageStore.botMessages = messageStore.botMessages.filter(msg => msg.messageID !== targetMessage.messageID);
-          console.log(`[DEBUG] Removed message from store: messageID=${targetMessage.messageID}`);
+          api.sendMessage('✅ रिप्लाई वाला मैसेज डिलीट कर दिया गया! 🕉️', threadID);
+        });
+        return;
+      }
+
+      // Case 2: No reply, delete last 3 bot messages with 2-3 second delays
+      api.getThreadHistory(threadID, 50, null, (err, history) => {  // Fetch last 50 to ensure we get recent ones
+        if (err) {
+          console.error('[ERROR] Failed to fetch thread history:', err.message);
+          api.sendMessage('⚠️ ग्रुप हिस्ट्री लाने में गलती। 🕉️', threadID);
+          return;
+        }
+
+        // Filter last 3 messages sent by the bot (senderID === botID)
+        const botMessages = history
+          .filter(msg => msg.senderID === botID && msg.messageID)  // Only bot's messages with valid ID
+          .slice(0, 3)  // Get the most recent 3 (history is recent first)
+          .reverse();  // Reverse to delete oldest first (if needed, but order doesn't matter much)
+
+        if (botMessages.length === 0) {
+          api.sendMessage('❌ कोई बॉट मैसेज नहीं मिला डिलीट करने के लिए। 🕉️', threadID);
+          return;
+        }
+
+        api.sendMessage(`✅ लास्ट ${botMessages.length} बॉट मैसेज डिलीट कर रहा हूँ... 🕉️`, threadID);
+
+        // Delete with 2-3 second random delays
+        botMessages.forEach((msg, index) => {
+          const delay = (Math.random() * 1000) + 2000;  // 2000-3000 ms (2-3 seconds)
+          setTimeout(() => {
+            api.deleteMessage(msg.messageID, (err) => {
+              if (err) {
+                console.error(`[ERROR] Failed to delete bot message ${msg.messageID}:`, err.message);
+              }
+            });
+          }, index * delay);  // Staggered delays: 0, 2-3s, 4-6s
         });
       });
-    } catch (e) {
-      console.error('[ERROR] unsend error:', e.message);
-      api.sendMessage('⚠️ अनसेंड कमांड में गलती।', threadID);
-    }
+    });
   }
 };
