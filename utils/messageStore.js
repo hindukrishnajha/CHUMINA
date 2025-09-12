@@ -1,4 +1,3 @@
-// utils/messageStore.js
 const MAX_AGE = 60 * 60 * 1000; // 1 hour
 const CLEANUP_INTERVAL = 10 * 60 * 1000; // 10 min
 
