@@ -1,9 +1,8 @@
-// commands/admin/unsend.js
 const messageStore = require('../../utils/messageStore');
 
 module.exports = {
   name: "unsend",
-  execute(api, threadID, args, event, botState, isMaster) {
+  execute(api, threadID, args, event, botState, isMaster, botID) {  // Yaha botID add kiya
     console.log(`[DEBUG] unsend called: threadID=${threadID}, senderID=${event.senderID}, hasReply=${!!event.messageReply}, replyMessageID=${event.messageReply?.messageID}`);
     try {
       // Check if sender is master or admin
@@ -12,10 +11,9 @@ module.exports = {
         return;
       }
 
-      // Get botID from botState
-      const botID = botState.botID;
+      // Get botID from param (botState.botID remove kiya, ab param se milega)
       if (!botID) {
-        console.error('[ERROR] Bot ID not found in botState');
+        console.error('[ERROR] Bot ID not found');
         api.sendMessage('⚠️ बॉट ID नहीं मिला। कृपया बॉट को रीस्टार्ट करें।', threadID);
         return;
       }
