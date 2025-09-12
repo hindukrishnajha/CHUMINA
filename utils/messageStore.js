@@ -6,12 +6,13 @@ const messageStore = {
   botMessages: [], // Bot's sent messages
   deleteNotifyEnabled: {}, // Per-thread #delete on/off state
 
-  storeMessage(messageID, content, senderID, threadID) {
-    console.log(`[DEBUG] Storing message: messageID=${messageID}, threadID=${threadID}, senderID=${senderID}, content=${content.slice(0, 50)}...`);
+  storeMessage(messageID, content, senderID, threadID, attachment = null) {
+    console.log(`[DEBUG] Storing message: messageID=${messageID}, threadID=${threadID}, senderID=${senderID}, content=${content.slice(0, 50)}..., attachment=${attachment ? JSON.stringify(attachment) : 'none'}`);
     this.messages[messageID] = {
       content,
       senderID,
       threadID,
+      attachment,
       timestamp: Date.now()
     };
   },
