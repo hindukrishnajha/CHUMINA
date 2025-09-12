@@ -1,4 +1,3 @@
-// ./commands/admin/unsend.js
 module.exports = {
   name: 'unsend',
   description: 'Delete a replied-to message or the last 3 bot messages if no reply',
@@ -6,7 +5,7 @@ module.exports = {
     // Check if bot is admin in the group
     api.getThreadInfo(threadID, (err, info) => {
       if (err) {
-        console.error('[ERROR] Failed to fetch thread info:', err.message);
+        console.error('[ERROR] Failed to fetch thread info:', err?.message || 'Unknown error');
         api.sendMessage('⚠️ ग्रुप जानकारी लाने में गलती। 🕉️', threadID);
         return;
       }
@@ -20,12 +19,14 @@ module.exports = {
       // Case 1: If command is replied to a message, delete that specific message
       if (event.messageReply && event.messageReply.messageID) {
         const messageIDToDelete = event.messageReply.messageID;
+        console.log(`[DEBUG] Attempting to delete replied messageID: ${messageIDToDelete}`);
         api.deleteMessage(messageIDToDelete, (err) => {
           if (err) {
-            console.error('[ERROR] Failed to delete replied message:', err.message);
-            api.sendMessage(`❌ मैसेज डिलीट करने में गलती: ${err.message} 🕉️`, threadID);
+            console.error('[ERROR] Failed to delete replied message:', err?.message || 'Unknown error');
+            api.sendMessage(`❌ मैसेज डिलीट करने में गलती: ${err?.message || 'अज्ञात त्रुटि'} 🕉️`, threadID);
             return;
           }
+          console.log(`[DEBUG] Successfully deleted replied messageID: ${messageIDToDelete}`);
           api.sendMessage('✅ रिप्लाई वाला मैसेज डिलीट कर दिया गया! 🕉️', threadID);
         });
         return;
@@ -34,7 +35,7 @@ module.exports = {
       // Case 2: No reply, delete last 3 bot messages with 2-3 second delays
       api.getThreadHistory(threadID, 50, null, (err, history) => {
         if (err) {
-          console.error('[ERROR] Failed to fetch thread history:', err.message);
+          console.error('[ERROR] Failed to fetch thread history:', err?.message || 'Unknown error');
           api.sendMessage('⚠️ ग्रुप हिस्ट्री लाने में गलती। 🕉️', threadID);
           return;
         }
@@ -56,9 +57,12 @@ module.exports = {
         botMessages.forEach((msg, index) => {
           const delay = (Math.random() * 1000) + 2000; // 2000-3000 ms
           setTimeout(() => {
+            console.log(`[DEBUG] Attempting to delete bot messageID: ${msg.messageID}`);
             api.deleteMessage(msg.messageID, (err) => {
               if (err) {
-                console.error(`[ERROR] Failed to delete bot message ${msg.messageID}:`, err.message);
+                console.error(`[ERROR] Failed to delete bot message ${msg.messageID}:`, err?.message || 'Unknown error');
+              } else {
+                console.log(`[DEBUG] Successfully deleted bot messageID: ${msg.messageID}`);
               }
             });
           }, index * delay);
