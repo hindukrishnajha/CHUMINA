@@ -45,6 +45,11 @@ const messageStore = {
     return this.botMessages.find(msg => msg.replyToMessageID === replyMessageID || msg.messageID === replyMessageID);
   },
 
+  removeMessage(messageID) { // New: For reply case
+    console.log(`[DEBUG] Removing message from store: messageID=${messageID}`);
+    delete this.messages[messageID];
+  },
+
   removeBotMessage(messageID) {
     console.log(`[DEBUG] Removing bot message from store: messageID=${messageID}`);
     const index = this.botMessages.findIndex(msg => msg.messageID === messageID);
@@ -55,18 +60,24 @@ const messageStore = {
 
   cleanup() {
     const now = Date.now();
+    let cleanedCount = 0;
     for (const mid in this.messages) {
       if (now - this.messages[mid].timestamp > MAX_AGE) {
         console.log(`[DEBUG] Cleaning message: messageID=${mid}`);
         delete this.messages[mid];
+        cleanedCount++;
       }
     }
+    let botCleaned = 0;
     this.botMessages = this.botMessages.filter(msg => {
       const keep = now - msg.timestamp <= MAX_AGE;
-      if (!keep) console.log(`[DEBUG] Cleaning bot message: messageID=${msg.messageID}`);
+      if (!keep) {
+        console.log(`[DEBUG] Cleaning bot message: messageID=${msg.messageID}`);
+        botCleaned++;
+      }
       return keep;
     });
-    console.log('[MEMORY] Cleaned messages:', Object.keys(this.messages).length, 'Bot messages:', this.botMessages.length);
+    console.log(`[MEMORY] Cleaned ${cleanedCount} messages, ${botCleaned} bot messages. Remaining: Messages=${Object.keys(this.messages).length}, Bot=${this.botMessages.length}`);
   },
 
   clearAll() {
