@@ -33,16 +33,24 @@ const messageStore = {
     return this.messages[messageID];
   },
 
-  getLastBotMessage(threadID) {
-    console.log(`[DEBUG] Fetching last bot message for threadID=${threadID}`);
+  getLastBotMessages(threadID, count = 3) {
+    console.log(`[DEBUG] Fetching last ${count} bot messages for threadID=${threadID}`);
     return this.botMessages
       .filter(msg => msg.threadID === threadID)
-      .slice(-1)[0];
+      .slice(-count); // Last N (recent)
   },
 
   getBotMessageByReply(replyMessageID) {
     console.log(`[DEBUG] Fetching bot message by replyMessageID=${replyMessageID}`);
     return this.botMessages.find(msg => msg.replyToMessageID === replyMessageID || msg.messageID === replyMessageID);
+  },
+
+  removeBotMessage(messageID) {
+    console.log(`[DEBUG] Removing bot message from store: messageID=${messageID}`);
+    const index = this.botMessages.findIndex(msg => msg.messageID === messageID);
+    if (index > -1) {
+      this.botMessages.splice(index, 1);
+    }
   },
 
   cleanup() {
