@@ -27,10 +27,11 @@ module.exports = {
         api.unsendMessage(messageIDToDelete, (err) => {
           if (err) {
             console.error('[ERROR] Failed to unsend replied message:', err?.message || 'Unknown error', 'Error details:', JSON.stringify(err));
-            api.sendMessage(`❌ मैसेज डिलीट करने में गलती: ${err?.message || 'अज्ञात त्रुटि'} 🕉️`, threadID);
+            api.sendMessage(`❌ रिप्लाई मैसेज डिलीट करने में गलती: ${err?.message || 'अज्ञात त्रुटि'} (कभी-कभी पुराना मैसेज >7 days न डिलीट हो) 🕉️`, threadID);
             return;
           }
           console.log(`[DEBUG] Successfully unsent replied messageID: ${messageIDToDelete}`);
+          messageStore.removeMessage(messageIDToDelete); // Cleanup store for reply case
           api.sendMessage('✅ रिप्लाई वाला मैसेज डिलीट कर दिया गया! 🕉️', threadID);
         });
         return;
@@ -47,9 +48,10 @@ module.exports = {
       }
 
       console.log('[DEBUG] Bot messages to delete from store:', JSON.stringify(botMessages.map(msg => msg.messageID)));
-      api.sendMessage(`✅ लास्ट ${botMessages.length} बॉट मैसेज डिलीट कर रहा हूँ... 🕉️`, threadID);
+      api.sendMessage(`✅ लास्ट ${botMessages.length} बॉट मैसेज डिलीट कर रहा हूँ... (1-2 sec wait करो, FB delay हो सकता है) 🕉️`, threadID);
 
       let successCount = 0;
+      let errorCount = 0;
       let totalCount = botMessages.length;
 
       botMessages.forEach((msg, index) => {
@@ -58,17 +60,26 @@ module.exports = {
           console.log(`[DEBUG] Attempting to unsend bot messageID: ${msg.messageID}`);
           api.unsendMessage(msg.messageID, (err) => {
             if (err) {
-              console.error(`[ERROR] Failed to unsend bot message ${msg.messageID}:`, err?.message || 'Unknown error');
-              // Optional: Send per-error, but avoid spam
+              console.error(`[ERROR] Failed to unsend bot message ${msg.messageID}:`, err?.message || 'Unknown error', 'Details:', JSON.stringify(err));
+              errorCount++;
+              // Report errors after all (avoid spam)
               return;
             }
             successCount++;
             console.log(`[DEBUG] Successfully unsent bot messageID: ${msg.messageID}`);
             messageStore.removeBotMessage(msg.messageID); // Cleanup store
-            if (index === totalCount - 1) { // Last one
-              api.sendMessage(`✅ कुल ${successCount}/${totalCount} बॉट मैसेज सफलतापूर्वक डिलीट हो गए! 🕉️`, threadID);
-            }
           });
+          
+          // Check if last one
+          if (index === totalCount - 1) {
+            setTimeout(() => { // Wait for all callbacks
+              const totalDeleted = successCount;
+              api.sendMessage(`✅ कुल ${totalDeleted}/${totalCount} बॉट मैसेज सफलतापूर्वक डिलीट हो गए! (एरर: ${errorCount}) 🕉️\nनोट: FB में 1-5 sec delay हो सकता है, group refresh करो।`, threadID);
+              if (errorCount > 0) {
+                api.sendMessage(`⚠️ ${errorCount} मैसेज पुराने/रेट लिमिट से डिलीट नहीं हुए।`, threadID);
+              }
+            }, 3000); // 3 sec buffer for last callback
+          }
         }, index * delay);
       });
     });
