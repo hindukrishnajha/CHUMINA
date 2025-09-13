@@ -19,7 +19,7 @@ module.exports = {
         return;
       }
 
-      // Case 1: Reply (force check even if type is message)
+      // Case 1: Reply to a bot message
       let messageIDToDelete = null;
       if (event.messageReply && event.messageReply.messageID) {
         messageIDToDelete = event.messageReply.messageID;
@@ -34,40 +34,19 @@ module.exports = {
           return;
         }
 
-        let responseSent = false;
-        const timeoutId = setTimeout(() => {
-          if (!responseSent) {
-            responseSent = true;
-            console.error('[ERROR UNSEND] Timeout');
-            api.sendMessage('❌ डिलीट में देरी—रीट्राई करो। 🕉️', threadID);
-          }
-        }, 10000);
-
-        api.deleteMessage(messageIDToDelete, (err) => {
-          clearTimeout(timeoutId);
-          if (responseSent) return;
-          responseSent = true;
-
+        api.unsendMessage(messageIDToDelete, (err) => {
           if (err) {
-            console.error('[ERROR UNSEND] Delete failed:', err);
-            api.unsendMessage(messageIDToDelete, (fErr) => {
-              if (fErr) {
-                console.error('[ERROR UNSEND] Unsend failed:', fErr);
-                api.sendMessage(`❌ फेल: ${fErr.message || 'API इश्यू'} 🕉️`, threadID);
-              } else {
-                messageStore.removeMessage(messageIDToDelete);
-                api.sendMessage('✅ Unsend हो गया! 🕉️', threadID);
-              }
-            });
+            console.error('[ERROR UNSEND] Unsend failed:', err);
+            api.sendMessage(`❌ फेल: ${err.message || 'API इश्यू'} 🕉️`, threadID);
             return;
           }
           messageStore.removeMessage(messageIDToDelete);
-          api.sendMessage('✅ डिलीट हो गया! 🕉️', threadID);
+          api.sendMessage('✅ Unsend हो गया! 🕉️', threadID);
         });
         return;
       }
 
-      // Case 2: No reply
+      // Case 2: No reply → delete last 3 bot messages
       console.log('[DEBUG UNSEND] No reply - deleting last 3');
       const botMessages = messageStore.getLastBotMessages(threadID, 3);
       if (botMessages.length === 0) {
@@ -80,31 +59,21 @@ module.exports = {
       let success = 0, error = 0;
       botMessages.forEach((msg, i) => {
         setTimeout(() => {
-          let done = false;
-          const tId = setTimeout(() => {
-            if (!done) done = true, error++;
-          }, 10000);
-
-          api.deleteMessage(msg.messageID, (err) => {
-            clearTimeout(tId);
-            if (done) return;
-            done = true;
-
+          api.unsendMessage(msg.messageID, (err) => {
             if (err) {
-              api.unsendMessage(msg.messageID, (fErr) => {
-                if (fErr) error++; else success++;
-              });
-              return;
+              console.error(`[ERROR UNSEND] Failed for ${msg.messageID}:`, err);
+              error++;
+            } else {
+              success++;
+              messageStore.removeBotMessage(msg.messageID);
             }
-            success++;
-            messageStore.removeBotMessage(msg.messageID);
-          });
 
-          if (i === botMessages.length - 1) {
-            setTimeout(() => {
-              api.sendMessage(`✅ ${success}/${botMessages.length} डिलीट! (एरर: ${error}) 🕉️`, threadID);
-            }, 4000);
-          }
+            if (i === botMessages.length - 1) {
+              setTimeout(() => {
+                api.sendMessage(`✅ ${success}/${botMessages.length} डिलीट! (एरर: ${error}) 🕉️`, threadID);
+              }, 2000);
+            }
+          });
         }, i * 2500);
       });
     });
