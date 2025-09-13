@@ -23,22 +23,14 @@ module.exports = {
       if (event.messageReply && event.messageReply.messageID) {
         console.log('[DEBUG] Reply event detected:', JSON.stringify(event.messageReply));
         const messageIDToDelete = event.messageReply.messageID;
-
-        // New check: Only unsend if the replied message is from the bot
-        if (event.messageReply.senderID !== botID) {
-          console.log(`[DEBUG] Replied message senderID ${event.messageReply.senderID} is not botID ${botID}. Cannot unsend.`);
-          api.sendMessage('❌ मैं सिर्फ अपने मैसेज डिलीट कर सकता हूँ! 🕉️', threadID);
-          return;
-        }
-
-        console.log(`[DEBUG] Attempting to unsend replied messageID: ${messageIDToDelete}`);
-        api.unsendMessage(messageIDToDelete, (err) => {
+        console.log(`[DEBUG] Attempting to delete replied messageID: ${messageIDToDelete}`);
+        api.deleteMessage(messageIDToDelete, (err) => {
           if (err) {
-            console.error('[ERROR] Failed to unsend replied message:', err?.message || 'Unknown error', 'Error details:', JSON.stringify(err));
-            api.sendMessage(`❌ रिप्लाई मैसेज डिलीट करने में गलती: ${err?.message || 'अज्ञात त्रुटि'} (कभी-कभी पुराना मैसेज >7 days न डिलीट हो) 🕉️`, threadID);
+            console.error('[ERROR] Failed to delete replied message:', err?.message || 'Unknown error', 'Error details:', JSON.stringify(err));
+            api.sendMessage(`❌ रिप्लाई मैसेज डिलीट करने में गलती: ${err?.message || 'अज्ञात त्रुटि'} (FB delay या API इश्यू हो सकता है) 🕉️`, threadID);
             return;
           }
-          console.log(`[DEBUG] Successfully unsent replied messageID: ${messageIDToDelete}`);
+          console.log(`[DEBUG] Successfully deleted replied messageID: ${messageIDToDelete}`);
           messageStore.removeMessage(messageIDToDelete); // Cleanup store for reply case
           api.sendMessage('✅ रिप्लाई वाला मैसेज डिलीट कर दिया गया! 🕉️', threadID);
         });
@@ -65,16 +57,15 @@ module.exports = {
       botMessages.forEach((msg, index) => {
         const delay = (Math.random() * 1000) + 2000; // 2-3 sec random delay
         setTimeout(() => {
-          console.log(`[DEBUG] Attempting to unsend bot messageID: ${msg.messageID}`);
-          api.unsendMessage(msg.messageID, (err) => {
+          console.log(`[DEBUG] Attempting to delete bot messageID: ${msg.messageID}`);
+          api.deleteMessage(msg.messageID, (err) => {
             if (err) {
-              console.error(`[ERROR] Failed to unsend bot message ${msg.messageID}:`, err?.message || 'Unknown error', 'Details:', JSON.stringify(err));
+              console.error(`[ERROR] Failed to delete bot message ${msg.messageID}:`, err?.message || 'Unknown error', 'Details:', JSON.stringify(err));
               errorCount++;
-              // Report errors after all (avoid spam)
               return;
             }
             successCount++;
-            console.log(`[DEBUG] Successfully unsent bot messageID: ${msg.messageID}`);
+            console.log(`[DEBUG] Successfully deleted bot messageID: ${msg.messageID}`);
             messageStore.removeBotMessage(msg.messageID); // Cleanup store
           });
           
