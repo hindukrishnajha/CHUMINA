@@ -1,6 +1,6 @@
 module.exports = {
   name: 'unsend',
-  description: 'Delete a replied-to message or the last 3 bot messages if no reply',
+  description: 'Delete a replied-to bot message or the last 3 bot messages if no reply',
   execute(api, threadID, args, event, botState, isMaster, botID, stopBot) {
     const messageStore = require('../../utils/messageStore'); // Import store
 
@@ -23,15 +23,46 @@ module.exports = {
       if (event.messageReply && event.messageReply.messageID) {
         console.log('[DEBUG] Reply event detected:', JSON.stringify(event.messageReply));
         const messageIDToDelete = event.messageReply.messageID;
+
+        // Check if the message is from the bot
+        const storedMessage = messageStore.getMessage(messageIDToDelete);
+        if (!storedMessage || storedMessage.senderID !== botID) {
+          console.log(`[DEBUG] Message ${messageIDToDelete} not found in store or not a bot message`);
+          api.sendMessage('❌ सिर्फ मेरे मैसेज डिलीट कर सकता हूँ! 🕉️', threadID);
+          return;
+        }
+
+        // Try deleteMessage with timeout
         console.log(`[DEBUG] Attempting to delete replied messageID: ${messageIDToDelete}`);
+        let timeoutTriggered = false;
+        const timeoutId = setTimeout(() => {
+          timeoutTriggered = true;
+          console.error(`[ERROR] Timeout: No response from deleteMessage for ${messageIDToDelete}`);
+          api.sendMessage('❌ मैसेज डिलीट करने में टाइमआउट। FB API इश्यू हो सकता है। 🕉️', threadID);
+        }, 5000);
+
         api.deleteMessage(messageIDToDelete, (err) => {
+          clearTimeout(timeoutId); // Clear timeout on response
+          if (timeoutTriggered) return; // Skip if timeout already handled
+
           if (err) {
             console.error('[ERROR] Failed to delete replied message:', err?.message || 'Unknown error', 'Error details:', JSON.stringify(err));
-            api.sendMessage(`❌ रिप्लाई मैसेज डिलीट करने में गलती: ${err?.message || 'अज्ञात त्रुटि'} (FB delay या API इश्यू हो सकता है) 🕉️`, threadID);
+            // Fallback to unsendMessage
+            console.log(`[DEBUG] Falling back to unsendMessage for ${messageIDToDelete}`);
+            api.unsendMessage(messageIDToDelete, (fallbackErr) => {
+              if (fallbackErr) {
+                console.error('[ERROR] Fallback unsendMessage failed:', fallbackErr?.message || 'Unknown error');
+                api.sendMessage(`❌ रिप्लाई मैसेज डिलीट करने में गलती: ${fallbackErr?.message || 'अज्ञात त्रुटि'} (FB API इश्यू या रेट लिमिट) 🕉️`, threadID);
+                return;
+              }
+              console.log(`[DEBUG] Successfully unsent replied messageID: ${messageIDToDelete} via fallback`);
+              messageStore.removeMessage(messageIDToDelete);
+              api.sendMessage('✅ रिप्लाई वाला मैसेज डिलीट कर दिया गया (फॉल बैक)! 🕉️', threadID);
+            });
             return;
           }
           console.log(`[DEBUG] Successfully deleted replied messageID: ${messageIDToDelete}`);
-          messageStore.removeMessage(messageIDToDelete); // Cleanup store for reply case
+          messageStore.removeMessage(messageIDToDelete);
           api.sendMessage('✅ रिप्लाई वाला मैसेज डिलीट कर दिया गया! 🕉️', threadID);
         });
         return;
@@ -58,26 +89,46 @@ module.exports = {
         const delay = (Math.random() * 1000) + 2000; // 2-3 sec random delay
         setTimeout(() => {
           console.log(`[DEBUG] Attempting to delete bot messageID: ${msg.messageID}`);
+          let msgTimeoutTriggered = false;
+          const msgTimeoutId = setTimeout(() => {
+            msgTimeoutTriggered = true;
+            console.error(`[ERROR] Timeout: No response from deleteMessage for ${msg.messageID}`);
+            errorCount++;
+          }, 5000);
+
           api.deleteMessage(msg.messageID, (err) => {
+            clearTimeout(msgTimeoutId);
+            if (msgTimeoutTriggered) return;
+
             if (err) {
               console.error(`[ERROR] Failed to delete bot message ${msg.messageID}:`, err?.message || 'Unknown error', 'Details:', JSON.stringify(err));
-              errorCount++;
+              // Fallback to unsendMessage
+              api.unsendMessage(msg.messageID, (fallbackErr) => {
+                if (fallbackErr) {
+                  console.error(`[ERROR] Fallback unsendMessage failed for ${msg.messageID}:`, fallbackErr?.message || 'Unknown error');
+                  errorCount++;
+                  return;
+                }
+                successCount++;
+                console.log(`[DEBUG] Successfully unsent bot messageID: ${msg.messageID} via fallback`);
+                messageStore.removeBotMessage(msg.messageID);
+              });
               return;
             }
             successCount++;
             console.log(`[DEBUG] Successfully deleted bot messageID: ${msg.messageID}`);
-            messageStore.removeBotMessage(msg.messageID); // Cleanup store
+            messageStore.removeBotMessage(msg.messageID);
           });
-          
+
           // Check if last one
           if (index === totalCount - 1) {
-            setTimeout(() => { // Wait for all callbacks
+            setTimeout(() => {
               const totalDeleted = successCount;
               api.sendMessage(`✅ कुल ${totalDeleted}/${totalCount} बॉट मैसेज सफलतापूर्वक डिलीट हो गए! (एरर: ${errorCount}) 🕉️\nनोट: FB में 1-5 sec delay हो सकता है, group refresh करो।`, threadID);
               if (errorCount > 0) {
-                api.sendMessage(`⚠️ ${errorCount} मैसेज पुराने/रेट लिमिट से डिलीट नहीं हुए।`, threadID);
+                api.sendMessage(`⚠️ ${errorCount} मैसेज डिलीट नहीं हुए (FB API इश्यू या रेट लिमिट)।`, threadID);
               }
-            }, 3000); // 3 sec buffer for last callback
+            }, 3000);
           }
         }, index * delay);
       });
