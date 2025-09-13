@@ -2,7 +2,7 @@ module.exports = {
   name: 'unsend',
   description: 'Delete a replied-to bot message or the last 3 bot messages if no reply',
   execute(api, threadID, args, event, botState, isMaster, botID, stopBot) {
-    console.log(`[DEBUG UNSEND] Command started - event type: ${event.type}, body: "${event.body || 'undefined'}", reply: ${!!event.messageReply}`);
+    console.log(`[DEBUG UNSEND] Command started - event type: ${event.type}, body: "${event.body || 'undefined'}", reply: ${!!event.messageReply}, replyMessageID: ${event.messageReply?.messageID || 'none'}, senderID: ${event.senderID}`);
     const messageStore = require('../../utils/messageStore');
 
     api.getThreadInfo(threadID, (err, info) => {
@@ -21,14 +21,13 @@ module.exports = {
 
       // Case 1: Reply
       let messageIDToDelete = null;
-      if (event.messageReply) {
+      if (event.messageReply && event.messageReply.messageID) {
         messageIDToDelete = event.messageReply.messageID;
-        if (!messageIDToDelete) {
-          console.log('[ERROR UNSEND] Reply detected but no messageID available');
-          api.sendMessage('⚠️ रिप्लाई मैसेज ID नहीं मिला। रीट्राई करो। 🕉️', threadID);
-          return;
-        }
         console.log(`[DEBUG UNSEND] Reply detected - ID: ${messageIDToDelete}`);
+      } else if (event.messageReply) {
+        console.log('[ERROR UNSEND] Reply detected but no messageID available');
+        api.sendMessage('⚠️ रिप्लाई मैसेज ID नहीं मिला। रीट्राई करो। 🕉️', threadID);
+        return;
       }
 
       if (messageIDToDelete) {
