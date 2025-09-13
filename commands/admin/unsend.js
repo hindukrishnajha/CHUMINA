@@ -23,6 +23,14 @@ module.exports = {
       if (event.messageReply && event.messageReply.messageID) {
         console.log('[DEBUG] Reply event detected:', JSON.stringify(event.messageReply));
         const messageIDToDelete = event.messageReply.messageID;
+
+        // New check: Only unsend if the replied message is from the bot
+        if (event.messageReply.senderID !== botID) {
+          console.log(`[DEBUG] Replied message senderID ${event.messageReply.senderID} is not botID ${botID}. Cannot unsend.`);
+          api.sendMessage('❌ मैं सिर्फ अपने मैसेज डिलीट कर सकता हूँ! 🕉️', threadID);
+          return;
+        }
+
         console.log(`[DEBUG] Attempting to unsend replied messageID: ${messageIDToDelete}`);
         api.unsendMessage(messageIDToDelete, (err) => {
           if (err) {
