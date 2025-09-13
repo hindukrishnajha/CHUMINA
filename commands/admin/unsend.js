@@ -2,7 +2,7 @@ module.exports = {
   name: 'unsend',
   description: 'Delete a replied-to bot message or the last 3 bot messages if no reply',
   execute(api, threadID, args, event, botState, isMaster, botID, stopBot) {
-    console.log(`[DEBUG UNSEND] Command started - event type: ${event.type}, body: "${event.body}", reply: ${!!event.messageReply}`);
+    console.log(`[DEBUG UNSEND] Command started - event type: ${event.type}, body: "${event.body || 'undefined'}", reply: ${!!event.messageReply}`);
     const messageStore = require('../../utils/messageStore');
 
     api.getThreadInfo(threadID, (err, info) => {
@@ -21,8 +21,13 @@ module.exports = {
 
       // Case 1: Reply
       let messageIDToDelete = null;
-      if (event.messageReply && event.messageReply.messageID) {
+      if (event.messageReply) {
         messageIDToDelete = event.messageReply.messageID;
+        if (!messageIDToDelete) {
+          console.log('[ERROR UNSEND] Reply detected but no messageID available');
+          api.sendMessage('⚠️ रिप्लाई मैसेज ID नहीं मिला। रीट्राई करो। 🕉️', threadID);
+          return;
+        }
         console.log(`[DEBUG UNSEND] Reply detected - ID: ${messageIDToDelete}`);
       }
 
@@ -46,26 +51,18 @@ module.exports = {
           }
         }, 10000);
 
-        api.deleteMessage(messageIDToDelete, (err) => {
+        api.unsendMessage(messageIDToDelete, (err) => {
           clearTimeout(timeoutId);
           if (responseSent) return;
           responseSent = true;
 
           if (err) {
-            console.error('[ERROR UNSEND] Delete failed:', err);
-            api.unsendMessage(messageIDToDelete, (fErr) => {
-              if (fErr) {
-                console.error('[ERROR UNSEND] Unsend failed:', fErr);
-                api.sendMessage(`❌ फेल: ${fErr.message || 'API इश्यू'} 🕉️`, threadID);
-              } else {
-                messageStore.removeBotMessage(messageIDToDelete);
-                api.sendMessage('✅ Unsend हो गया! 🕉️', threadID);
-              }
-            });
+            console.error('[ERROR UNSEND] Unsend failed:', err);
+            api.sendMessage(`❌ फेल: ${err.message || 'API इश्यू'} 🕉️`, threadID);
             return;
           }
           messageStore.removeBotMessage(messageIDToDelete);
-          api.sendMessage('✅ डिलीट हो गया! 🕉️', threadID);
+          api.sendMessage('✅ Unsend हो गया! 🕉️', threadID);
         });
         return;
       }
@@ -88,19 +85,18 @@ module.exports = {
             if (!done) done = true, error++;
           }, 10000);
 
-          api.deleteMessage(msg.messageID, (err) => {
+          api.unsendMessage(msg.messageID, (err) => {
             clearTimeout(tId);
             if (done) return;
             done = true;
 
             if (err) {
-              api.unsendMessage(msg.messageID, (fErr) => {
-                if (fErr) error++; else success++;
-              });
-              return;
+              error++;
+              console.error('[ERROR UNSEND] Unsend failed:', err);
+            } else {
+              success++;
+              messageStore.removeBotMessage(msg.messageID);
             }
-            success++;
-            messageStore.removeBotMessage(msg.messageID);
           });
 
           if (i === botMessages.length - 1) {
