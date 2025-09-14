@@ -52,8 +52,21 @@ module.exports = {
       const name = userInfo.name || 'Unknown User';
       console.log(`[DEBUG] User name: ${name}`);
 
-      // Check for Shalender or Master ID
-      const isShalender = name.toLowerCase().includes('shalender');
+      // Unicode mapping for fancy text
+      const unicodeMap = {
+        '🆂': 'S', '🅷': 'H', '🅰': 'A', '🅻': 'L', '🅴': 'E', '🅽': 'N', '🅳': 'D', '🆁': 'R',
+        'Ｓ': 'S', 'Ｈ': 'H', 'Ａ': 'A', 'Ｌ': 'L', 'Ｅ': 'E', 'Ｎ': 'N', 'Ｄ': 'D', 'Ｒ': 'R'
+      };
+      // Normalize and clean name
+      let normalizedName = name.normalize('NFKD').replace(/[\u0300-\u036f]/g, '');
+      Object.keys(unicodeMap).forEach(fancy => {
+        normalizedName = normalizedName.replace(new RegExp(fancy, 'g'), unicodeMap[fancy]);
+      });
+      normalizedName = normalizedName.toLowerCase().replace(/[^a-z]/g, '');
+      console.log(`[DEBUG] Normalized name: ${normalizedName}`);
+
+      // Check for Shalender or variations
+      const isShalender = /shalender|shailendra|salender|shalendra/i.test(normalizedName);
       const isMasterID = targetID === '100023807453349';
       let message;
       let mentions;
