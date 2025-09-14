@@ -1,4 +1,3 @@
-// ./commands/user/help.js
 const fs = require('fs');
 
 module.exports = {
@@ -6,7 +5,6 @@ module.exports = {
   aliases: ["commands"],
   execute(api, threadID, args, event, botState, isMaster) {
     try {
-      // डायनामिकली कमांड्स लोड करें
       const commands = new Map();
       const commandFolders = ['admin', 'user', 'master'];
       for (const folder of commandFolders) {
@@ -26,50 +24,44 @@ module.exports = {
 
       const prefix = botState.sessions[event.threadID]?.prefix || '#';
       const helpText = `
-✨ BOT COMMANDS MENU ✨
-━━━━━━━━━━━━━━━━━━━━
-
-🔒 Admin Commands
-${prefix}groupnamelock on/off <name> - ग्रुप का नाम लॉक/अनलॉक करें
-${prefix}nicklock on <nickname> - सभी का निकनेम लॉक करें
-${prefix}nicklock on @user <nickname> - यूजर का निकनेम लॉक करें
-${prefix}nicklock off - निकनेम लॉक बंद करें
-${prefix}nicklock off @user - यूजर का निकनेम लॉक हटाएँ
-${prefix}removenick on @everyone - सभी के निकनेम हटाएँ
-${prefix}removenick on @user - यूजर का निकनेम हटाएँ
-${prefix}removenick off - निकनेम हटाना बंद करें
-${prefix}removenick off @user - यूजर का निकनेम हटाना बंद करें
-${prefix}antiout on/off - ग्रुप से निकलने से रोकें
-${prefix}kickout @user - यूजर को ग्रुप से निकालें
-${prefix}unsend - मैसेज अनसेंड करें
-${prefix}send sticker start/stop - स्टिकर भेजना शुरू/बंद करें
-${prefix}autospam accept - ऑटोस्पैम स्वीकार करें
-${prefix}automessage accept - ऑटोमैसेज स्वीकार करें
-${prefix}loder target on @user - लोडर टारगेट सेट करें
-${prefix}loder stop - लोडर बंद करें
-${prefix}autoconvo on/off - ऑटोकन्वो चालू/बंद करें
-
-🆔 User Commands
-${prefix}learn <trigger> {response} - नया ट्रिगर और रिस्पॉन्स सेट करें
-${prefix}tid - थ्रेड ID देखें
-${prefix}uid / ${prefix}uid @mention - यूजर ID देखें
-${prefix}info @mention - यूजर की जानकारी देखें
-${prefix}groupinfo - ग्रुप की जानकारी देखें
-${prefix}pair - रैंडम पेयर बनाएँ
-${prefix}music <song> - गाना चलाएँ
-${prefix}aihelp - AI से बात करने का तरीका जानें
-
-👑 Special Commands
-${prefix}mastercommand - मास्टर कमांड्स देखें
-${prefix}masterid - मास्टर ID देखें
-
-━━━━━━━━━━━━━━━━━━━━
-👑 Created By: ✶♡⤾➝SHALENDER..⤹✶➺🐯
+By SHALENDER 👑
+===
+Admin:
+- ${prefix}groupnamelock on/off: ग्रुप लॉक
+- ${prefix}nicklock on <nick> / @user: निक लॉक
+- ${prefix}nicklock off / @user: निक लॉक ऑफ
+- ${prefix}removenick on/off @everyone/@user: निक रिमूव
+- ${prefix}antiout on/off: आउट रोक
+- ${prefix}kickout @user: यूजर किक
+- ${prefix}unsend: मैसेज अनसेंड
+- ${prefix}send sticker start/stop: स्टिकर भेज
+- ${prefix}autospam accept: ऑटोस्पैम
+- ${prefix}automessage accept: ऑटोमैसेज
+- ${prefix}loder target on @user: लोडर टारगेट
+- ${prefix}loder stop: लोडर ऑफ
+- ${prefix}autoconvo on/off: ऑटोकन्वो
+- ${prefix}chat on/off: चैट कंट्रोल
+===
+User:
+- ${prefix}learn <trigger> {response}: ट्रिगर सेट
+- ${prefix}tid: थ्रेड ID
+- ${prefix}uid / @mention: यूजर ID
+- ${prefix}info @mention: यूजर इन्फो
+- ${prefix}groupinfo: ग्रुप इन्फो
+- ${prefix}pair: रैंडम पेयर
+- ${prefix}music <song>: गाना प्ले
+- ${prefix}aihelp: AI हेल्प
+- ${prefix}badge / @mention: स्टाइलिश बैज
+===
+Special:
+- ${prefix}mastercommand: मास्टर कमांड्स
+- ${prefix}masterid: मास्टर ID
+===
       `;
       api.sendMessage(helpText, threadID);
     } catch (e) {
       console.error('[ERROR] help कमांड में गलती:', e.message);
-      api.sendMessage('⚠️ Help कमांड में गलती।', threadID);
+      api.sendMessage('⚠️ Help गलती।', threadID);
     }
   }
-};
+};;
