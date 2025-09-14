@@ -117,11 +117,6 @@ module.exports = {
           'इमरान हाशमी': '(रोमांस का किंग!) 😘',
           'राज कुंद्रा': '(बिजनेस का गुरु!) 💰'
         };
-        const titlePrefixes = {
-          royal: ['KING', 'QUEEN'],
-          funky: ['RANDII', 'LAVDII', 'PORNSTAR', 'MIA KHALIFA', 'SUNNYLEON', 'DENI DENIAL'],
-          funny: ['TATTA', 'CHOTA TATTA', 'BDA TATTA', 'TATTO KA DOST', 'TATTO KA KAAL', 'TATTA KING', 'MAHAMURKH', 'NAMOONA', 'JOKAR', 'NOKAR', 'CHUTIYA', 'CHUTIYO KA RAJA', 'MAHACHUTIYA', 'NO.1 CHUTIA']
-        };
 
         const selectedTitle = titles[Math.floor(Math.random() * titles.length)];
         const emoji1 = emojis[Math.floor(Math.random() * emojis.length)];
@@ -141,21 +136,12 @@ module.exports = {
           provider = otherProviders[Math.floor(Math.random() * otherProviders.length)];
         }
 
-        // Determine prefix
-        let prefix = '';
-        if (titlePrefixes.royal.includes(selectedTitle)) {
-          prefix = selectedTitle === 'KING' ? 'महाराजा' : 'महारानी';
-        } else if (titlePrefixes.funky.includes(selectedTitle)) {
-          prefix = 'सुपरस्टार';
-        } else if (titlePrefixes.funny.includes(selectedTitle)) {
-          prefix = 'बॉस';
-        }
-
         console.log(`[DEBUG] Selected decorative line: ${selectedDecorativeLine}, salutation: ${selectedSalutation}, emoji set: ${selectedEmojiSet}`);
+        console.log(`[DEBUG] No prefix added for title: ${selectedTitle}`);
         message = `${selectedDecorativeLine}\n` +
                   `☞︎ @${name} ${selectedSalutation}\n` +
-                  `उपाधि: ${prefix} ${selectedTitle} ${emoji1}${emoji2}\n` +
-                  `निकनेम: ${prefix} ${selectedTitle} ${emoji1}${emoji2}\n` +
+                  `उपाधि: ${selectedTitle} ${emoji1}${emoji2}\n` +
+                  `निकनेम: ${selectedTitle} ${emoji1}${emoji2}\n` +
                   `उपाधि धारण किया: ${randomYear}\n` +
                   `उपाधि प्रदान करने वाला: ${provider} ने प्रदान की ${providerTags[provider] || ''} ${selectedEmojiSet}\n` +
                   `${selectedDecorativeLine}`;
