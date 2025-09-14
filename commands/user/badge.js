@@ -1,11 +1,10 @@
-const axios = require('axios');
 const Jimp = require('jimp');
 const fs = require('fs');
 const path = require('path');
 
 module.exports = {
   name: 'badge',
-  description: 'Generate a high-quality colorful badge with bold name 🌟🔥',
+  description: 'Generate a stylish text-based badge with name, verified title, date, and custom stamp 🌟🔥',
   aliases: ['badge'],
   execute: async (api, threadID, args, event, botState, isMaster, botID, stopBot) => {
     console.log(`[DEBUG] badge called: threadID=${threadID}, args=${JSON.stringify(args)}, senderID=${event.senderID}`);
@@ -56,58 +55,6 @@ module.exports = {
 
       const name = userInfo.name || 'Unknown User';
       console.log(`[DEBUG] User name: ${name}`);
-      // Try high-quality URL first, fall back to thumbSrc, then default
-      const profilePicUrls = [
-        `https://graph.facebook.com/${targetID}/picture?type=large`,
-        userInfo.thumbSrc,
-        'https://via.placeholder.com/200'
-      ];
-      console.log(`[DEBUG] Profile picture URLs to try: ${JSON.stringify(profilePicUrls)}`);
-
-      let profilePic;
-      let selectedUrl;
-      for (const url of profilePicUrls) {
-        try {
-          console.log(`[DEBUG] Downloading profile picture from ${url}`);
-          selectedUrl = url;
-          const response = await axios.get(url, { responseType: 'arraybuffer' });
-          if (!response.data || response.data.length === 0) {
-            throw new Error('Empty response data for profile picture');
-          }
-          profilePic = await Jimp.read(Buffer.from(response.data));
-          console.log(`[DEBUG] Profile picture downloaded successfully from ${url}`);
-          break;
-        } catch (err) {
-          console.error(`[ERROR] Profile picture download error from ${url}: ${err.message}`);
-          if (url === profilePicUrls[profilePicUrls.length - 1]) {
-            console.log('[DEBUG] All URLs failed, using default placeholder');
-            profilePic = await Jimp.read('https://via.placeholder.com/200');
-            console.log('[DEBUG] Default profile picture loaded');
-          }
-        }
-      }
-
-      try {
-        // Use bicubic interpolation for better quality resizing
-        profilePic.resize(150, 150, Jimp.RESIZE_BICUBIC);
-        // Add a gradient border to default image for style
-        if (selectedUrl === 'https://via.placeholder.com/200') {
-          const border = new Jimp(160, 160);
-          border.scan(0, 0, border.bitmap.width, border.bitmap.height, (x, y, idx) => {
-            const t = Math.min(x, y, border.bitmap.width - x, border.bitmap.height - y) / 10;
-            border.bitmap.data[idx] = t * 255; // Red gradient border
-            border.bitmap.data[idx + 1] = t * 165;
-            border.bitmap.data[idx + 2] = 0;
-            border.bitmap.data[idx + 3] = 255;
-          });
-          border.composite(profilePic, 5, 5);
-          profilePic = border;
-        }
-        console.log('[DEBUG] Profile picture resized');
-      } catch (err) {
-        console.error(`[ERROR] Profile picture resize error: ${err.message}`);
-        return api.sendMessage('⚠️ प्रोफाइल पिक्चर प्रोसेस करने में गलती। 🕉️', threadID);
-      }
 
       // Create a colorful gradient background (300x300)
       let badgeImage;
@@ -138,23 +85,75 @@ module.exports = {
         return api.sendMessage('⚠️ बैज इमेज बनाने में गलती। डेवलपर से संपर्क करें! 🕉️', threadID);
       }
 
-      try {
-        badgeImage.composite(profilePic, selectedUrl === 'https://via.placeholder.com/200' ? 70 : 75, selectedUrl === 'https://via.placeholder.com/200' ? 70 : 75);
-        console.log('[DEBUG] Profile picture composited');
-      } catch (err) {
-        console.error(`[ERROR] Profile picture composition error: ${err.message}`);
-        return api.sendMessage('⚠️ प्रोफाइल पिक्चर जोड़ने में गलती। 🕉️', threadID);
-      }
-
+      // Add name, verified badge, date, and stamp
       let font;
       try {
-        console.log('[DEBUG] Loading bold font');
-        font = await Jimp.loadFont(Jimp.FONT_SANS_64_BLACK);
-        badgeImage.print(font, 10, 10, name.substring(0, 15));
+        console.log('[DEBUG] Loading bold font for name');
+        font = await Jimp.loadFont(Jimp.FONT_SANS_64_WHITE); // White for visibility
+        badgeImage.print(font, 10, 30, `@${name.substring(0, 15)}`, 280); // @user NAME
         console.log('[DEBUG] Name printed on badge');
       } catch (err) {
-        console.error(`[ERROR] Font loading error: ${err.message}`);
-        return api.sendMessage('⚠️ फॉन्ट लोड करने में गलती। डेवलपर से संपर्क करें! 🕉️', threadID);
+        console.error(`[ERROR] Font loading error for name: ${err.message}`);
+        return api.sendMessage('⚠️ नाम लिखने में गलती। डेवलपर से संपर्क करें! 🕉️', threadID);
+      }
+
+      // Add verified badge title
+      const titles = [
+        'VERIFIED', 'KING', 'QUEEN', 'RANDII', 'LAVDII', 'TATTA', 'CHOTA TATTA',
+        'BDA TATTA', 'TATTO KA DOST', 'TATTO KA KAAL', 'TATTA KING', 'PORNSTAR',
+        'MIA KHALIFA', 'SUNNYLEON', 'DENI DENIAL', 'MAHAMURKH', 'NAMOONA',
+        'JOKAR', 'NOKAR', 'MAHISTMATI SHAMRAT', 'GULAAM', 'CHUTIYA',
+        'CHUTIYO KA RAJA', 'MAHACHUTIYA', 'NO.1 CHUTIA', '2025 KA FYTR'
+      ];
+      const selectedTitle = titles[Math.floor(Math.random() * titles.length)];
+      try {
+        console.log('[DEBUG] Loading font for verified badge');
+        font = await Jimp.loadFont(Jimp.FONT_SANS_32_WHITE);
+        badgeImage.print(font, 10, 120, `VERIFIED ${selectedTitle}`, 280); // VERIFIED <title>
+        console.log('[DEBUG] Verified badge printed');
+      } catch (err) {
+        console.error(`[ERROR] Font loading error for verified badge: ${err.message}`);
+        return api.sendMessage('⚠️ उपाधि लिखने में गलती। डेवलपर से संपर्क करें! 🕉️', threadID);
+      }
+
+      // Add random year (2000-2025)
+      const randomYear = Math.floor(Math.random() * (2025 - 2000 + 1)) + 2000;
+      const dateStr = `BADGE DHARAN KIYA: ${randomYear}`;
+      try {
+        console.log('[DEBUG] Loading font for date');
+        font = await Jimp.loadFont(Jimp.FONT_SANS_16_WHITE);
+        badgeImage.print(font, 10, 180, dateStr, 280);
+        console.log('[DEBUG] Date printed on badge');
+      } catch (err) {
+        console.error(`[ERROR] Font loading error for date: ${err.message}`);
+        return api.sendMessage('⚠️ तारीख लिखने में गलती। डेवलपर से संपर्क करें! 🕉️', threadID);
+      }
+
+      // Add random stamp (5-6 options with circle background)
+      const stamps = [
+        '100% ✅', 'Verified 🖨️', 'Approved ✓', 'Elite 🌟', 'Pro 🔥', 'Legend 🦁'
+      ];
+      const selectedStamp = stamps[Math.floor(Math.random() * stamps.length)];
+      try {
+        console.log('[DEBUG] Creating stamp circle');
+        const stampCircle = new Jimp(80, 80, 0x00000000); // Transparent background
+        stampCircle.circle({ radius: 40, x: 40, y: 40 }); // Draw circle
+        stampCircle.scan(0, 0, stampCircle.bitmap.width, stampCircle.bitmap.height, (x, y, idx) => {
+          if (stampCircle.bitmap.data[idx + 3] !== 0) { // Only fill non-transparent pixels
+            stampCircle.bitmap.data[idx] = Math.random() * 255; // Random red
+            stampCircle.bitmap.data[idx + 1] = Math.random() * 255; // Random green
+            stampCircle.bitmap.data[idx + 2] = Math.random() * 255; // Random blue
+            stampCircle.bitmap.data[idx + 3] = 255; // Full opacity
+          }
+        });
+        console.log('[DEBUG] Loading font for stamp');
+        font = await Jimp.loadFont(Jimp.FONT_SANS_16_WHITE);
+        stampCircle.print(font, 10, 30, selectedStamp, 60); // Center stamp text
+        badgeImage.composite(stampCircle, 210, 210); // Right-bottom corner
+        console.log('[DEBUG] Stamp printed on badge');
+      } catch (err) {
+        console.error(`[ERROR] Stamp creation error: ${err.message}`);
+        return api.sendMessage('⚠️ स्टैंप बनाने में गलती। डेवलपर से संपर्क करें! 🕉️', threadID);
       }
 
       let outputPath;
@@ -185,7 +184,7 @@ module.exports = {
         const attachment = fs.createReadStream(outputPath);
         console.log('[DEBUG] Sending badge image with attachment');
         await api.sendMessage({
-          body: `🌟 ${name} का सुपर मस्त बैज तैयार है! 🔥🎉🦁🚀`,
+          body: `🌟 @${name} का सुपर मस्त बैज तैयार है! 🔥🎉🦁🚀\nनिकनेम: ${selectedTitle}\nउपाधि: VERIFIED ${selectedTitle}\n${dateStr}\nस्टैंप: ${selectedStamp}`,
           attachment: [attachment]
         }, threadID);
         console.log('[DEBUG] Badge image sent successfully');
