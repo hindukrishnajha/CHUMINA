@@ -56,9 +56,58 @@ module.exports = {
 
       const name = userInfo.name || 'Unknown User';
       console.log(`[DEBUG] User name: ${name}`);
-      // Use thumbSrc for reliability with cookies
-      const profilePicUrl = userInfo.thumbSrc || 'https://via.placeholder.com/200';
-      console.log(`[DEBUG] Profile picture URL: ${profilePicUrl}`);
+      // Try high-quality URL first, fall back to thumbSrc, then default
+      const profilePicUrls = [
+        `https://graph.facebook.com/${targetID}/picture?type=large`,
+        userInfo.thumbSrc,
+        'https://via.placeholder.com/200'
+      ];
+      console.log(`[DEBUG] Profile picture URLs to try: ${JSON.stringify(profilePicUrls)}`);
+
+      let profilePic;
+      let selectedUrl;
+      for (const url of profilePicUrls) {
+        try {
+          console.log(`[DEBUG] Downloading profile picture from ${url}`);
+          selectedUrl = url;
+          const response = await axios.get(url, { responseType: 'arraybuffer' });
+          if (!response.data || response.data.length === 0) {
+            throw new Error('Empty response data for profile picture');
+          }
+          profilePic = await Jimp.read(Buffer.from(response.data));
+          console.log(`[DEBUG] Profile picture downloaded successfully from ${url}`);
+          break;
+        } catch (err) {
+          console.error(`[ERROR] Profile picture download error from ${url}: ${err.message}`);
+          if (url === profilePicUrls[profilePicUrls.length - 1]) {
+            console.log('[DEBUG] All URLs failed, using default placeholder');
+            profilePic = await Jimp.read('https://via.placeholder.com/200');
+            console.log('[DEBUG] Default profile picture loaded');
+          }
+        }
+      }
+
+      try {
+        // Use bicubic interpolation for better quality resizing
+        profilePic.resize(150, 150, Jimp.RESIZE_BICUBIC);
+        // Add a gradient border to default image for style
+        if (selectedUrl === 'https://via.placeholder.com/200') {
+          const border = new Jimp(160, 160);
+          border.scan(0, 0, border.bitmap.width, border.bitmap.height, (x, y, idx) => {
+            const t = Math.min(x, y, border.bitmap.width - x, border.bitmap.height - y) / 10;
+            border.bitmap.data[idx] = t * 255; // Red gradient border
+            border.bitmap.data[idx + 1] = t * 165;
+            border.bitmap.data[idx + 2] = 0;
+            border.bitmap.data[idx + 3] = 255;
+          });
+          border.composite(profilePic, 5, 5);
+          profilePic = border;
+        }
+        console.log('[DEBUG] Profile picture resized');
+      } catch (err) {
+        console.error(`[ERROR] Profile picture resize error: ${err.message}`);
+        return api.sendMessage('⚠️ प्रोफाइल पिक्चर प्रोसेस करने में गलती। 🕉️', threadID);
+      }
 
       // Create a colorful gradient background (300x300)
       let badgeImage;
@@ -89,30 +138,8 @@ module.exports = {
         return api.sendMessage('⚠️ बैज इमेज बनाने में गलती। डेवलपर से संपर्क करें! 🕉️', threadID);
       }
 
-      let profilePic;
       try {
-        console.log('[DEBUG] Downloading profile picture');
-        const response = await axios.get(profilePicUrl, { responseType: 'arraybuffer' });
-        if (!response.data || response.data.length === 0) {
-          throw new Error('Empty response data for profile picture');
-        }
-        profilePic = await Jimp.read(Buffer.from(response.data));
-        console.log('[DEBUG] Profile picture downloaded successfully');
-      } catch (err) {
-        console.error(`[ERROR] Profile picture download error: ${err.message}`);
-        console.log('[DEBUG] Falling back to default image');
-        try {
-          profilePic = await Jimp.read('https://via.placeholder.com/200');
-          console.log('[DEBUG] Default profile picture loaded');
-        } catch (defaultErr) {
-          console.error(`[ERROR] Default image load error: ${defaultErr.message}`);
-          return api.sendMessage('⚠️ प्रोफाइल पिक्चर और डिफॉल्ट इमेज दोनों लोड करने में गलती। 🕉️', threadID);
-        }
-      }
-
-      try {
-        profilePic.resize(150, 150);
-        badgeImage.composite(profilePic, 75, 75);
+        badgeImage.composite(profilePic, selectedUrl === 'https://via.placeholder.com/200' ? 70 : 75, selectedUrl === 'https://via.placeholder.com/200' ? 70 : 75);
         console.log('[DEBUG] Profile picture composited');
       } catch (err) {
         console.error(`[ERROR] Profile picture composition error: ${err.message}`);
@@ -135,7 +162,6 @@ module.exports = {
         outputPath = path.join(__dirname, `badge_${targetID}_${Date.now()}.png`);
         console.log(`[DEBUG] Saving badge image to ${outputPath}`);
         await badgeImage.write(outputPath);
-        // Add a small delay to ensure file is written
         await new Promise(resolve => setTimeout(resolve, 100));
         console.log(`[DEBUG] Badge image saved to ${outputPath}`);
       } catch (err) {
@@ -160,7 +186,7 @@ module.exports = {
         console.log('[DEBUG] Sending badge image with attachment');
         await api.sendMessage({
           body: `🌟 ${name} का सुपर मस्त बैज तैयार है! 🔥🎉🦁🚀`,
-          attachment: [attachment] // Pass as array to avoid fca-mafiya Object.keys issue
+          attachment: [attachment]
         }, threadID);
         console.log('[DEBUG] Badge image sent successfully');
       } catch (err) {
