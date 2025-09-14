@@ -52,6 +52,8 @@ User:
 - ${prefix}music <song>: गाना प्ले
 - ${prefix}aihelp: AI हेल्प
 - ${prefix}badge / @mention: स्टाइलिश बैज
+- ${prefix}hotquote: फनी कोट
+- ${prefix}mood / @mention: मूड स्टेटस
 ===
 Special:
 - ${prefix}mastercommand: मास्टर कमांड्स
@@ -64,4 +66,4 @@ Special:
       api.sendMessage('⚠️ Help गलती।', threadID);
     }
   }
-};;
+};
