@@ -52,8 +52,9 @@ User:
 - ${prefix}music <song>: गाना प्ले
 - ${prefix}aihelp: AI हेल्प
 - ${prefix}badge / @mention: स्टाइलिश बैज
-- ${prefix}hotquote: फनी कोट
+- ${prefix}hotquote / @mention: फनी कोट
 - ${prefix}mood / @mention: मूड स्टेटस
+- ${prefix}compare @user1 @user2: यूजर कॉम्पिटिशन
 ===
 Special:
 - ${prefix}mastercommand: मास्टर कमांड्स
