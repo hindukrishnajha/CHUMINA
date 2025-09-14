@@ -1,6 +1,6 @@
 module.exports = {
   name: 'badge',
-  description: 'Generate a stylish text-based badge message with title, emoji, and provider 🌟🔥',
+  description: 'Generate a stylish text-based badge message with creative touches 🌟🔥',
   aliases: ['badge'],
   execute: async (api, threadID, args, event, botState, isMaster, botID, stopBot) => {
     console.log(`[DEBUG] badge called: threadID=${threadID}, args=${JSON.stringify(args)}, senderID=${event.senderID}`);
@@ -79,7 +79,8 @@ module.exports = {
                   `उपाधि: MAHARAJA 👑\n` +
                   `निकनेम: KING 🤴🏻\n` +
                   `उपाधि धारण किया: किंग जन्मजन्मांतर से किंग है\n` +
-                  `उपाधि खुद ही धारण की अपनी काबिलीयत से 🌟🔥.. ☜︎\n` +
+                  `उपाधि खुद ही धारण की अपनी काबिलीयत से 🌟🔥..\n` +
+                  `विशेष टिप्पणी: असली किंग, कोई शक नहीं! 👑🔥\n` +
                   `☆✼★━━━━━━━━━━━━★✼☆`;
         mentions = [{
           tag: `@${name}`,
@@ -95,16 +96,42 @@ module.exports = {
           'MAHISTMATI SHAMRAT', 'GULAAM', 'CHUTIYA', 'CHUTIYO KA RAJA', 'MAHACHUTIYA',
           'NO.1 CHUTIA', '2025 KA FYTR'
         ];
-        const emojis = ['🀥', '🀣', '🀦', '🀧', '🀨', '✒️', '𓊆', '𓊇', '𓊈', '𓊉', '𓉘', '𓉝', '𓈖', '📝', '📜', '✍🏻', '🕹️'];
+        const emojis = ['🀥', '🀣', '🀦', '🀧', '🀨', '✒️', '𓊆', '𓊇', '𓊈', '𓊉', '𓉘', '𓉝', '𓈖', '📝', '📜', '✍🏻', '🕹️', '🔥', '⚡', '🌟', '😎', '🦁'];
         const modiTitles = ['KING', 'QUEEN', 'MAHAMURKH', 'NAMOONA', 'JOKAR', 'NOKAR', 'GULAAM'];
         const johniTitles = ['RANDII', 'LAVDII', 'PORNSTAR', 'MIA KHALIFA', 'SUNNYLEON', 'DENI DENIAL'];
         const otherProviders = ['डोनाल्ड ट्रम्प', 'लॉरेंस बिश्नोई', 'इमरान हाशमी', 'राज कुंद्रा'];
+        const decorativeLines = ['✨===✨', '🌟~~~🌟', '🔥---🔥', '⚡***⚡', '🦁~~~🦁', '💫===💫', '🌈---🌈'];
+        const emojiSets = ['🌟🔥', '⚡🌈', '🦁😎', '🌸✨', '🔥🎉', '🌟🚀', '💥🌹'];
+        const salutations = [
+          'का तगड़ा बैज हाजिर है!',
+          'के लिए शानदार उपाधि!',
+          'का धमाकेदार बायोडाटा!',
+          'के लिए यूनिक बैज तैयार!',
+          'का स्टाइलिश बायोडाटा!'
+        ];
+        const providerTags = {
+          'मोदी': '(PM स्वैग!) 😎',
+          'जोहनी सिंस': '(पोर्न का बादशाह!) 🔥',
+          'डोनाल्ड ट्रम्प': '(अमेरिका का बॉस!) 🇺🇸',
+          'लॉरेंस बिश्नोई': '(बॉस का जलवा!) 🦁',
+          'इमरान हाशमी': '(रोमांस का किंग!) 😘',
+          'राज कुंद्रा': '(बिजनेस का गुरु!) 💰'
+        };
+        const titlePrefixes = {
+          royal: ['KING', 'QUEEN'],
+          funky: ['RANDII', 'LAVDII', 'PORNSTAR', 'MIA KHALIFA', 'SUNNYLEON', 'DENI DENIAL'],
+          funny: ['TATTA', 'CHOTA TATTA', 'BDA TATTA', 'TATTO KA DOST', 'TATTO KA KAAL', 'TATTA KING', 'MAHAMURKH', 'NAMOONA', 'JOKAR', 'NOKAR', 'CHUTIYA', 'CHUTIYO KA RAJA', 'MAHACHUTIYA', 'NO.1 CHUTIA']
+        };
 
         const selectedTitle = titles[Math.floor(Math.random() * titles.length)];
-        const selectedEmoji = emojis[Math.floor(Math.random() * emojis.length)];
+        const emoji1 = emojis[Math.floor(Math.random() * emojis.length)];
+        const emoji2 = emojis[Math.floor(Math.random() * emojis.length)];
         const randomYear = Math.floor(Math.random() * (2025 - 2000 + 1)) + 2000;
+        const selectedDecorativeLine = decorativeLines[Math.floor(Math.random() * decorativeLines.length)];
+        const selectedSalutation = salutations[Math.floor(Math.random() * salutations.length)];
+        const selectedEmojiSet = emojiSets[Math.floor(Math.random() * emojiSets.length)];
 
-        // Determine provider based on title
+        // Determine provider
         let provider;
         if (modiTitles.includes(selectedTitle)) {
           provider = 'मोदी';
@@ -114,13 +141,24 @@ module.exports = {
           provider = otherProviders[Math.floor(Math.random() * otherProviders.length)];
         }
 
-        message = `☆✼★━━━━━━━━━━━━★✼☆\n` +
-                  `☞︎ @${name} का बायोडाटा तैयार है\n` +
-                  `उपाधि: ${selectedTitle} ${selectedEmoji}\n` +
-                  `निकनेम: ${selectedTitle} ${selectedEmoji}\n` +
+        // Determine prefix
+        let prefix = '';
+        if (titlePrefixes.royal.includes(selectedTitle)) {
+          prefix = selectedTitle === 'KING' ? 'महाराजा' : 'महारानी';
+        } else if (titlePrefixes.funky.includes(selectedTitle)) {
+          prefix = 'सुपरस्टार';
+        } else if (titlePrefixes.funny.includes(selectedTitle)) {
+          prefix = 'बॉस';
+        }
+
+        console.log(`[DEBUG] Selected decorative line: ${selectedDecorativeLine}, salutation: ${selectedSalutation}, emoji set: ${selectedEmojiSet}`);
+        message = `${selectedDecorativeLine}\n` +
+                  `☞︎ @${name} ${selectedSalutation}\n` +
+                  `उपाधि: ${prefix} ${selectedTitle} ${emoji1}${emoji2}\n` +
+                  `निकनेम: ${prefix} ${selectedTitle} ${emoji1}${emoji2}\n` +
                   `उपाधि धारण किया: ${randomYear}\n` +
-                  `उपाधि प्रदान करने वाला: ${provider} ने प्रदान की\n` +
-                  `☆✼★━━━━━━━━━━━━★✼☆`;
+                  `उपाधि प्रदान करने वाला: ${provider} ने प्रदान की ${providerTags[provider] || ''} ${selectedEmojiSet}\n` +
+                  `${selectedDecorativeLine}`;
         mentions = [{
           tag: `@${name}`,
           id: targetID,
