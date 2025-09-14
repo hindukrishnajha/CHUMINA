@@ -4,7 +4,7 @@ const path = require('path');
 
 module.exports = {
   name: 'badge',
-  description: 'Generate a stylish text-based badge with name, verified title, date, and custom stamp 🌟🔥',
+  description: 'Generate a stylish text-based badge with name, verified title, emoji, and date 🌟🔥',
   aliases: ['badge'],
   execute: async (api, threadID, args, event, botState, isMaster, botID, stopBot) => {
     console.log(`[DEBUG] badge called: threadID=${threadID}, args=${JSON.stringify(args)}, senderID=${event.senderID}`);
@@ -85,19 +85,20 @@ module.exports = {
         return api.sendMessage('⚠️ बैज इमेज बनाने में गलती। डेवलपर से संपर्क करें! 🕉️', threadID);
       }
 
-      // Add name, verified badge, date, and stamp
+      // Add name, verified badge with emoji, and date with random offset
       let font;
+      const offset = Math.floor(Math.random() * 10) - 5; // Random offset ±5 pixels
       try {
         console.log('[DEBUG] Loading bold font for name');
         font = await Jimp.loadFont(Jimp.FONT_SANS_64_WHITE); // White for visibility
-        badgeImage.print(font, 10, 30, `@${name.substring(0, 15)}`, 280); // @user NAME
+        badgeImage.print(font, 10, 30 + offset, `@${name.substring(0, 15)}`, 280); // @user NAME
         console.log('[DEBUG] Name printed on badge');
       } catch (err) {
         console.error(`[ERROR] Font loading error for name: ${err.message}`);
         return api.sendMessage('⚠️ नाम लिखने में गलती। डेवलपर से संपर्क करें! 🕉️', threadID);
       }
 
-      // Add verified badge title
+      // Add verified badge title with random emoji
       const titles = [
         'VERIFIED', 'KING', 'QUEEN', 'RANDII', 'LAVDII', 'TATTA', 'CHOTA TATTA',
         'BDA TATTA', 'TATTO KA DOST', 'TATTO KA KAAL', 'TATTA KING', 'PORNSTAR',
@@ -105,12 +106,14 @@ module.exports = {
         'JOKAR', 'NOKAR', 'MAHISTMATI SHAMRAT', 'GULAAM', 'CHUTIYA',
         'CHUTIYO KA RAJA', 'MAHACHUTIYA', 'NO.1 CHUTIA', '2025 KA FYTR'
       ];
+      const emojis = ['🀥', '🀣', '🀦', '🀧', '🀨', '✒️', '𓊆', '𓊇', '𓊈', '𓊉', '𓉘', '𓉝', '𓈖', '📝', '📜', '✍🏻', '🕹️'];
       const selectedTitle = titles[Math.floor(Math.random() * titles.length)];
+      const selectedEmoji = emojis[Math.floor(Math.random() * emojis.length)];
       try {
         console.log('[DEBUG] Loading font for verified badge');
         font = await Jimp.loadFont(Jimp.FONT_SANS_32_WHITE);
-        badgeImage.print(font, 10, 120, `VERIFIED ${selectedTitle}`, 280); // VERIFIED <title>
-        console.log('[DEBUG] Verified badge printed');
+        badgeImage.print(font, 10, 120 + offset, `VERIFIED ${selectedTitle} ${selectedEmoji}`, 280); // VERIFIED <title> <emoji>
+        console.log('[DEBUG] Verified badge with emoji printed');
       } catch (err) {
         console.error(`[ERROR] Font loading error for verified badge: ${err.message}`);
         return api.sendMessage('⚠️ उपाधि लिखने में गलती। डेवलपर से संपर्क करें! 🕉️', threadID);
@@ -118,42 +121,15 @@ module.exports = {
 
       // Add random year (2000-2025)
       const randomYear = Math.floor(Math.random() * (2025 - 2000 + 1)) + 2000;
-      const dateStr = `BADGE DHARAN KIYA: ${randomYear}`;
+      const dateStr = `उपाधि धारण किया: ${randomYear}`;
       try {
         console.log('[DEBUG] Loading font for date');
         font = await Jimp.loadFont(Jimp.FONT_SANS_16_WHITE);
-        badgeImage.print(font, 10, 180, dateStr, 280);
+        badgeImage.print(font, 10, 180 + offset, dateStr, 280);
         console.log('[DEBUG] Date printed on badge');
       } catch (err) {
         console.error(`[ERROR] Font loading error for date: ${err.message}`);
         return api.sendMessage('⚠️ तारीख लिखने में गलती। डेवलपर से संपर्क करें! 🕉️', threadID);
-      }
-
-      // Add random stamp (5-6 options with circle background)
-      const stamps = [
-        '100% ✅', 'Verified 🖨️', 'Approved ✓', 'Elite 🌟', 'Pro 🔥', 'Legend 🦁'
-      ];
-      const selectedStamp = stamps[Math.floor(Math.random() * stamps.length)];
-      try {
-        console.log('[DEBUG] Creating stamp circle');
-        const stampCircle = new Jimp(80, 80, 0x00000000); // Transparent background
-        stampCircle.circle({ radius: 40, x: 40, y: 40 }); // Draw circle
-        stampCircle.scan(0, 0, stampCircle.bitmap.width, stampCircle.bitmap.height, (x, y, idx) => {
-          if (stampCircle.bitmap.data[idx + 3] !== 0) { // Only fill non-transparent pixels
-            stampCircle.bitmap.data[idx] = Math.random() * 255; // Random red
-            stampCircle.bitmap.data[idx + 1] = Math.random() * 255; // Random green
-            stampCircle.bitmap.data[idx + 2] = Math.random() * 255; // Random blue
-            stampCircle.bitmap.data[idx + 3] = 255; // Full opacity
-          }
-        });
-        console.log('[DEBUG] Loading font for stamp');
-        font = await Jimp.loadFont(Jimp.FONT_SANS_16_WHITE);
-        stampCircle.print(font, 10, 30, selectedStamp, 60); // Center stamp text
-        badgeImage.composite(stampCircle, 210, 210); // Right-bottom corner
-        console.log('[DEBUG] Stamp printed on badge');
-      } catch (err) {
-        console.error(`[ERROR] Stamp creation error: ${err.message}`);
-        return api.sendMessage('⚠️ स्टैंप बनाने में गलती। डेवलपर से संपर्क करें! 🕉️', threadID);
       }
 
       let outputPath;
@@ -179,12 +155,15 @@ module.exports = {
         return api.sendMessage('⚠️ फाइल चेक करने में गलती। डेवलपर से संपर्क करें! 🕉️', threadID);
       }
 
+      // Random status for message
+      const statuses = ['हैप्पी', 'सैड', 'सुसाइड करना चाहता है'];
+      const selectedStatus = statuses[Math.floor(Math.random() * statuses.length)];
       try {
         console.log('[DEBUG] Creating read stream for badge image');
         const attachment = fs.createReadStream(outputPath);
         console.log('[DEBUG] Sending badge image with attachment');
         await api.sendMessage({
-          body: `🌟 @${name} का सुपर मस्त बैज तैयार है! 🔥🎉🦁🚀\nनिकनेम: ${selectedTitle}\nउपाधि: VERIFIED ${selectedTitle}\n${dateStr}\nस्टैंप: ${selectedStamp}`,
+          body: `🥀✨💦💙｡☆✼★━━━━━━━━━━━━★✼☆｡🥀✨💦💙\n☞︎ @${name} का बायोडाटा तैयार है\nनिकनेम: ${selectedTitle}\nउपाधि: VERIFIED ${selectedTitle} ${selectedEmoji}\n${dateStr}\nप्रेजेंट में ${selectedStatus} उपाधि के कारण 🌟🔥🎉🦁😁.. ☜︎\n🥀✨💦💙｡☆✼★━━━━━━━━━━━━★✼☆｡🥀✨💦💙`,
           attachment: [attachment]
         }, threadID);
         console.log('[DEBUG] Badge image sent successfully');
