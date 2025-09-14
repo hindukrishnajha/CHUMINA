@@ -5,7 +5,7 @@ const path = require('path');
 
 module.exports = {
   name: 'badge',
-  description: 'Generate a colorful badge with user profile picture and bold name 🌟🔥',
+  description: 'Generate a high-quality colorful badge with bold name 🌟🔥',
   aliases: ['badge'],
   execute: async (api, threadID, args, event, botState, isMaster, botID, stopBot) => {
     console.log(`[DEBUG] badge called: threadID=${threadID}, args=${JSON.stringify(args)}, senderID=${event.senderID}`);
@@ -56,14 +56,15 @@ module.exports = {
 
       const name = userInfo.name || 'Unknown User';
       console.log(`[DEBUG] User name: ${name}`);
-      const profilePicUrl = userInfo.thumbSrc || 'https://via.placeholder.com/100'; // Fallback to placeholder
+      const profilePicUrl = userInfo.profileUrl 
+        ? `https://graph.facebook.com/${targetID}/picture?type=large&redirect=false`
+        : 'https://via.placeholder.com/200';
       console.log(`[DEBUG] Profile picture URL: ${profilePicUrl}`);
 
-      // Create a colorful gradient background (200x200)
+      // Create a colorful gradient background (300x300)
       let badgeImage;
       try {
-        badgeImage = new Jimp(200, 200);
-        // Random gradient colors
+        badgeImage = new Jimp(300, 300);
         const colors = [
           { start: '#FF0000', end: '#0000FF' }, // Red to Blue
           { start: '#00FF00', end: '#FF00FF' }, // Green to Magenta
@@ -73,7 +74,6 @@ module.exports = {
         const selectedGradient = colors[Math.floor(Math.random() * colors.length)];
         console.log(`[DEBUG] Selected gradient: ${selectedGradient.start} to ${selectedGradient.end}`);
 
-        // Optimized gradient using Jimp.scan
         badgeImage.scan(0, 0, badgeImage.bitmap.width, badgeImage.bitmap.height, (x, y, idx) => {
           const t = y / badgeImage.bitmap.height;
           const r = parseInt(selectedGradient.start.slice(1, 3), 16) * (1 - t) + parseInt(selectedGradient.end.slice(1, 3), 16) * t;
@@ -82,7 +82,7 @@ module.exports = {
           badgeImage.bitmap.data[idx] = r;
           badgeImage.bitmap.data[idx + 1] = g;
           badgeImage.bitmap.data[idx + 2] = b;
-          badgeImage.bitmap.data[idx + 3] = 255; // Alpha
+          badgeImage.bitmap.data[idx + 3] = 255;
         });
         console.log('[DEBUG] Gradient background created');
       } catch (err) {
@@ -94,28 +94,27 @@ module.exports = {
       try {
         console.log('[DEBUG] Downloading profile picture');
         const response = await axios.get(profilePicUrl, { responseType: 'arraybuffer' });
-        profilePic = await Jimp.read(Buffer.from(response.data));
+        profilePic = await Jimp.read(Buffer.from(response.data.data?.url ? response.data.data.url : response.data));
         console.log('[DEBUG] Profile picture downloaded successfully');
       } catch (err) {
         console.error(`[ERROR] Profile picture download error: ${err.message}`);
-        return api.sendMessage('⚠️ प्रोफाइल पिक्चर डाउनलोड करने में गलती। 🕉️', threadID);
+        return api.sendMessage('⚠️ प्रोफाइल पिक्चर डाउनलोड करने में गलती। डिफॉल्ट इमेज यूज कर रहा हूँ। 🕉️', threadID);
       }
 
       try {
-        profilePic.resize(100, 100);
-        badgeImage.composite(profilePic, 50, 50); // Center the profile picture
+        profilePic.resize(150, 150);
+        badgeImage.composite(profilePic, 75, 75);
         console.log('[DEBUG] Profile picture composited');
       } catch (err) {
         console.error(`[ERROR] Profile picture composition error: ${err.message}`);
         return api.sendMessage('⚠️ प्रोफाइल पिक्चर जोड़ने में गलती। 🕉️', threadID);
       }
 
-      // Use bold font for the name
       let font;
       try {
         console.log('[DEBUG] Loading bold font');
-        font = await Jimp.loadFont(Jimp.FONT_SANS_64_BLACK); // Bold and larger font
-        badgeImage.print(font, 10, 10, name.substring(0, 15)); // Limit to 15 chars for readability
+        font = await Jimp.loadFont(Jimp.FONT_SANS_64_BLACK);
+        badgeImage.print(font, 10, 10, name.substring(0, 15));
         console.log('[DEBUG] Name printed on badge');
       } catch (err) {
         console.error(`[ERROR] Font loading error: ${err.message}`);
@@ -132,16 +131,30 @@ module.exports = {
         return api.sendMessage('⚠️ बैज इमेज सेव करने में गलती। 🕉️', threadID);
       }
 
+      // Check if file exists before sending
       try {
-        console.log('[DEBUG] Sending badge image');
+        if (!fs.existsSync(outputPath)) {
+          console.error(`[ERROR] Badge image file does not exist: ${outputPath}`);
+          return api.sendMessage('⚠️ बैज इमेज फाइल नहीं मिली। डेवलपर से संपर्क करें! 🕉️', threadID);
+        }
+        console.log(`[DEBUG] File exists: ${outputPath}`);
+      } catch (err) {
+        console.error(`[ERROR] Error checking file existence: ${err.message}`);
+        return api.sendMessage('⚠️ फाइल चेक करने में गलती। डेवलपर से संपर्क करें! 🕉️', threadID);
+      }
+
+      try {
+        console.log('[DEBUG] Creating read stream for badge image');
+        const attachment = fs.createReadStream(outputPath);
+        console.log('[DEBUG] Sending badge image with attachment');
         await api.sendMessage({
-          body: `🌟 ${name} का मस्त बैज तैयार है! 🔥🎉🦁🚀`,
-          attachment: fs.createReadStream(outputPath)
+          body: `🌟 ${name} का सुपर मस्त बैज तैयार है! 🔥🎉🦁🚀`,
+          attachment: attachment
         }, threadID);
         console.log('[DEBUG] Badge image sent successfully');
       } catch (err) {
         console.error(`[ERROR] Failed to send badge: ${err.message}`);
-        return api.sendMessage('⚠️ बैज भेजने में गलती। फिर से ट्राई करो! 🕉️', threadID);
+        return api.sendMessage(`⚠️ बैज भेजने में गलती: ${err.message} 🕉️`, threadID);
       }
 
       try {
