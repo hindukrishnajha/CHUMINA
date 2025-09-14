@@ -5,7 +5,7 @@ const path = require('path');
 
 module.exports = {
   name: 'badge',
-  description: 'Generate a colorful badge with user profile picture and bold name 🌟',
+  description: 'Generate a colorful badge with user profile picture and bold name 🌟🔥',
   aliases: ['badge'],
   execute: async (api, threadID, args, event, botState, isMaster, botID, stopBot) => {
     console.log(`[DEBUG] badge called: threadID=${threadID}, args=${JSON.stringify(args)}, senderID=${event.senderID}`);
@@ -13,28 +13,36 @@ module.exports = {
       let targetID;
       if (event.mentions && Object.keys(event.mentions).length > 0) {
         targetID = Object.keys(event.mentions)[0];
+        console.log(`[DEBUG] Using mention ID: ${targetID}`);
       } else if (args[0] && args[0].startsWith('https://www.facebook.com/')) {
         const profileUrl = args[0];
         const userIDMatch = profileUrl.match(/(\d+)/);
         if (!userIDMatch) {
+          console.log('[DEBUG] Invalid profile URL provided');
           return api.sendMessage('🚫 गलत प्रोफाइल लिंक! @mention या सही FB प्रोफाइल लिंक यूज करो। 🕉️', threadID);
         }
         targetID = userIDMatch[0];
+        console.log(`[DEBUG] Using profile URL ID: ${targetID}`);
       } else if (event.messageReply && event.messageReply.senderID) {
         targetID = event.messageReply.senderID;
+        console.log(`[DEBUG] Using reply sender ID: ${targetID}`);
       } else {
         targetID = event.senderID;
+        console.log(`[DEBUG] Using sender ID: ${targetID}`);
       }
 
       if (!targetID) {
+        console.log('[DEBUG] No target ID found');
         return api.sendMessage('🚫 यूजर ID नहीं मिली! @mention, प्रोफाइल लिंक, या रिप्लाई यूज करो। 🕉️', threadID);
       }
 
       let userInfo;
       try {
+        console.log(`[DEBUG] Fetching user info for ID: ${targetID}`);
         userInfo = await new Promise((resolve, reject) => {
           api.getUserInfo(targetID, (err, ret) => {
             if (err || !ret || !ret[targetID]) {
+              console.error(`[ERROR] Failed to fetch user info: ${err?.message || 'Unknown error'}`);
               reject(new Error('यूजर जानकारी लाने में असफल।'));
             } else {
               resolve(ret[targetID]);
@@ -42,11 +50,14 @@ module.exports = {
           });
         });
       } catch (err) {
-        return api.sendMessage('⚠️ यूजर जानकारी लाने में गलती: ' + err.message + ' 🕉️', threadID);
+        console.error(`[ERROR] User info error: ${err.message}`);
+        return api.sendMessage(`⚠️ यूजर जानकारी लाने में गलती: ${err.message} 🕉️`, threadID);
       }
 
       const name = userInfo.name || 'Unknown User';
-      const profilePicUrl = userInfo.thumbSrc || `https://graph.facebook.com/${targetID}/picture?type=large&access_token=${process.env.FB_ACCESS_TOKEN || ''}`;
+      console.log(`[DEBUG] User name: ${name}`);
+      const profilePicUrl = userInfo.thumbSrc || 'https://via.placeholder.com/100'; // Fallback to placeholder
+      console.log(`[DEBUG] Profile picture URL: ${profilePicUrl}`);
 
       // Create a colorful gradient background (200x200)
       let badgeImage;
@@ -60,59 +71,87 @@ module.exports = {
           { start: '#00FFFF', end: '#FF69B4' }  // Cyan to HotPink
         ];
         const selectedGradient = colors[Math.floor(Math.random() * colors.length)];
-        for (let y = 0; y < 200; y++) {
-          const t = y / 200;
+        console.log(`[DEBUG] Selected gradient: ${selectedGradient.start} to ${selectedGradient.end}`);
+
+        // Optimized gradient using Jimp.scan
+        badgeImage.scan(0, 0, badgeImage.bitmap.width, badgeImage.bitmap.height, (x, y, idx) => {
+          const t = y / badgeImage.bitmap.height;
           const r = parseInt(selectedGradient.start.slice(1, 3), 16) * (1 - t) + parseInt(selectedGradient.end.slice(1, 3), 16) * t;
           const g = parseInt(selectedGradient.start.slice(3, 5), 16) * (1 - t) + parseInt(selectedGradient.end.slice(3, 5), 16) * t;
           const b = parseInt(selectedGradient.start.slice(5, 7), 16) * (1 - t) + parseInt(selectedGradient.end.slice(5, 7), 16) * t;
-          for (let x = 0; x < 200; x++) {
-            badgeImage.setPixelColor(Jimp.rgbaToInt(r, g, b, 255), x, y);
-          }
-        }
+          badgeImage.bitmap.data[idx] = r;
+          badgeImage.bitmap.data[idx + 1] = g;
+          badgeImage.bitmap.data[idx + 2] = b;
+          badgeImage.bitmap.data[idx + 3] = 255; // Alpha
+        });
+        console.log('[DEBUG] Gradient background created');
       } catch (err) {
+        console.error(`[ERROR] Failed to create badge image: ${err.message}`);
         return api.sendMessage('⚠️ बैज इमेज बनाने में गलती। डेवलपर से संपर्क करें! 🕉️', threadID);
       }
 
       let profilePic;
       try {
+        console.log('[DEBUG] Downloading profile picture');
         const response = await axios.get(profilePicUrl, { responseType: 'arraybuffer' });
         profilePic = await Jimp.read(Buffer.from(response.data));
+        console.log('[DEBUG] Profile picture downloaded successfully');
       } catch (err) {
+        console.error(`[ERROR] Profile picture download error: ${err.message}`);
         return api.sendMessage('⚠️ प्रोफाइल पिक्चर डाउनलोड करने में गलती। 🕉️', threadID);
       }
 
-      profilePic.resize(100, 100);
-      badgeImage.composite(profilePic, 50, 50); // Center the profile picture
+      try {
+        profilePic.resize(100, 100);
+        badgeImage.composite(profilePic, 50, 50); // Center the profile picture
+        console.log('[DEBUG] Profile picture composited');
+      } catch (err) {
+        console.error(`[ERROR] Profile picture composition error: ${err.message}`);
+        return api.sendMessage('⚠️ प्रोफाइल पिक्चर जोड़ने में गलती। 🕉️', threadID);
+      }
 
       // Use bold font for the name
       let font;
       try {
-        font = await Jimp.loadFont(Jimp.FONT_SANS_32_BLACK); // Bold black font for visibility
+        console.log('[DEBUG] Loading bold font');
+        font = await Jimp.loadFont(Jimp.FONT_SANS_64_BLACK); // Bold and larger font
+        badgeImage.print(font, 10, 10, name.substring(0, 15)); // Limit to 15 chars for readability
+        console.log('[DEBUG] Name printed on badge');
       } catch (err) {
+        console.error(`[ERROR] Font loading error: ${err.message}`);
         return api.sendMessage('⚠️ फॉन्ट लोड करने में गलती। डेवलपर से संपर्क करें! 🕉️', threadID);
       }
-      badgeImage.print(font, 10, 10, name.substring(0, 20)); // Print name at top-left
 
-      const outputBuffer = await badgeImage.getBufferAsync(Jimp.MIME_PNG);
-      const outputPath = path.join(__dirname, `badge_${targetID}.png`);
-      fs.writeFileSync(outputPath, outputBuffer);
+      let outputPath;
+      try {
+        outputPath = path.join(__dirname, `badge_${targetID}_${Date.now()}.png`);
+        await badgeImage.write(outputPath);
+        console.log(`[DEBUG] Badge image saved to ${outputPath}`);
+      } catch (err) {
+        console.error(`[ERROR] Failed to save badge image: ${err.message}`);
+        return api.sendMessage('⚠️ बैज इमेज सेव करने में गलती। 🕉️', threadID);
+      }
 
       try {
+        console.log('[DEBUG] Sending badge image');
         await api.sendMessage({
-          body: `🌟 ${name} का मस्त बैज तैयार है! 🔥🎉`,
+          body: `🌟 ${name} का मस्त बैज तैयार है! 🔥🎉🦁🚀`,
           attachment: fs.createReadStream(outputPath)
         }, threadID);
+        console.log('[DEBUG] Badge image sent successfully');
       } catch (err) {
+        console.error(`[ERROR] Failed to send badge: ${err.message}`);
         return api.sendMessage('⚠️ बैज भेजने में गलती। फिर से ट्राई करो! 🕉️', threadID);
       }
 
       try {
         fs.unlinkSync(outputPath);
+        console.log(`[DEBUG] Deleted badge image: ${outputPath}`);
       } catch (err) {
-        console.error('[DEBUG] Error deleting badge image:', err.message);
+        console.error(`[DEBUG] Error deleting badge image: ${err.message}`);
       }
     } catch (err) {
-      console.error('[ERROR] Badge command error:', err.message);
+      console.error(`[ERROR] Badge command error: ${err.message}`);
       api.sendMessage(`❌ कमांड चलाने में गलती: ${err.message} 🕉️`, threadID);
     }
   }
