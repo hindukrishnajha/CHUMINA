@@ -56,9 +56,8 @@ module.exports = {
 
       const name = userInfo.name || 'Unknown User';
       console.log(`[DEBUG] User name: ${name}`);
-      const profilePicUrl = userInfo.profileUrl 
-        ? `https://graph.facebook.com/${targetID}/picture?type=large&redirect=false`
-        : 'https://via.placeholder.com/200';
+      // Use thumbSrc for reliability with cookies
+      const profilePicUrl = userInfo.thumbSrc || 'https://via.placeholder.com/200';
       console.log(`[DEBUG] Profile picture URL: ${profilePicUrl}`);
 
       // Create a colorful gradient background (300x300)
@@ -94,11 +93,21 @@ module.exports = {
       try {
         console.log('[DEBUG] Downloading profile picture');
         const response = await axios.get(profilePicUrl, { responseType: 'arraybuffer' });
-        profilePic = await Jimp.read(Buffer.from(response.data.data?.url ? response.data.data.url : response.data));
+        if (!response.data || response.data.length === 0) {
+          throw new Error('Empty response data for profile picture');
+        }
+        profilePic = await Jimp.read(Buffer.from(response.data));
         console.log('[DEBUG] Profile picture downloaded successfully');
       } catch (err) {
         console.error(`[ERROR] Profile picture download error: ${err.message}`);
-        return api.sendMessage('⚠️ प्रोफाइल पिक्चर डाउनलोड करने में गलती। डिफॉल्ट इमेज यूज कर रहा हूँ। 🕉️', threadID);
+        console.log('[DEBUG] Falling back to default image');
+        try {
+          profilePic = await Jimp.read('https://via.placeholder.com/200');
+          console.log('[DEBUG] Default profile picture loaded');
+        } catch (defaultErr) {
+          console.error(`[ERROR] Default image load error: ${defaultErr.message}`);
+          return api.sendMessage('⚠️ प्रोफाइल पिक्चर और डिफॉल्ट इमेज दोनों लोड करने में गलती। 🕉️', threadID);
+        }
       }
 
       try {
@@ -131,7 +140,6 @@ module.exports = {
         return api.sendMessage('⚠️ बैज इमेज सेव करने में गलती। 🕉️', threadID);
       }
 
-      // Check if file exists before sending
       try {
         if (!fs.existsSync(outputPath)) {
           console.error(`[ERROR] Badge image file does not exist: ${outputPath}`);
@@ -149,7 +157,7 @@ module.exports = {
         console.log('[DEBUG] Sending badge image with attachment');
         await api.sendMessage({
           body: `🌟 ${name} का सुपर मस्त बैज तैयार है! 🔥🎉🦁🚀`,
-          attachment: attachment
+          attachment: [attachment] // Pass as array to avoid fca-mafiya Object.keys issue
         }, threadID);
         console.log('[DEBUG] Badge image sent successfully');
       } catch (err) {
