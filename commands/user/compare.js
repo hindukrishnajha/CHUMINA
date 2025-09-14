@@ -1,6 +1,6 @@
 module.exports = {
   name: 'compare',
-  description: 'Run a competition between two users with riddles, GK, and funny/humanity questions, others can join by answering 😎🔥',
+  description: 'Run a competition between two users with riddles, GK, and funny/humanity questions 😎🔥',
   aliases: ['compare'],
   execute: async (api, threadID, args, event, botState, isMaster, botID, stopBot) => {
     console.log(`[DEBUG] compare called: threadID=${threadID}, args=${JSON.stringify(args)}, senderID=${event.senderID}`);
@@ -15,7 +15,7 @@ module.exports = {
       const user1Name = event.mentions[user1ID];
       const user2ID = Object.keys(event.mentions)[1];
       const user2Name = event.mentions[user2ID];
-      console.log(`[DEBUG] Initial users: ${user1Name} (${user1ID}), ${user2Name} (${user2ID})`);
+      console.log(`[DEBUG] Users: ${user1Name} (${user1ID}), ${user2Name} (${user2ID})`);
 
       // Unicode mapping for Shalender check
       const unicodeMap = {
@@ -56,7 +56,7 @@ module.exports = {
         return;
       }
 
-      // Questions database (same as previous, 50 riddles, 50 GK, 50 funny/humanity)
+      // Questions database
       const riddles = [
         { question: 'मैं बोलता नहीं, पर सब सुनता हूँ। मैं कौन?', options: ['A: दीवार', 'B: भूत', 'C: गूगल', 'D: दिल'], answer: 'A' },
         { question: 'मेरे पास मुंह है, पर मैं खाता नहीं। मैं कौन?', options: ['A: नदी', 'B: गुफा', 'C: पाइप', 'D: दरवाजा'], answer: 'B' },
@@ -68,6 +68,7 @@ module.exports = {
         { question: 'मैं हर जगह हूँ, पर दिखता नहीं। मैं कौन?', options: ['A: हवा', 'B: भूत', 'C: सपना', 'D: पानी'], answer: 'A' },
         { question: 'मैं चलता हूँ, पर पैर नहीं। मैं कौन?', options: ['A: घड़ी', 'B: गाड़ी', 'C: पंखा', 'D: नदी'], answer: 'A' },
         { question: 'मेरे पास दिल है, पर धड़कता नहीं। मैं कौन?', options: ['A: तरबूज', 'B: पत्थर', 'C: किताब', 'D: पेड़'], answer: 'A' },
+        // Add 40 more riddles
         { question: 'मैं गोल हूँ, पर गेंद नहीं। मैं कौन?', options: ['A: सूरज', 'B: टायर', 'C: प्लेट', 'D: चाँद'], answer: 'D' },
         { question: 'मैं पानी में रहता हूँ, पर मछली नहीं। मैं कौन?', options: ['A: मेंढक', 'B: कछुआ', 'C: साँप', 'D: मगरमच्छ'], answer: 'B' },
         { question: 'मैं काला हूँ, पर कौआ नहीं। मैं कौन?', options: ['A: कोयला', 'B: रात', 'C: साय', 'D: तेल'], answer: 'A' },
@@ -118,7 +119,8 @@ module.exports = {
         { question: 'सबसे बड़ा ग्रह?', options: ['A: बृहस्पति', 'B: शनि', 'C: मंगल', 'D: पृथ्वी'], answer: 'A' },
         { question: 'भारत का राष्ट्रीय गीत?', options: ['A: जन गण मन', 'B: वंदे मातरम', 'C: सारे जहाँ से अच्छा', 'D: रघुपति राघव'], answer: 'B' },
         { question: 'पहला भारतीय उपग्रह?', options: ['A: आर्यभट्ट', 'B: चंद्रयान', 'C: मंगलयान', 'D: INSAT'], answer: 'A' },
-        { question: 'भारत की सबसे लंबी नदी?', options: ['A: गंगा', 'B: यमुना', 'C: ब्रह्मपुत्र', 'D: गोदावरी'], answer: 'A' },
+        { question: 'भारत का सबसे लंबा नदी?', options: ['A: गंगा', 'B: यमुना', 'C: ब्रह्मपुत्र', 'D: गोदावरी'], answer: 'A' },
+        // Add 40 more GK questions
         { question: 'भारत का राष्ट्रीय खेल?', options: ['A: क्रिकेट', 'B: हॉकी', 'C: कबड्डी', 'D: फुटबॉल'], answer: 'B' },
         { question: 'सबसे ऊँचा पर्वत?', options: ['A: माउंट एवरेस्ट', 'B: K2', 'C: कंचनजंगा', 'D: नंदा देवी'], answer: 'A' },
         { question: 'भारत का प्रथम प्रधानमंत्री?', options: ['A: जवाहरलाल नेहरू', 'B: सरदार पटेल', 'C: इंदिरा गांधी', 'D: राजेंद्र प्रसाद'], answer: 'A' },
@@ -151,7 +153,7 @@ module.exports = {
         { question: 'भारत का सबसे बड़ा बंदरगाह?', options: ['A: मुंबई', 'B: चेन्नई', 'C: विशाखापट्टनम', 'D: कांडला'], answer: 'A' },
         { question: 'सबसे छोटा महाद्वीप?', options: ['A: ऑस्ट्रेलिया', 'B: एशिया', 'C: अफ्रीका', 'D: यूरोप'], answer: 'A' },
         { question: 'भारत का राष्ट्रीय झंडा कब अपनाया?', options: ['A: 1947', 'B: 1950', 'C: 1930', 'D: 1945'], answer: 'A' },
-        { question: 'सबसे लंबी नदी?', options: ['A: नील', 'B: अमेज़न', 'C: यांग्त्से', 'D: मिसिसिपी'], answer: 'A' },
+        { question: 'सबसे लंबा नदी?', options: ['A: नील', 'B: अमेज़न', 'C: यांग्त्से', 'D: मिसिसिपी'], answer: 'A' },
         { question: 'भारत का सबसे बड़ा हवाई अड्डा?', options: ['A: दिल्ली', 'B: मुंबई', 'C: बेंगलुरु', 'D: हैदराबाद'], answer: 'A' },
         { question: 'सबसे ऊँचा झरना?', options: ['A: जोग', 'B: नियाग्रा', 'C: विक्टोरिया', 'D: एंजल'], answer: 'D' },
         { question: 'भारत का राष्ट्रीय वाक्य?', options: ['A: सत्यमेव जयते', 'B: वंदे मातरम', 'C: जन गण मन', 'D: सारे जहाँ से अच्छा'], answer: 'A' },
@@ -252,12 +254,8 @@ module.exports = {
       const emojiSets = ['🌟🔥', '⚡🌈', '🦁😎', '🌸✨', '🔥🎉', '🌟🚀', '💥🌹'];
       const salutations = ['तगड़ा कॉम्पिटिशन!', 'चेक करो!', 'हाजिर है!', 'धमाका करेगा!', 'तैयार हो जाओ!'];
 
-      // Dynamic participants
-      const participants = {
-        [user1ID]: { name: user1Name, score: 0, answered: false, answer: null },
-        [user2ID]: { name: user2Name, score: 0, answered: false, answer: null }
-      };
-
+      let user1Score = 0;
+      let user2Score = 0;
       let currentQuestion = 0;
       const questions = [
         riddles[Math.floor(Math.random() * riddles.length)],
@@ -270,39 +268,25 @@ module.exports = {
       const askQuestion = async (questionMessageID) => {
         if (currentQuestion >= questions.length) {
           // Final result
-          let maxScore = 0;
-          let winners = [];
-          const resultMentions = [];
-          let resultMessage = `${decorativeLines[Math.floor(Math.random() * decorativeLines.length)]}\n` +
-                             `☞︎ कॉम्पिटिशन रिजल्ट!\n`;
-          for (const [id, data] of Object.entries(participants)) {
-            resultMessage += `@${data.name}: ${data.score}/6 पॉइंट\n`;
-            resultMentions.push({ tag: `@${data.name}`, id, fromIndex: resultMessage.indexOf(`@${data.name}`) });
-            if (data.score > maxScore) {
-              maxScore = data.score;
-              winners = [data.name];
-            } else if (data.score === maxScore && data.score > 0) {
-              winners.push(data.name);
-            }
-            if (data.score === 0) {
-              resultMessage += `@${data.name} भाग गया, स्कोर 0! 😜\n`;
-              resultMentions.push({ tag: `@${data.name}`, id, fromIndex: resultMessage.indexOf(`@${data.name} भाग गया`) });
-            }
-          }
-          const winnerText = winners.length > 1 ? `टाई! विनर्स: @${winners.join(', @')}` : winners.length === 1 ? `विनर: @${winners[0]}! 🏆` : 'कोई नहीं, सब भाग गए! 😜';
-          resultMessage += `${winnerText}\n${emojiSets[Math.floor(Math.random() * emojiSets.length)]}\n` +
-                           `${decorativeLines[Math.floor(Math.random() * decorativeLines.length)]}`;
-          if (winners.length > 0) {
-            winners.forEach(winner => {
-              const winnerID = Object.keys(participants).find(id => participants[id].name === winner);
-              resultMentions.push({ tag: `@${winner}`, id: winnerID, fromIndex: resultMessage.indexOf(`@${winner}`) });
-            });
-          }
+          const winner = user1Score > user2Score ? user1Name : user2Score > user1Score ? user2Name : 'कोई नहीं, टाई!';
+          const resultMessage = `${decorativeLines[Math.floor(Math.random() * decorativeLines.length)]}\n` +
+                               `☞︎ कॉम्पिटिशन रिजल्ट!\n` +
+                               `@${user1Name}: ${user1Score}/6 पॉइंट\n` +
+                               `@${user2Name}: ${user2Score}/6 पॉइंट\n` +
+                               `विनर: @${winner}! 🏆\n` +
+                               `${user1Score === 0 ? `@${user1Name} भाग गया, स्कोर 0! 😜` : ''}` +
+                               `${user2Score === 0 ? `@${user2Name} भाग गया, स्कोर 0! 😜` : ''}` +
+                               `\n${emojiSets[Math.floor(Math.random() * emojiSets.length)]}\n` +
+                               `${decorativeLines[Math.floor(Math.random() * decorativeLines.length)]}`;
           await api.sendMessage({
             body: resultMessage,
-            mentions: resultMentions
+            mentions: [
+              { tag: `@${user1Name}`, id: user1ID, fromIndex: resultMessage.indexOf(`@${user1Name}`) },
+              { tag: `@${user2Name}`, id: user2ID, fromIndex: resultMessage.indexOf(`@${user2Name}`) },
+              { tag: `@${winner}`, id: user1Score > user2Score ? user1ID : user2Score > user1Score ? user2ID : user1ID, fromIndex: resultMessage.indexOf(`@${winner}`) }
+            ]
           }, threadID);
-          console.log(`[DEBUG] Compare result: ${Object.entries(participants).map(([id, data]) => `${data.name} (${data.score})`).join(', ')}, winners: ${winners.join(', ')}`);
+          console.log(`[DEBUG] Compare result: ${user1Name} (${user1Score}), ${user2Name} (${user2Score}), winner: ${winner}`);
           return;
         }
 
@@ -312,35 +296,29 @@ module.exports = {
         const selectedSalutation = salutations[Math.floor(Math.random() * salutations.length)];
         const selectedEmojiSet = emojiSets[Math.floor(Math.random() * emojiSets.length)];
 
-        // Mention all current participants
-        const participantMentions = Object.entries(participants).map(([id, data]) => ({
-          tag: `@${data.name}`,
-          id,
-          fromIndex: -1 // Will be updated below
-        }));
-        let questionMessage = `${selectedDecorativeLine}\n` +
-                             `☞︎ ${questionType} ${currentQuestion + 1}: ${q.question}\n` +
-                             `${q.options.join('\n')}\n` +
-                             `जवाब A/B/C/D में 30 सेकंड में रिप्लाई करो, ${participantMentions.map(m => m.tag).join(', ')}! 😎\n` +
-                             `${selectedEmojiSet}\n` +
-                             `${selectedDecorativeLine}`;
-        participantMentions.forEach(mention => {
-          mention.fromIndex = questionMessage.indexOf(mention.tag);
-        });
-
+        const questionMessage = `${selectedDecorativeLine}\n` +
+                               `☞︎ ${questionType} ${currentQuestion + 1}: ${q.question}\n` +
+                               `${q.options.join('\n')}\n` +
+                               `जवाब A/B/C/D में 30 सेकंड में रिप्लाई करो, @${user1Name} @${user2Name}! 😎\n` +
+                               `${selectedEmojiSet}\n` +
+                               `${selectedDecorativeLine}`;
         const sentMessage = await api.sendMessage({
           body: questionMessage,
-          mentions: participantMentions
+          mentions: [
+            { tag: `@${user1Name}`, id: user1ID, fromIndex: questionMessage.indexOf(`@${user1Name}`) },
+            { tag: `@${user2Name}`, id: user2ID, fromIndex: questionMessage.indexOf(`@${user2Name}`) }
+          ]
         }, threadID);
         console.log(`[DEBUG] Question sent: ${questionType} ${currentQuestion + 1}, messageID: ${sentMessage.messageID}`);
 
-        // Reset answered status for all participants
-        for (const id in participants) {
-          participants[id].answered = false;
-          participants[id].answer = null;
-        }
+        let user1Answered = false;
+        let user2Answered = false;
+        let user1Answer = null;
+        let user2Answer = null;
 
         const timeout = setTimeout(async () => {
+          if (!user1Answered) user1Score += 0;
+          if (!user2Answered) user2Score += 0;
           currentQuestion++;
           await askQuestion(sentMessage.messageID);
         }, 30000);
@@ -351,56 +329,26 @@ module.exports = {
             const replySenderID = replyEvent.senderID;
             const replyBody = replyEvent.body.toUpperCase();
             if (['A', 'B', 'C', 'D'].includes(replyBody)) {
-              // Check if sender is Shalender/Master ID
-              let senderName = replySenderID in participants ? participants[replySenderID].name : 'Unknown';
-              if (!participants[replySenderID]) {
-                // Fetch sender name
-                try {
-                  const userInfo = await api.getUserInfo([replySenderID]);
-                  senderName = userInfo[replySenderID]?.name || 'Unknown';
-                  let normalizedSenderName = senderName.normalize('NFKD').replace(/[\u0300-\u036f]/g, '');
-                  Object.keys(unicodeMap).forEach(fancy => {
-                    normalizedSenderName = normalizedSenderName.replace(new RegExp(fancy, 'g'), unicodeMap[fancy]);
-                  });
-                  normalizedSenderName = normalizedSenderName.toLowerCase().replace(/[^a-z]/g, '');
-                  const isShalenderSender = /shalender|shailendra|salender|shalendra/i.test(normalizedSenderName);
-                  const isMasterIDSender = replySenderID === '100023807453349';
-                  if (isShalenderSender || isMasterIDSender) {
-                    console.log(`[DEBUG] Shalender auto-win by reply: ${senderName}, ${replySenderID}`);
-                    const message = `☆✼★━━━━━━━━━━━━★✼☆\n` +
-                                   `☞︎ @${senderName} जी का कॉम्पिटिशन\n` +
-                                   `MAHARAJA बिना सवाल हल किए जीत गया! 👑🔥\n` +
-                                   `विशेष टिप्पणी: ये दानवीर परमवीर शूरवीर है ये महापुरुष है 😎\n` +
-                                   `☆✼★━━━━━━━━━━━━★✼☆`;
-                    api.sendMessage({
-                      body: message,
-                      mentions: [{ tag: `@${senderName}`, id: replySenderID, fromIndex: message.indexOf(`@${senderName}`) }]
-                    }, threadID);
-                    clearTimeout(timeout);
-                    return;
-                  }
-                  participants[replySenderID] = { name: senderName, score: 0, answered: false, answer: null };
-                  console.log(`[DEBUG] Added new participant: ${senderName} (${replySenderID})`);
-                } catch (err) {
-                  console.error(`[ERROR] Failed to fetch user info for ${replySenderID}: ${err.message}`);
-                  return;
-                }
-              }
-
-              if (participants[replySenderID] && !participants[replySenderID].answered) {
-                participants[replySenderID].answered = true;
-                participants[replySenderID].answer = replyBody;
-                if (replyBody === q.answer) {
-                  participants[replySenderID].score += currentQuestion === 4 ? 2 : 1;
-                  api.sendMessage(`@${senderName} का जवाब ${replyBody} सही! +${currentQuestion === 4 ? 2 : 1} पॉइंट 😎`, threadID, null, { mentions: [{ tag: `@${senderName}`, id: replySenderID, fromIndex: 0 }] });
+              if (replySenderID === user1ID && !user1Answered) {
+                user1Answered = true;
+                user1Answer = replyBody;
+                if (user1Answer === q.answer) {
+                  user1Score += currentQuestion === 4 ? 2 : 1;
+                  api.sendMessage(`@${user1Name} का जवाब ${user1Answer} सही! +${currentQuestion === 4 ? 2 : 1} पॉइंट 😎`, threadID);
                 } else {
-                  api.sendMessage(`@${senderName} का जवाब ${replyBody} गलत! 😜`, threadID, null, { mentions: [{ tag: `@${senderName}`, id: replySenderID, fromIndex: 0 }] });
+                  api.sendMessage(`@${user1Name} का जवाब ${user1Answer} गलत! 😜`, threadID);
+                }
+              } else if (replySenderID === user2ID && !user2Answered) {
+                user2Answered = true;
+                user2Answer = replyBody;
+                if (user2Answer === q.answer) {
+                  user2Score += currentQuestion === 4 ? 2 : 1;
+                  api.sendMessage(`@${user2Name} का जवाब ${user2Answer} सही! +${currentQuestion === 4 ? 2 : 1} पॉइंट 😎`, threadID);
+                } else {
+                  api.sendMessage(`@${user2Name} का जवाब ${user2Answer} गलत! 😜`, threadID);
                 }
               }
-
-              // Check if all participants have answered
-              const allAnswered = Object.values(participants).every(p => p.answered);
-              if (allAnswered) {
+              if (user1Answered && user2Answered) {
                 clearTimeout(timeout);
                 currentQuestion++;
                 askQuestion(sentMessage.messageID);
@@ -413,7 +361,7 @@ module.exports = {
       // Start competition
       const introMessage = `${decorativeLines[Math.floor(Math.random() * decorativeLines.length)]}\n` +
                            `☞︎ @${user1Name} vs @${user2Name} का तगड़ा कॉम्पिटिशन! 🥊\n` +
-                           `2 पहेलियाँ, 2 GK, 1 फनी/ह्यूमैनिटी सवाल! कोई भी A/B/C/D में जवाब देकर शामिल हो सकता है! 😎\n` +
+                           `2 पहेलियाँ, 2 GK, 1 फनी/ह्यूमैनिटी सवाल! जवाब A/B/C/D में 30 सेकंड में रिप्लाई करो! 😎\n` +
                            `${emojiSets[Math.floor(Math.random() * emojiSets.length)]}\n` +
                            `${decorativeLines[Math.floor(Math.random() * decorativeLines.length)]}`;
       const sentIntro = await api.sendMessage({
