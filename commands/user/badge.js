@@ -133,7 +133,10 @@ module.exports = {
       let outputPath;
       try {
         outputPath = path.join(__dirname, `badge_${targetID}_${Date.now()}.png`);
+        console.log(`[DEBUG] Saving badge image to ${outputPath}`);
         await badgeImage.write(outputPath);
+        // Add a small delay to ensure file is written
+        await new Promise(resolve => setTimeout(resolve, 100));
         console.log(`[DEBUG] Badge image saved to ${outputPath}`);
       } catch (err) {
         console.error(`[ERROR] Failed to save badge image: ${err.message}`);
