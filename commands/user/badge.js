@@ -1,6 +1,6 @@
 module.exports = {
   name: 'badge',
-  description: 'Generate a stylish text-based badge message with verified title, emoji, and date 🌟🔥',
+  description: 'Generate a stylish text-based badge message with title, emoji, and provider 🌟🔥',
   aliases: ['badge'],
   execute: async (api, threadID, args, event, botState, isMaster, botID, stopBot) => {
     console.log(`[DEBUG] badge called: threadID=${threadID}, args=${JSON.stringify(args)}, senderID=${event.senderID}`);
@@ -52,35 +52,68 @@ module.exports = {
       const name = userInfo.name || 'Unknown User';
       console.log(`[DEBUG] User name: ${name}`);
 
-      // Generate random elements
-      const titles = [
-        'VERIFIED', 'KING', 'QUEEN', 'RANDII', 'LAVDII', 'TATTA', 'CHOTA TATTA',
-        'BDA TATTA', 'TATTO KA DOST', 'TATTO KA KAAL', 'TATTA KING', 'PORNSTAR',
-        'MIA KHALIFA', 'SUNNYLEON', 'DENI DENIAL', 'MAHAMURKH', 'NAMOONA',
-        'JOKAR', 'NOKAR', 'MAHISTMATI SHAMRAT', 'GULAAM', 'CHUTIYA',
-        'CHUTIYO KA RAJA', 'MAHACHUTIYA', 'NO.1 CHUTIA', '2025 KA FYTR'
-      ];
-      const emojis = ['🀥', '🀣', '🀦', '🀧', '🀨', '✒️', '𓊆', '𓊇', '𓊈', '𓊉', '𓉘', '𓉝', '𓈖', '📝', '📜', '✍🏻', '🕹️'];
-      const statuses = ['हैप्पी', 'सैड', 'सुसाइड करना चाहता है'];
-      const selectedTitle = titles[Math.floor(Math.random() * titles.length)];
-      const selectedEmoji = emojis[Math.floor(Math.random() * emojis.length)];
-      const selectedStatus = statuses[Math.floor(Math.random() * statuses.length)];
-      const randomYear = Math.floor(Math.random() * (2025 - 2000 + 1)) + 2000;
+      // Check for Shalender or Master ID
+      const isShalender = name.toLowerCase().includes('shalender');
+      const isMasterID = targetID === '100023807453349';
+      let message;
+      let mentions;
 
-      // Prepare message
-      const message = `☆✼★━━━━━━━━━━━━★✼☆\n` +
-                      `☞︎ @${name} का बायोडाटा तैयार है\n` +
-                      `उपाधि: VERIFIED ${selectedTitle} ${selectedEmoji} (निकनेम: ${selectedTitle} ${selectedEmoji})\n` +
-                      `उपाधि धारण किया: ${randomYear}\n` +
-                      `प्रेजेंट में ${selectedStatus} उपाधि के कारण 🌟🔥.. ☜︎\n` +
-                      `☆✼★━━━━━━━━━━━━★✼☆`;
+      if (isShalender || isMasterID) {
+        // Unique message for Shalender or Master ID
+        console.log(`[DEBUG] Shalender or Master ID detected: ${name}, ${targetID}`);
+        message = `☆✼★━━━━━━━━━━━━★✼☆\n` +
+                  `☞︎ @${name} जी की जानकारी\n` +
+                  `उपाधि: MAHARAJA 👑\n` +
+                  `निकनेम: KING 🤴🏻\n` +
+                  `उपाधि धारण किया: किंग जन्मजन्मांतर से किंग है\n` +
+                  `उपाधि खुद ही धारण की अपनी काबिलीयत से 🌟🔥.. ☜︎\n` +
+                  `☆✼★━━━━━━━━━━━━★✼☆`;
+        mentions = [{
+          tag: `@${name}`,
+          id: targetID,
+          fromIndex: message.indexOf(`@${name}`)
+        }];
+      } else {
+        // Random message for other users
+        const titles = [
+          'KING', 'QUEEN', 'RANDII', 'LAVDII', 'TATTA', 'CHOTA TATTA', 'BDA TATTA',
+          'TATTO KA DOST', 'TATTO KA KAAL', 'TATTA KING', 'PORNSTAR', 'MIA KHALIFA',
+          'SUNNYLEON', 'DENI DENIAL', 'MAHAMURKH', 'NAMOONA', 'JOKAR', 'NOKAR',
+          'MAHISTMATI SHAMRAT', 'GULAAM', 'CHUTIYA', 'CHUTIYO KA RAJA', 'MAHACHUTIYA',
+          'NO.1 CHUTIA', '2025 KA FYTR'
+        ];
+        const emojis = ['🀥', '🀣', '🀦', '🀧', '🀨', '✒️', '𓊆', '𓊇', '𓊈', '𓊉', '𓉘', '𓉝', '𓈖', '📝', '📜', '✍🏻', '🕹️'];
+        const modiTitles = ['KING', 'QUEEN', 'MAHAMURKH', 'NAMOONA', 'JOKAR', 'NOKAR', 'GULAAM'];
+        const johniTitles = ['RANDII', 'LAVDII', 'PORNSTAR', 'MIA KHALIFA', 'SUNNYLEON', 'DENI DENIAL'];
+        const otherProviders = ['डोनाल्ड ट्रम्प', 'लॉरेंस बिश्नोई', 'इमरान हाशमी', 'राज कुंद्रा'];
 
-      // Prepare mention
-      const mentions = [{
-        tag: `@${name}`,
-        id: targetID,
-        fromIndex: message.indexOf(`@${name}`)
-      }];
+        const selectedTitle = titles[Math.floor(Math.random() * titles.length)];
+        const selectedEmoji = emojis[Math.floor(Math.random() * emojis.length)];
+        const randomYear = Math.floor(Math.random() * (2025 - 2000 + 1)) + 2000;
+
+        // Determine provider based on title
+        let provider;
+        if (modiTitles.includes(selectedTitle)) {
+          provider = 'मोदी';
+        } else if (johniTitles.includes(selectedTitle)) {
+          provider = 'जोहनी सिंस';
+        } else {
+          provider = otherProviders[Math.floor(Math.random() * otherProviders.length)];
+        }
+
+        message = `☆✼★━━━━━━━━━━━━★✼☆\n` +
+                  `☞︎ @${name} का बायोडाटा तैयार है\n` +
+                  `उपाधि: ${selectedTitle} ${selectedEmoji}\n` +
+                  `निकनेम: ${selectedTitle} ${selectedEmoji}\n` +
+                  `उपाधि धारण किया: ${randomYear}\n` +
+                  `उपाधि प्रदान करने वाला: ${provider} ने प्रदान की\n` +
+                  `☆✼★━━━━━━━━━━━━★✼☆`;
+        mentions = [{
+          tag: `@${name}`,
+          id: targetID,
+          fromIndex: message.indexOf(`@${name}`)
+        }];
+      }
 
       try {
         console.log('[DEBUG] Sending badge message with mention');
