@@ -8,7 +8,7 @@ const play = require('play-dl');
 const search = require('yt-search');
 const timeout = require('connect-timeout');
 const { processNicknameChange } = require('./utils/nicknameUtils');
-const { getAIResponse } = require('./utils/chatai');
+const { getAIResponse } = require('./utils/aichat');
 const messageStore = require('./utils/messageStore');
 
 process.stdout.setEncoding('utf8');
@@ -431,6 +431,44 @@ function startBot(userId, cookieContent, prefix, adminID) {
                     sendBotMessage(api, '✅ डिलीट नोटिफिकेशन बंद कर दिया गया।', threadID, messageID);
                   } else {
                     sendBotMessage(api, '❌ यूज: #delete on या #delete off', threadID, messageID);
+                  }
+                  return;
+                }
+
+                // Added #chat on/off
+                if (content.toLowerCase().startsWith('#chat') && isAdmin) {
+                  const action = content.toLowerCase().split(' ')[1];
+                  if (action === 'on') {
+                    botState.chatEnabled[threadID] = true;
+                    botState.learnedResponses.chatEnabled = botState.chatEnabled;
+                    fs.writeFileSync(LEARNED_RESPONSES_PATH, JSON.stringify(botState.learnedResponses, null, 2), 'utf8');
+                    sendBotMessage(api, '✅ AI चैट चालू कर दिया गया।', threadID, messageID);
+                  } else if (action === 'off') {
+                    botState.chatEnabled[threadID] = false;
+                    botState.learnedResponses.chatEnabled = botState.chatEnabled;
+                    fs.writeFileSync(LEARNED_RESPONSES_PATH, JSON.stringify(botState.learnedResponses, null, 2), 'utf8');
+                    sendBotMessage(api, '✅ AI चैट बंद कर दिया गया।', threadID, messageID);
+                  } else {
+                    sendBotMessage(api, '❌ यूज: #chat on या #chat off', threadID, messageID);
+                  }
+                  return;
+                }
+
+                // Added #roast on/off inline for reliability
+                if (content.toLowerCase().startsWith('#roast') && isAdmin) {
+                  const action = content.toLowerCase().split(' ')[1];
+                  if (action === 'on') {
+                    botState.roastEnabled[threadID] = true;
+                    botState.learnedResponses.roastEnabled = botState.roastEnabled;
+                    fs.writeFileSync(LEARNED_RESPONSES_PATH, JSON.stringify(botState.learnedResponses, null, 2), 'utf8');
+                    sendBotMessage(api, '✅ रोस्ट चालू कर दिया गया।', threadID, messageID);
+                  } else if (action === 'off') {
+                    botState.roastEnabled[threadID] = false;
+                    botState.learnedResponses.roastEnabled = botState.roastEnabled;
+                    fs.writeFileSync(LEARNED_RESPONSES_PATH, JSON.stringify(botState.learnedResponses, null, 2), 'utf8');
+                    sendBotMessage(api, '✅ रोस्ट बंद कर दिया गया।', threadID, messageID);
+                  } else {
+                    sendBotMessage(api, '❌ यूज: #roast on या #roast off', threadID, messageID);
                   }
                   return;
                 }
