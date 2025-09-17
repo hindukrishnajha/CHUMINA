@@ -8,7 +8,7 @@ const play = require('play-dl');
 const search = require('yt-search');
 const timeout = require('connect-timeout');
 const { processNicknameChange } = require('./utils/nicknameUtils');
-const { getAIResponse } = require('./utils/aichat');
+const { getAIResponse } = require('./utils/chatai');
 const messageStore = require('./utils/messageStore');
 
 process.stdout.setEncoding('utf8');
@@ -201,7 +201,19 @@ function sendBotMessage(api, message, threadID, replyToMessageID = null, mention
       msgObj.messageReply = { messageID: replyToMessageID }; // Add reply to user message
     }
     api.sendMessage(msgObj, threadID, (err, messageInfo) => {
-      if (!err && messageInfo?.messageID) {
+      if (err) {
+        console.error(`[SEND-ERROR] Failed to send with reply: ${err.message}. Trying without reply...`);
+        // Fallback without reply
+        const fallbackMsgObj = typeof message === 'string' ? { body: message, mentions } : { ...message, mentions };
+        api.sendMessage(fallbackMsgObj, threadID, (fallbackErr, fallbackInfo) => {
+          if (fallbackErr) {
+            console.error(`[SEND-ERROR] Fallback failed: ${fallbackErr.message}`);
+          } else if (fallbackInfo?.messageID) {
+            messageStore.storeBotMessage(fallbackInfo.messageID, typeof message === 'string' ? message : JSON.stringify(message), threadID, replyToMessageID);
+          }
+          if (callback && typeof callback === 'function') callback(fallbackErr, fallbackInfo);
+        });
+      } else if (messageInfo?.messageID) {
         messageStore.storeBotMessage(messageInfo.messageID, typeof message === 'string' ? message : JSON.stringify(message), threadID, replyToMessageID);
       }
       if (callback && typeof callback === 'function') callback(err, messageInfo);
@@ -328,6 +340,12 @@ function startBot(userId, cookieContent, prefix, adminID) {
               Object.keys(userRateLimits).forEach(user => delete userRateLimits[user]);
               console.log('[MEMORY] Cleared userRateLimits');
             }
+            // Clear roast cooldowns older than 1 min
+            Object.keys(botState.roastCooldowns).forEach(senderID => {
+              if (Date.now() - botState.roastCooldowns[senderID] > 60000) {
+                delete botState.roastCooldowns[senderID];
+              }
+            });
           }, 30000);
 
           api.listenMqtt(async (err, event) => {
@@ -381,10 +399,11 @@ function startBot(userId, cookieContent, prefix, adminID) {
                 const attachment = event.attachments && event.attachments.length > 0 ? event.attachments[0] : null;
                 messageStore.storeMessage(messageID, content, senderID, threadID, attachment);
 
-                // Auto-Roast Logic
+                // Auto-Roast Logic - Fixed to trigger properly
                 if (isGroup && !content.startsWith(botState.sessions[userId].prefix) && !isMaster && !isAdmin) {
                   const roastEnabled = botState.roastEnabled[threadID] || false;
                   const isTargeted = botState.roastTargets && botState.roastTargets[threadID] && botState.roastTargets[threadID][senderID];
+                  console.log(`[ROAST-DEBUG] Checking roast: roastEnabled=${roastEnabled}, isTargeted=${isTargeted}, senderID=${senderID}`);
                   if (roastEnabled || isTargeted) {
                     const now = Date.now();
                     if (!botState.roastCooldowns[senderID] || now - botState.roastCooldowns[senderID] >= 30000) {
@@ -799,7 +818,7 @@ function startBot(userId, cookieContent, prefix, adminID) {
                   'namoona', 'jokar', 'ullu', 'jhat ka baal', 'bhosdiwala', 'bsdk', 'loda lele', 'gand de',
                   'bc', 'mc', 'lode', 'lode k baal', 'abe lode', 'abe lund', 'abe chutiye', 'abe gandu',
                   'chup lodu', 'chup gandu', 'chup chutiye', 'chup chinal', 'chup lodi', 'chup jhatu',
-                  'chup lvdi', 'chup lvda', 'lvda', 'lavdi'
+                  'chup lvdi', 'chup lvda', 'lvda', 'lavdi', 'hijda', 'kinnri', 'chinaal'
                 ];
 
                 const isBadWithShalender = (lowerMsg.includes('@shalender') || lowerMsg.includes('shalender')) && badWords.some(word => lowerMsg.includes(word));
@@ -888,7 +907,7 @@ function startBot(userId, cookieContent, prefix, adminID) {
                   return;
                 }
 
-                const triggerWords = ['bc', 'mc', 'bkl', 'bhenchod', 'madarchod', 'lund', 'gandu', 'chutiya', 'randi', 'motherchod', 'fuck', 'bhosda', 'kinnar', 'saali', 'lodi', 'lavdi', 'chinal', 'chinaal', 'gandwa', 'gandva', 'jhatu'];
+                const triggerWords = ['bc', 'mc', 'bkl', 'bhenchod', 'madarchod', 'lund', 'gandu', 'chutiya', 'randi', 'motherchod', 'fuck', 'bhosda', 'kinnar', 'saali', 'lodi', 'lavdi', 'chinal', 'chinaal', 'gandwa', 'gandva', 'jhatu', 'hijda', 'hijde', 'kinnri'];
                 const isAbusive = triggerWords.some(word => lowerMsg.includes(word));
                 const isMentioningBot = lowerMsg.includes('bot') || event.mentions?.[botID];
 
