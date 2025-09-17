@@ -7,17 +7,17 @@ const groq = new Groq({
 console.log('Groq API Key:', process.env.GROQ_API_KEY ? 'Set' : 'Not set');
 console.log('Groq AI initialized successfully');
 
-// Roast-specific prompt
+// Roast-specific prompt with updated words
 const ROAST_PROMPT = `
 You are a desi Hindi roast bot. Generate a FRESH, FUNNY, and HARSHLY EMBARRASSING roast (ghanghor beizzati) for the user based on their message's tone and keywords (e.g., "kha", "kya", abusive words). DO NOT repeat or include the user's message in the roast. Create UNIQUE roasts every time, inspired by but not copying examples. Use Hindi, desi slang, keep it edgy but within rules. Max 300 tokens, 1-3 lines, expand for max beizzati if needed.
 
 Rules (strictly follow):
 - Only roast the USER and their GIRLFRIEND. Never mention family (ma, baap, behan, bhai), wife, friends, or relatives.
-- Words for USER: chutia, gandu, lodu, jokar, murakh, namard.
-- Words for GIRLFRIEND: randi, callgirl, veshya, dhandhewaali, nibbi.
+- Words for USER: chutia, gandu, lodu, jokar, murakh, namard, gandwa, namoona, hijda.
+- Words for GIRLFRIEND: randi, callgirl, veshya, dhandhewaali, nibbi, chinaal, kinnri, hijde.
 - Common words: chapri, nibba (for user), nibbi (for girlfriend).
 - If message is incomplete (ends with '...'), use generic roast like "Bhai, tera message itna sasta hai, teri nibbi bhi tujhe namard bolegi, chutia! 😂"
-- Always add girlfriend twist if possible.
+- Always add girlfriend twist if possible, and base the roast on the user's message tone/keywords.
 
 Examples (for inspiration, DO NOT COPY):
 User message (for context): "kha ho be"
@@ -35,7 +35,7 @@ Roast: "Tera message itna bekaar hai, teri nibbi bhi tujhe namard bol ke bhag ga
 Now, generate a roast based on this message's tone and keywords: {message}
 `;
 
-// Static fallback roasts (no user message included)
+// Static fallback roasts (updated with new words, no user message included)
 const STATIC_ROASTS = [
   "Bhai, tera style itna sasta hai, teri nibbi bhi tujhe ignore karti hai, chutia! 😂",
   "Tu yaha time waste kar raha, teri girlfriend toh callgirl ban ke paisa kama rahi, lodu! 😜",
@@ -56,7 +56,11 @@ const STATIC_ROASTS = [
   "Bhai, tu yaha bakwas kar raha, teri nibbi toh veshya ban ke duniya hila rahi, chutia! 😂",
   "Tera style dekh ke teri girlfriend bhi bolti hai, 'Yeh lodu kyun mera time waste karta hai?' 😏",
   "Arre, tu toh chapri king ban gaya, jokar! Teri nibbi toh dhandhewaali ban ke paisa kama rahi! 😎",
-  "Bhai, tera message itna ghatiya hai, teri girlfriend ne tujhe namard declare kar diya, murakh! 😂"
+  "Bhai, tera message itna ghatiya hai, teri girlfriend ne tujhe namard declare kar diya, murakh! 😂",
+  "Tu toh gandwa ban gaya hai, namoona! Teri nibbi chinaal ban ke sabko nacha rahi! 😜",
+  "Bhai, tera dimag hijda jaisa hai, jokar! Teri girlfriend kinnri ban ke tap rahi! 😏",
+  "Arre, tu kya kar raha, teri nibbi hijde ban ke tujhe has rahi, gandwa! 😎",
+  "Tera attitude toh namoona wala hai, hijda! Teri girlfriend chinaal ban ke market mein ghum rahi! 😂"
 ];
 
 async function getAIResponse(message, isRoast = false) {
