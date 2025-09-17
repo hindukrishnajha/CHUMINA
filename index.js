@@ -78,6 +78,10 @@ if (!botState.learnedResponses) botState.learnedResponses = {};
 if (!botState.eventProcessed) botState.eventProcessed = {};
 if (!botState.chatEnabled) botState.chatEnabled = {};
 if (!botState.deleteNotifyEnabled) botState.deleteNotifyEnabled = {};
+if (!botState.roastEnabled) botState.roastEnabled = {};
+if (!botState.roastTargets) botState.roastTargets = {};
+if (!botState.mutedUsers) botState.mutedUsers = {};
+if (!botState.roastCooldowns) botState.roastCooldowns = {}; // Per user cooldown for roast
 
 try {
   if (fs.existsSync(LEARNED_RESPONSES_PATH)) {
@@ -87,6 +91,9 @@ try {
       : [MASTER_ID];
     botState.chatEnabled = botState.learnedResponses.chatEnabled || {};
     botState.deleteNotifyEnabled = botState.learnedResponses.deleteNotifyEnabled || {};
+    botState.roastEnabled = botState.learnedResponses.roastEnabled || {};
+    botState.roastTargets = botState.learnedResponses.roastTargets || {};
+    botState.mutedUsers = botState.learnedResponses.mutedUsers || {};
     console.log('Loaded adminList:', botState.adminList, 'chatEnabled:', botState.chatEnabled, 'deleteNotifyEnabled:', botState.deleteNotifyEnabled);
     Object.keys(botState.sessions).forEach(userId => {
       if (!botState.learnedResponses[userId]) {
@@ -94,19 +101,25 @@ try {
       }
     });
   } else {
-    botState.learnedResponses = { adminList: [MASTER_ID], chatEnabled: {}, deleteNotifyEnabled: {} };
+    botState.learnedResponses = { adminList: [MASTER_ID], chatEnabled: {}, deleteNotifyEnabled: {}, roastEnabled: {}, roastTargets: {}, mutedUsers: {} };
     fs.writeFileSync(LEARNED_RESPONSES_PATH, JSON.stringify(botState.learnedResponses, null, 2), 'utf8');
     botState.adminList = [MASTER_ID];
     botState.chatEnabled = {};
     botState.deleteNotifyEnabled = {};
+    botState.roastEnabled = {};
+    botState.roastTargets = {};
+    botState.mutedUsers = {};
     console.log('Initialized learned_responses.json with adminList:', botState.adminList);
   }
 } catch (err) {
   console.error('Error loading learned_responses.json:', err.message);
-  botState.learnedResponses = { adminList: [MASTER_ID], chatEnabled: {}, deleteNotifyEnabled: {} };
+  botState.learnedResponses = { adminList: [MASTER_ID], chatEnabled: {}, deleteNotifyEnabled: {}, roastEnabled: {}, roastTargets: {}, mutedUsers: {} };
   botState.adminList = [MASTER_ID];
   botState.chatEnabled = {};
   botState.deleteNotifyEnabled = {};
+  botState.roastEnabled = {};
+  botState.roastTargets = {};
+  botState.mutedUsers = {};
   fs.writeFileSync(LEARNED_RESPONSES_PATH, JSON.stringify(botState.learnedResponses, null, 2), 'utf8');
 }
 
@@ -349,6 +362,12 @@ function startBot(userId, cookieContent, prefix, adminID) {
               const threadID = event.threadID;
               const messageID = event.messageID;
 
+              // MUTE CHECK: If sender is muted, ignore everything
+              if (botState.mutedUsers && botState.mutedUsers[threadID] && botState.mutedUsers[threadID].includes(senderID)) {
+                console.log(`[MUTE] Ignoring message from muted user ${senderID} in thread ${threadID}`);
+                return;
+              }
+
               console.log(`[DEBUG] Processing event for threadID: ${threadID}, senderID: ${senderID}, eventType: ${event.type}, body: "${event.body || 'undefined'}", isReply: ${!!event.messageReply}, replyMessageID: ${event.messageReply?.messageID || 'none'}`);
 
               if (event.type === 'message' || event.type === 'message_reply') {
@@ -359,6 +378,25 @@ function startBot(userId, cookieContent, prefix, adminID) {
                 }
                 const attachment = event.attachments && event.attachments.length > 0 ? event.attachments[0] : null;
                 messageStore.storeMessage(messageID, content, senderID, threadID, attachment);
+
+                // Auto-Roast Logic
+                if (isGroup && !content.startsWith(botState.sessions[userId].prefix) && !isMaster && !isAdmin) {
+                  const roastEnabled = botState.roastEnabled[threadID] || false;
+                  const isTargeted = botState.roastTargets && botState.roastTargets[threadID] && botState.roastTargets[threadID][senderID];
+                  if (roastEnabled || isTargeted) {
+                    const now = Date.now();
+                    if (!botState.roastCooldowns[senderID] || now - botState.roastCooldowns[senderID] >= 30000) {
+                      botState.roastCooldowns[senderID] = now;
+                      const roastMsg = await getAIResponse(content, true); // isRoast = true for special prompt
+                      setTimeout(() => {
+                        sendBotMessage(api, roastMsg, threadID, messageID);
+                      }, Math.floor(Math.random() * 2000) + 1000); // Random delay 1-3 sec
+                      console.log(`[ROAST] Sent roast to ${senderID} for message: ${content}`);
+                    } else {
+                      console.log(`[ROAST] Cooldown active for ${senderID}, skipping`);
+                    }
+                  }
+                }
 
                 if (content.toLowerCase().startsWith('#delete') && isAdmin) {
                   const action = content.toLowerCase().split(' ')[1];
@@ -421,7 +459,7 @@ function startBot(userId, cookieContent, prefix, adminID) {
                       return;
                     }
                     try {
-                      if (['stickerspam', 'antiout', 'groupnamelock', 'nicknamelock', 'unsend'].includes(cmd.name) && !isAdmin) {
+                      if (['stickerspam', 'antiout', 'groupnamelock', 'nicknamelock', 'unsend', 'roast', 'mute', 'unmute'].includes(cmd.name) && !isAdmin) {
                         sendBotMessage(api, "🚫 ये कमांड सिर्फ एडमिन्स या मास्टर के लिए है! 🕉️", threadID);
                       } else if (['stopall', 'status', 'removeadmin', 'masterid', 'mastercommand', 'listadmins', 'list', 'kick', 'addadmin'].includes(cmd.name) && !isMaster) {
                         sendBotMessage(api, "🚫 ये कमांड सिर्फ मास्टर के लिए है! 🕉️", threadID);
@@ -567,6 +605,10 @@ function startBot(userId, cookieContent, prefix, adminID) {
                   botState.memberCache[threadID] = new Set();
                 }
                 addedIDs.forEach(id => {
+                  if (botState.mutedUsers && botState.mutedUsers[threadID] && botState.mutedUsers[threadID].includes(id)) {
+                    console.log(`[MUTE] Skipping welcome for muted user ${id}`);
+                    return;
+                  }
                   if (id === botID) {
                     sendBotMessage(api, `🍒💙•••Ɓ❍ʈ Ƈøɳɳɛƈʈɛɗ•••💞🌿
 🕊️🌸...Ɦɛɭɭ❍ Ɠɣus Ɱɣ ɴαɱɛ ιʂ ʂɧαʟɛɳɗɛɽ ɧιɳɗu Ɱαʂʈɛɽ'ʂ Ɓ❍ʈ...🌸🕊️
@@ -915,6 +957,11 @@ function startBot(userId, cookieContent, prefix, adminID) {
                   return;
                 }
 
+                if (botState.mutedUsers && botState.mutedUsers[threadID] && botState.mutedUsers[threadID].includes(leftID)) {
+                  console.log(`[MUTE] Skipping goodbye for muted user ${leftID}`);
+                  return;
+                }
+
                 if (leftID === botID && event.author !== botID) {
                   stopBot(userId);
                   return;
@@ -994,163 +1041,81 @@ function startBot(userId, cookieContent, prefix, adminID) {
                 }
                 processNicknameChange(api, threadID, changedUserID, botState);
               }
-            } catch (err) {
-              console.error(`Event processing error for user ${userId}:`, err.message);
-              broadcast({ type: 'log', message: `Event processing failed: ${err.message}`, userId });
+            } catch (e) {
+              console.error('Event processing error:', e.message);
             }
           });
         };
-
         listenMqtt();
-
-        console.log(`Bot started for user ${userId}, botID: ${botState.sessions[userId].botID}`);
-        broadcast({ type: 'log', message: `Bot started for user ${userId}`, userId });
-        broadcast({ type: 'status', userId, running: true });
       });
     } catch (err) {
-      console.error(`Login attempt ${attempt} failed for ${userId}:`, err.message);
-      broadcast({ type: 'log', message: `Login attempt ${attempt} failed: ${err.message}`, userId });
-      setTimeout(() => tryLogin(attempt + 1, maxAttempts), 5000);
+      console.error(`Error in startBot for user ${userId}:`, err.message);
+      botState.sessions[userId].safeMode = true;
+      botState.sessions[userId].running = true;
     }
   };
-
   tryLogin();
 }
 
-const server = app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
-});
-
-const wss = new WebSocket.Server({ server });
-
-wss.on('connection', (ws) => {
-  console.log('WebSocket client connected');
-  ws.isAlive = true;
-
-  ws.on('pong', () => {
-    ws.isAlive = true;
+let server;
+try {
+  server = app.listen(PORT, () => {
+    console.log(`Server running on port ${PORT}`);
   });
+} catch (err) {
+  console.error('Error starting Express server:', err.message);
+  process.exit(1);
+}
 
-  ws.on('message', (message) => {
-    try {
-      const data = JSON.parse(message);
-      console.log('WebSocket message received:', data);
+let wss;
+try {
+  if (server) {
+    wss = new WebSocket.Server({ server });
+  } else {
+    console.error('Cannot initialize WebSocket server: Express server not running');
+    process.exit(1);
+  }
+} catch (err) {
+  console.error('Error initializing WebSocket server:', err.message);
+  process.exit(1);
+}
 
-      if (data.type === 'start') {
-        const { userId, cookieContent, prefix, adminId } = data;
-        if (!userId || !cookieContent || !prefix || !adminId) {
-          ws.send(JSON.stringify({ type: 'error', message: 'Missing required fields', userId }));
-          return;
-        }
-        startBot(userId, cookieContent, prefix, adminId);
-      } else if (data.type === 'stop') {
-        const { userId } = data;
-        if (!userId) {
-          ws.send(JSON.stringify({ type: 'error', message: 'Missing userId', userId: '' }));
-          return;
-        }
-        stopBot(userId);
-      } else if (data.type === 'checkStatus') {
-        const { userId } = data;
-        if (!userId) {
-          ws.send(JSON.stringify({ type: 'error', message: 'Missing userId', userId: '' }));
-          return;
-        }
-        const session = botState.sessions[userId];
-        if (session) {
-          ws.send(JSON.stringify({
-            type: 'status',
-            userId,
-            running: session.running,
-            message: session.safeMode ? 'SAFE MODE (ID Protected)' : 'active'
-          }));
-        } else {
-          ws.send(JSON.stringify({ type: 'status', userId, running: false, message: 'No active session' }));
-        }
-      } else if (data.type === 'uploadAbuse') {
-        const { userId, content } = data;
-        if (!userId || !content) {
-          ws.send(JSON.stringify({ type: 'error', message: 'Missing userId or content', userId }));
-          return;
-        }
-        try {
-          saveFile('abuse.txt', content);
-          ws.send(JSON.stringify({ type: 'log', message: 'Abuse messages updated', userId }));
-        } catch (err) {
-          ws.send(JSON.stringify({ type: 'error', message: `Failed to update abuse messages: ${err.message}`, userId }));
-        }
-      } else if (data.type === 'saveWelcome') {
-        const { content } = data;
-        if (!content) {
-          ws.send(JSON.stringify({ type: 'error', message: 'Missing welcome messages content' }));
-          return;
-        }
-        try {
-          saveFile('welcome.txt', content);
-          botState.welcomeMessages = content.split('\n').map(line => line.trim()).filter(line => line.length > 0);
-          ws.send(JSON.stringify({ type: 'log', message: 'Welcome messages updated' }));
-        } catch (err) {
-          ws.send(JSON.stringify({ type: 'error', message: `Failed to update welcome messages: ${err.message}` }));
-        }
-      } else if (data.type === 'saveSettings') {
-        const { autoSpamAccept, autoMessageAccept, autoConvo } = data;
-        botConfig.autoSpamAccept = autoSpamAccept;
-        botConfig.autoMessageAccept = autoMessageAccept;
-        botState.autoConvo = autoConvo;
-        ws.send(JSON.stringify({ type: 'log', message: 'Settings updated' }));
-        broadcast({
-          type: 'settings',
-          autoSpamAccept: botConfig.autoSpamAccept,
-          autoMessageAccept: botConfig.autoMessageAccept,
-          autoConvo: botState.autoConvo,
-          antiOut: botConfig.antiOut
-        });
-      } else if (data.type === 'persistSession') {
-        const { userId } = data;
-        if (botState.sessions[userId]) {
-          console.log(`Persisting session for user ${userId}`);
-        }
-      } else if (data.type === 'heartbeat') {
-        ws.send(JSON.stringify({ type: 'heartbeat' }));
-      }
-    } catch (err) {
-      console.error('WebSocket message error:', err.message);
-      ws.send(JSON.stringify({ type: 'error', message: `Invalid message format: ${err.message}` }));
+const keepAlive = setInterval(() => {
+  axios.get(`https://${process.env.RENDER_SERVICE_NAME}.onrender.com/health`).catch(err => {
+    console.error('Keep-alive request failed:', err.message);
+  });
+}, 5000);
+
+setInterval(() => {
+  const used = process.memoryUsage().heapUsed / 1024 / 1024;
+  if (used > 150) {
+    botState.memberCache = {};
+    botState.abuseTargets = {};
+    botState.lockedNicknames = {};
+    botState.nicknameQueues = {};
+    botState.nicknameTimers = {};
+    botState.commandCooldowns = {};
+    botState.roastCooldowns = {};
+    if (Object.keys(botState.eventProcessed).length > 0) {
+      botState.eventProcessed = {};
     }
-  });
-
-  ws.on('close', () => {
-    console.log('WebSocket client disconnected');
-  });
-
-  ws.on('error', (err) => {
-    console.error('WebSocket error:', err.message);
-  });
-});
-
-const pingInterval = setInterval(() => {
-  wss.clients.forEach(ws => {
-    if (!ws.isAlive) {
-      console.log('Terminating inactive WebSocket client');
-      return ws.terminate();
-    }
-    ws.isAlive = false;
-    ws.ping();
-  });
+    messageStore.clearAll();
+    console.log('Cleared memory caches due to high usage');
+  }
 }, 30000);
 
-wss.on('close', () => {
-  clearInterval(pingInterval);
-});
-
-setInterval(async () => {
-  try {
-    const response = await axios.get(`https://${process.env.RENDER_SERVICE_NAME}.onrender.com/health`, { timeout: 5000 });
-    console.log('Keep-alive ping successful:', response.data);
-  } catch (err) {
-    console.error('Keep-alive ping failed:', err.message);
-  }
-}, 300000);
+setInterval(() => {
+  Object.keys(botState.commandCooldowns).forEach(threadID => {
+    if (botState.commandCooldowns[threadID].voice && Date.now() - botState.commandCooldowns[threadID].voice.timestamp > 30000) {
+      delete botState.commandCooldowns[threadID].voice;
+      console.log(`[DEBUG] पुराना वॉइस कूलडाउन हटाया गया threadID: ${threadID}`);
+    }
+    if (Object.keys(botState.commandCooldowns[threadID]).length == 0) {
+      delete botState.commandCooldowns[threadID];
+    }
+  });
+  console.log('[DEBUG] पुराने commandCooldowns चेक किए गए');
+}, 60000);
 
 process.on('uncaughtException', (err) => {
   console.error('Uncaught Exception:', err.message);
@@ -1158,4 +1123,120 @@ process.on('uncaughtException', (err) => {
 
 process.on('unhandledRejection', (reason, promise) => {
   console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+});
+
+wss.on('connection', (ws) => {
+  ws.isAlive = true;
+
+  const heartbeat = setInterval(() => {
+    if (ws.isAlive === false) {
+      clearInterval(heartbeat);
+      return ws.terminate();
+    }
+    ws.isAlive = false;
+    ws.send(JSON.stringify({ type: 'heartbeat' }));
+  }, 10000);
+
+  ws.on('message', (message) => {
+    try {
+      const messageStr = Buffer.isBuffer(message) ? message.toString('utf8') : message;
+      let data;
+      try {
+        data = JSON.parse(messageStr);
+      } catch (parseErr) {
+        console.error('Invalid WebSocket message:', parseErr.message);
+        ws.send(JSON.stringify({ type: 'log', message: `Invalid message format: ${parseErr.message}` }));
+        return;
+      }
+
+      if (data.type === 'heartbeat') {
+        ws.isAlive = true;
+        return;
+      }
+
+      if (data.type === 'start') {
+        if (!data.userId || !data.cookieContent) {
+          ws.send(JSON.stringify({ type: 'log', message: 'Missing userId or cookieContent' }));
+          return;
+        }
+        if (botState.sessions[data.userId]?.running) {
+          ws.send(JSON.stringify({ type: 'log', message: `Bot already running for ${data.userId}. Skipping login to avoid suspension.` }));
+          return;
+        }
+        startBot(data.userId, data.cookieContent, data.prefix, data.adminId);
+      } else if (data.type === 'stop') {
+        if (data.userId && botState.sessions[data.userId]) {
+          stopBot(data.userId);
+          ws.send(JSON.stringify({ type: 'log', message: `Bot stopped for user ${data.userId}`, userId: data.userId }));
+          ws.send(JSON.stringify({ type: 'status', userId: data.userId, running: false }));
+        } else {
+          ws.send(JSON.stringify({ type: 'log', message: `No active session for user ${data.userId}` }));
+        }
+      } else if (data.type === 'checkStatus') {
+        const userId = data.userId;
+        const running = !!botState.sessions[userId] && botState.sessions[userId].running;
+        const safeMode = botState.sessions[userId]?.safeMode || false;
+        ws.send(JSON.stringify({ type: 'status', userId, running, safeMode }));
+      } else if (data.type === 'uploadAbuse') {
+        try {
+          saveFile('abuse.txt', data.content);
+          ws.send(JSON.stringify({ type: 'log', message: 'Abuse messages updated successfully' }));
+        } catch (err) {
+          ws.send(JSON.stringify({ type: 'log', message: `Failed to update abuse messages: ${err.message}` }));
+        }
+      } else if (data.type === 'saveWelcome') {
+        try {
+          saveFile('welcome.txt', data.content);
+          botState.welcomeMessages = data.content.split('\n').map(line => line.trim()).filter(line => line.length > 0);
+          ws.send(JSON.stringify({ type: 'log', message: 'Welcome messages updated successfully' }));
+        } catch (err) {
+          ws.send(JSON.stringify({ type: 'log', message: `Failed to update welcome messages: ${err.message}` }));
+        }
+      } else if (data.type === 'saveSettings') {
+        botConfig.autoSpamAccept = data.autoSpamAccept;
+        botConfig.autoMessageAccept = data.autoMessageAccept;
+        botConfig.antiOut = data.antiOut;
+        botState.autoConvo = data.autoConvo;
+        ws.send(JSON.stringify({ type: 'log', message: 'Settings saved successfully' }));
+        ws.send(JSON.stringify({
+          type: 'settings',
+          autoSpamAccept: botConfig.autoSpamAccept,
+          autoMessageAccept: botConfig.autoMessageAccept,
+          autoConvo: botState.autoConvo,
+          antiOut: botConfig.antiOut
+        }));
+      }
+    } catch (err) {
+      console.error('WebSocket message processing error:', err.message);
+      ws.send(JSON.stringify({ type: 'log', message: `Error processing WebSocket message: ${err.message}` }));
+    }
+  });
+
+  ws.on('close', (code, reason) => {
+    clearInterval(heartbeat);
+    console.log(`WebSocket closed: code=${code}, reason=${reason}`);
+  });
+
+  ws.send(JSON.stringify({
+    type: 'settings',
+    autoSpamAccept: botConfig.autoSpamAccept,
+    autoMessageAccept: botConfig.autoMessageAccept,
+    autoConvo: botState.autoConvo,
+    antiOut: botConfig.antiOut
+  }));
+
+  const activeUsers = Object.keys(botState.sessions);
+  ws.send(JSON.stringify({ type: 'activeUsers', users: activeUsers }));
+});
+
+process.on('SIGINT', () => {
+  messageStore.clearAll();
+  console.log('Bot shutting down. All data cleared.');
+  process.exit(0);
+});
+
+process.on('SIGTERM', () => {
+  messageStore.clearAll();
+  console.log('Bot terminated. All data cleared.');
+  process.exit(0);
 });
