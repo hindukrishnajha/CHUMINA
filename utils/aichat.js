@@ -11,27 +11,27 @@ console.log('Groq AI initialized successfully');
 // File to store dynamically generated roasts
 const ROAST_STORAGE_FILE = 'dynamic_roasts.json';
 
-// Optimized roast prompt with few-shot examples to avoid forbidden words
+// Optimized roast prompt with clear rules and examples for logical roasts
 const ROAST_PROMPT = `
-You are a desi Hindi roast bot. Generate EXACTLY ONE FRESH, FUNNY, and HARSHLY EMBARRASSING roast in SUDDH HINDI, using desi slang and edgy vibes. Max 300 tokens, STRICTLY 1-3 lines, short, crisp, and complete. NO ENGLISH WORDS, NO HEADINGS, NO MULTIPLE ROASTS.
+You are a desi Hindi roast bot. Generate EXACTLY ONE FRESH, FUNNY, and HARSHLY EMBARRASSING roast in SUDDH HINDI, using desi slang and edgy vibes. Max 300 tokens, STRICTLY 1-3 lines, short, crisp, logical, and complete with a strong punchline. NO ENGLISH WORDS, NO HEADINGS, NO MULTIPLE ROASTS.
 
 Rules:
-- Roast ONLY USER and GIRLFRIEND. ABSOLUTELY NO family (ma, baap, behan, bhai, bhabhi, dada, dadi, chacha, chachi, tau, tai, cousin, family, dost, friend, wife, beti, beta, papa, mummy, relative, sister, brother, mother, father). Do not use any family-related words at all. If you do, the response will be invalid.
+- Roast ONLY USER and GIRLFRIEND. ABSOLUTELY NO family (ma, baap, behan, bhai, bhabhi, dada, dadi, chacha, chachi, tau, tai, cousin, family, dost, friend, wife, beti, beta, papa, mummy, relative, sister, brother, mother, father).
 - USER words: chutia, gandu, lodu, jokar, murakh, namard, gandwa, namoona, hijda, chapri, nibba.
 - GIRLFRIEND words: randi, callgirl, veshya, dhandhewaali, nibbi, chinaal, kinnri, sexy maal.
-- Naughty twists (use randomly): teri girlfriend ke boobs, teri girlfriend ki gaand, teri girlfriend ki chut, teri girlfriend ki bra, teri girlfriend ki panty, teri girlfriend ki kaali hai, teri girlfriend ki gulabi hai, teri girlfriend to sexy maal hai, teri girlfriend ki gulabi chut ki kasam aaj ka din bhot mast hai, teri girlfriend ki kaali na hoti to abhi uski mar leta, teri girlfriend k jism ki khushbu sungkar maza a gya, teri girlfriend ki gaand nahi gubbara hai, teri girlfriend ki chut pe kabja kar luga.
+- Naughty twists (use logically): teri girlfriend ke boobs, teri girlfriend ki gaand, teri girlfriend ki chut, teri girlfriend ki bra, teri girlfriend ki panty, teri girlfriend ki kaali hai, teri girlfriend ki gulabi hai, teri girlfriend to sexy maal hai, teri girlfriend ki gulabi chut ki kasam aaj ka din bhot mast hai, teri girlfriend ki kaali na hoti to abhi uski mar leta, teri girlfriend k jism ki khushbu sungkar maza a gya, teri girlfriend ki gaand nahi gubbara hai, teri girlfriend ki chut pe kabja kar luga.
 - Savage USER lines: teri gaand pe powder lga k maaruga, teri gaand pe kiss kar luga, teri gaand ko kaali se gulabi bna duga, teri gaand ki drar naap luga, teri gaand ki gahrai m kho gaya.
-- Mix variety: Bollywood, TikTok, tapri, bazaar, naughty scenarios. Be creative and random.
+- Mix variety: Bollywood, TikTok, tapri, bazaar, naughty scenarios. Ensure the roast is logical and punchy.
 - Avoid repeating previous roasts. Output ONLY the roast text.
 
-Examples of GOOD roasts (use similar style):
-- तेरी गर्लफ्रेंड की गुलाबी चूत की कसम, तू चूतिया है, लोडू!
-- तेरी गर्लफ्रेंड की गांड नहीं गुब्बारा है, टिकटॉक पे डांस कर, गandu!
-- तेरी गर्लफ्रेंड का जिस्म सुंगकर मज़ा आ गया, पर तू तो निब्बा बाजार में भटक रहा!
+Examples of GOOD roasts (logical, punchy):
+- तेरी गर्लफ्रेंड की गांड नहीं गुब्बारा है, टिकटॉक पे nach ke dikha, lodu!
+- तेरी गर्लफ्रेंड की bra tapri pe latak rahi, aur tu bazaar mein nibba ban ke ghum raha!
+- तेरी गर्लफ्रेंड की gulabi chut ki kasam, tu chutia hai jo uske pichhe pada hai!
 
-Examples of BAD roasts (DO NOT use anything like this, avoid family words):
-- तेरी ma की तरह... (bad because 'ma' is family)
-- तेरे baap की गर्लफ्रेंड... (bad because 'baap' is family)
+Examples of BAD roasts (avoid illogical or weak punchlines):
+- तेरी गर्लफ्रेंड की चूत से ज्यादा सेक्सी तेरी नामर्द है! (illogical, no punch)
+- तेरी गर्लफ्रेंड की गांड और तेरा lodu... (incomplete, no sense)
 `;
 
 // Load or initialize dynamic roasts
@@ -60,23 +60,37 @@ function filterFamilyWords(roast) {
   return filteredRoast.trim();
 }
 
-// New reword function to fix invalid roasts
+// Check for logical coherence
+function isLogicalRoast(roast) {
+  // Basic check for nonsense or weak punchlines
+  const illogicalPatterns = [
+    /सेक्सी.*नामर्द/i, // e.g., "sexy namard" is nonsense
+    /है\s*और\s*है/i, // Too vague or repetitive
+    /[^।!?]$/ // No proper punctuation at end
+  ];
+  return !illogicalPatterns.some(pattern => pattern.test(roast));
+}
+
+// Reword function to fix invalid or illogical roasts
 async function rewordRoast(invalidRoast) {
-  console.log('Rewording invalid roast:', invalidRoast);
+  console.log('Rewording invalid/illogical roast:', invalidRoast);
   try {
-    const rewordPrompt = `Rewrite this roast in SUDDH HINDI, 1-3 lines, remove any family words (ma, baap, etc.), make it fresh and funny: "${invalidRoast}". Output ONLY the rewritten roast.`;
-    const rewordCompletion = await groq.chat.completions.create({
-      messages: [{ role: 'system', content: 'Reword bot, remove family words, keep desi roast style.' },
-                 { role: 'user', content: rewordPrompt }],
-      model: 'llama-3.1-8b-instant',
-      temperature: 1.0,
-      max_tokens: 150,
-      top_p: 0.9
-    });
-    return rewordCompletion.choices[0]?.message?.content?.trim() || invalidRoast; // Fallback to original if fail
+    const rewordPrompt = `Rewrite this roast in SUDDH HINDI, 1-3 lines, remove any family words or illogical phrases, make it funny, punchy, and logical: "${invalidRoast}". Use desi slang like chutia, lodu, sexy maal, and naughty twists like teri girlfriend ki gaand nahi gubbara hai. Output ONLY the rewritten roast.`;
+    const rewordCompletion = await Promise.race([
+      groq.chat.completions.create({
+        messages: [{ role: 'system', content: 'Reword bot, remove family words and illogical phrases, keep desi roast style.' },
+                   { role: 'user', content: rewordPrompt }],
+        model: 'llama-3.1-8b-instant',
+        temperature: 0.8,
+        max_tokens: 150,
+        top_p: 0.9
+      }),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('Reword timed out')), 6000))
+    ]);
+    return rewordCompletion.choices[0]?.message?.content?.trim() || 'तेरी गर्लफ्रेंड की चूत पे कब्जा कर लूंगा, चूतिया! 😜';
   } catch (err) {
     console.error('Reword error:', err.message);
-    return invalidRoast;
+    return 'तेरी गर्लफ्रेंड की गांड नहीं गुब्बारा है, लोडू! 😜';
   }
 }
 
@@ -86,17 +100,17 @@ async function getAIResponse(message, isRoast = false, retries = 0) {
   try {
     if (retries >= maxRetries) {
       console.warn('Max retries reached, generating dynamic fallback roast');
-      const fallbackPrompt = `Generate ONE fresh, SUDDH HINDI roast, 1-3 lines, using random naughty twists like teri girlfriend ki gaand nahi gubbara hai or teri girlfriend ki gulabi chut ki kasam. NO family words, be creative and different.`;
+      const fallbackPrompt = `Generate ONE fresh, SUDDH HINDI roast, 1-3 lines, logical and punchy, using random naughty twists like teri girlfriend ki gaand nahi gubbara hai or teri girlfriend ki gulabi chut ki kasam. NO family words, NO repetition.`;
       const fallbackCompletion = await Promise.race([
         groq.chat.completions.create({
-          messages: [{ role: 'system', content: 'Roast bot, one unique short roast, no family, pure Hindi.' },
+          messages: [{ role: 'system', content: 'Roast bot, one unique short roast, no family, pure Hindi, logical.' },
                      { role: 'user', content: fallbackPrompt }],
           model: 'llama-3.1-8b-instant',
-          temperature: 1.2, // Higher for variety
+          temperature: 0.8, // Controlled for logic
           max_tokens: 100,
-          top_p: 0.95
+          top_p: 0.9
         }),
-        new Promise((_, reject) => setTimeout(() => reject(new Error('Fallback timed out')), 8000))
+        new Promise((_, reject) => setTimeout(() => reject(new Error('Fallback timed out')), 6000))
       ]);
       const fallbackResponse = fallbackCompletion.choices[0]?.message?.content?.trim();
       console.log('Dynamic fallback response:', fallbackResponse);
@@ -111,14 +125,14 @@ async function getAIResponse(message, isRoast = false, retries = 0) {
 
     const chatCompletion = await Promise.race([
       groq.chat.completions.create({
-        messages: [{ role: 'system', content: isRoast ? 'Roast bot, one unique short roast, no family (ma, baap, behan, bhai, etc.), pure Hindi, 1-3 lines.' : 'Friendly AI, SUDDH HINDI, witty replies.' },
+        messages: [{ role: 'system', content: isRoast ? 'Roast bot, one unique short roast, no family (ma, baap, behan, bhai, etc.), pure Hindi, 1-3 lines, logical.' : 'Friendly AI, SUDDH HINDI, witty replies.' },
                    { role: 'user', content: prompt }],
         model: 'llama-3.1-8b-instant',
-        temperature: 1.0,
+        temperature: 0.8, // Reduced for logical output
         max_tokens: 300,
         top_p: 0.9
       }),
-      new Promise((_, reject) => setTimeout(() => reject(new Error('API call timed out')), 8000))
+      new Promise((_, reject) => setTimeout(() => reject(new Error('API call timed out')), 6000))
     ]);
 
     let response = chatCompletion.choices[0]?.message?.content?.trim();
@@ -126,12 +140,13 @@ async function getAIResponse(message, isRoast = false, retries = 0) {
       response = filterFamilyWords(response);
       const hasFamily = /ma|baap|behan|bhai|bhabhi|dada|dadi|chacha|chachi|tau|tai|cousin|family|dost|friend|wife|beti|beta|papa|mummy|relative|sister|brother|mother|father/i.test(response);
       const isMultiLine = response.split('\n').filter(line => line.trim()).length > 3;
-      if (hasFamily || !response || isMultiLine) {
-        console.warn(`Invalid roast detected (hasFamily: ${hasFamily}, empty: ${!response}, multiLine: ${isMultiLine}), rewording instead of retrying`);
+      const isIllogical = !isLogicalRoast(response);
+      if (hasFamily || !response || isMultiLine || isIllogical) {
+        console.warn(`Invalid roast detected (hasFamily: ${hasFamily}, empty: ${!response}, multiLine: ${isMultiLine}, illogical: ${isIllogical}), rewording`);
         response = await rewordRoast(response); // Reword instead of full retry
         // Check again after reword
         const hasFamilyAfter = /ma|baap|behan|bhai|bhabhi|dada|dadi|chacha|chachi|tau|tai|cousin|family|dost|friend|wife|beti|beta|papa|mummy|relative|sister|brother|mother|father/i.test(response);
-        if (hasFamilyAfter) {
+        if (hasFamilyAfter || !isLogicalRoast(response)) {
           return await getAIResponse(message, true, retries + 1); // Retry if still bad
         }
       }
