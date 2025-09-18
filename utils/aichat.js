@@ -11,13 +11,13 @@ console.log('Groq AI initialized successfully');
 // File to store dynamically generated roasts
 const ROAST_STORAGE_FILE = 'dynamic_roasts.json';
 
-// Optimized roast prompt with adult focus, new words, and user message integration
+// Optimized roast prompt with strong focus on logical adult roasts
 const ROAST_PROMPT = `
 You are a desi Hindi roast bot. Based on this user message: "{user_message}", generate EXACTLY ONE FRESH, FUNNY, HARSHLY EMBARRASSING, and ADULT SEXY roast in SUDDH HINDI, using desi slang and edgy vibes. Max 200 tokens, STRICTLY 1-2 lines, short, crisp, logical, and complete with a strong punchline. NO ENGLISH WORDS, NO HEADINGS, NO MULTIPLE ROASTS.
 
 Rules:
 - Roast ONLY USER and GIRLFRIEND. ABSOLUTELY NO family (ma, baap, behan, bhai, bhabhi, dada, dadi, chacha, chachi, tau, tai, cousin, family, dost, friend, wife, beti, beta, papa, mummy, relative, sister, brother, mother, father).
-- USER words: chutia, gandu, lodu, jokar, murakh, namard, gandwa, namoona, hijda, chapri, nibba, ullu, choti lulli waale, hijde, hijdi, namard.
+- USER words: chutia, gandu, lodu, jokar, murakh, namard, gandwa, namoona, hijda, chapri, nibba, ullu, choti lulli waale, hijde, hijdi.
 - GIRLFRIEND words: lavdi, randi, chinaal, veshya, nibbi, sexy maal, kinnar, kinnri.
 - Naughty twists (use logically for adult sexy vibe, pick 1-2 max, not mandatory every time): uff teri gf k boobs, uff teri gf ki gaand, uff teri gf ki chut, teri girlfriend ke boobs tapri pe dikhte hain, teri girlfriend ki gaand nahi gubbara hai, teri girlfriend ki chut pe kabja kar lunga, teri girlfriend ki bra bazaar mein bik rahi, teri girlfriend ki panty latak rahi.
 - Savage USER lines (use logically): tu lodu bazaar mein ghumta hai, teri gaand pe powder lagake maarunga, tu nibba ban ke TikTok pe nach raha, teri choti lulli waale tu ullu hai.
@@ -25,14 +25,17 @@ Rules:
 - Avoid repeating previous roasts. Output ONLY the roast text.
 
 Examples of GOOD roasts (logical, punchy, adult sexy):
-- तेरी गर्लफ्रेंड की bra tapri pe latak rahi, uff teri gf k boobs, aur tu choti lulli waale bazaar mein nibba ban ke ghum raha!
-- तेरी गर्लफ्रेंड ki gaand nahi gubbara hai, uff teri gf ki gaand, TikTok pe nach ke dikha, lodu!
-- तेरी गर्लफ्रेंड ki chut pe kabja kar lunga, uff teri gf ki chut, tu murakh tapri pe chai pi!
+- उफ़ तेरी गर्लफ्रेंड की गांड, तू लोडू टिकटॉक पे नाच, रंडी की तरह उछल!
+- उफ़ तेरी गर्लफ्रेंड के बूब्स, तू चूतिया बाजार में छोटी लुल्ली वाले बन के घूम!
+- तेरी गर्लफ्रेंड की चूत पे कब्जा कर लूंगा, उफ़ तेरी gf की चूत, तू नामर्द तपरी पे बैठ!
 
-Examples of BAD roasts (avoid illogical or weak punchlines):
+Examples of BAD roasts (avoid illogical, weak, or nonsense punchlines):
 - तेरी गर्लफ्रेंड की चूत से ज्यादा सेक्सी तेरी नामर्द है! (illogical, no punch)
 - तेरी गर्लफ्रेंड की गांड और तेरा lodu... (incomplete, no sense)
 - तेरी गर्लफ्रेंड की काली चूत की कसम, तू नामर्द सेक्सी है! (nonsense combination)
+- क्या तुम्हारे पास काम करता है या फिर तुम्हारे gf काम करते हैं? (illogical, no adult vibe)
+- मैंने देखा है, तेरी GF की गांड के बाद तेरा IQ क्या है? (weak punch, illogical)
+- मैंने देखा है, तेरी gf की गांड चुदने वाली कोई और नहीं है, लेकिन तेरी gf की गांड चुदने के लिए कोई भी लड़की काफी है. (nonsense, repetitive)
 `;
 
 // Load or initialize dynamic roasts
@@ -69,7 +72,10 @@ function isLogicalRoast(roast) {
     /[^।!?]$/, // No punctuation
     /नामर्द.*(सेक्सी|चूत|गांड)/i, // Nonsense combinations
     /काली.*मार देती/i, // Confusing hypothetical
-    /\b(कसम|खुशबू).*(नामर्द|गंदी)/i // Weak or illogical links
+    /\b(कसम|खुशबू).*(नामर्द|गंदी)/i, // Weak or illogical links
+    /पास\s*काम\s*करता/i, // Bad example from user
+    /गांड\s*के\s*बाद\s*तेरा/i, // Weak punch from user
+    /चुदने\s*वाली\s*कोई\s*और/i // Nonsense from user
   ];
   return roast && roast.length > 10 && roast.length < 150 && !illogicalPatterns.some(pattern => pattern.test(roast));
 }
@@ -78,7 +84,7 @@ function isLogicalRoast(roast) {
 async function rewordRoast(invalidRoast, userMessage) {
   console.log('Rewording invalid/illogical roast:', invalidRoast);
   try {
-    const rewordPrompt = `Based on user message: "${userMessage}", rewrite this roast in SUDDH HINDI, 1-2 lines, remove family words and illogical phrases, make it adult sexy, funny, punchy, and logical: "${invalidRoast}". Use desi slang like chutia, lodu, lavdi, randi, chinaal, sexy maal, and naughty twists like uff teri gf k boobs. Output ONLY the rewritten roast.`;
+    const rewordPrompt = `Based on user message: "${userMessage}", rewrite this roast in SUDDH HINDI, 1-2 lines, remove any family words or illogical phrases, make it adult sexy, funny, punchy, and logical: "${invalidRoast}". Use desi slang like chutia, lodu, lavdi, randi, chinaal, sexy maal, and naughty twists like uff teri gf k boobs. Output ONLY the rewritten roast.`;
     const rewordCompletion = await Promise.race([
       groq.chat.completions.create({
         messages: [{ role: 'system', content: 'Reword bot, remove family words and illogical phrases, keep desi roast style, logical and punchy, adult sexy.' },
