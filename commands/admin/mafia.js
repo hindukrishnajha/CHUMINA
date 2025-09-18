@@ -1,5 +1,6 @@
+// commands/admin/mafia.js
 const fs = require('fs');
-const { LEARNED_RESPONSES_PATH } = require('../../config/constants');
+const LEARNED_RESPONSES_PATH = './learned_responses.json';
 
 module.exports.config = {
   name: "mafia",
@@ -50,8 +51,8 @@ function formatPlayerList() {
 
 function checkGameEnd() {
   let alive = getAlivePlayers();
-  let mafiaCount = alive.filter(p => p.role === "Mafia").length;
-  let villagerCount = alive.filter(p => p.role !== "Mafia" && p.role !== "Joker").length;
+  let mafiaCount = alive.filter(p => p.role === "Mafia" || p.role === "Werewolf").length;
+  let villagerCount = alive.filter(p => p.role !== "Mafia" && p.role !== "Werewolf").length;
   if (mafiaCount === 0) return "विलेजर जीते! सारे माफिया मर गए।";
   if (mafiaCount >= villagerCount) return "माफिया जीता! उनकी संख्या विलेजरों से ज्यादा है।";
   return null;
@@ -81,10 +82,16 @@ module.exports.handleEvent = async function ({ api, event, botState }) {
       }
     }
 
-    if (player.role === "Mafia" && cmd === "/kill") {
-      if (target) {
+    if ((player.role === "Mafia" || player.role === "Werewolf") && cmd === "/kill") {
+      if (player.role === "Werewolf" && mafiaGame.round % 3 === 0 && args[2]) {
+        let target2 = getAlivePlayers().find(p => p.id === args[2] || p.name.toLowerCase() === args[2]?.toLowerCase());
+        if (target && target2) {
+          mafiaGame.mafiaTarget = [target.id, target2.id];
+          api.sendMessage(`🐺 वेयरवुल्फ ने ${target.name} और ${target2.name} को चुना।`, event.threadID);
+        }
+      } else if (target) {
         mafiaGame.mafiaTarget = target.id;
-        api.sendMessage(`☠️ माफिया ने ${target.name} को चुना।`, event.threadID);
+        api.sendMessage(`☠️ ${player.role} ने ${target.name} को चुना।`, event.threadID);
       }
     }
 
@@ -97,7 +104,7 @@ module.exports.handleEvent = async function ({ api, event, botState }) {
     if (player.role === "Detective" && cmd === "/check") {
       if (!target) return api.sendMessage("❌ गलत टारगेट।", player.id);
       mafiaGame.detectiveTarget = target.id;
-      let result = mafiaGame.players.find(p => p.id === target.id).role === "Mafia"
+      let result = mafiaGame.players.find(p => p.id === target.id).role === "Mafia" || p.role === "Werewolf"
         ? `❌ ${target.name} माफिया है!`
         : `✅ ${target.name} माफिया नहीं है।`;
       api.sendMessage(`🔍 डिटेक्टिव रिजल्ट: ${result}`, player.id);
@@ -136,7 +143,7 @@ module.exports.run = async function ({ api, event, args, botState }) {
   const threadID = event.threadID;
   const senderID = event.senderID;
   const command = args[0]?.toLowerCase();
-  const isAdmin = botState.adminList?.includes(senderID) || senderID === botState.sessions[Object.keys(botState.sessions)[0]]?.botID;
+  const isAdmin = botState.adminList.includes(senderID) || senderID === botState.sessions[Object.keys(botState.sessions)[0]]?.botID;
 
   if (botState.commandCooldowns[threadID]?.[command]) {
     return api.sendMessage("❌ कूलडाउन: 10 सेकंड रुको।", threadID);
@@ -198,10 +205,10 @@ module.exports.run = async function ({ api, event, args, botState }) {
     }
 
     let playerCount = mafiaGame.players.length;
-    let mafiaCount = Math.floor(playerCount / 4) || 1;
-    let doctorCount = Math.floor(playerCount / 5) || 1;
+    let mafiaCount = Math.floor(playerCount / 4); // हर 4 पर 1 माफिया
+    let doctorCount = Math.floor(playerCount / 5);
     let detectiveCount = playerCount >= 5 ? 1 : 0;
-    let jokerCount = 1;
+    let jokerCount = 1; // हमेशा 1 जोकर
     let witchCount = playerCount > 10 ? 1 : 0;
     let bodyguardCount = playerCount > 15 ? 1 : 0;
 
@@ -232,7 +239,7 @@ module.exports.run = async function ({ api, event, args, botState }) {
       if (p.role === "Detective") msg += "🔍 /check <नंबर> यूज करो।\n";
       if (p.role === "Witch") msg += "🧙‍♀️ /poison <नंबर> (एक बार) और /heal <नंबर> (एक बार) यूज करो।\n";
       if (p.role === "Bodyguard") msg += "🛡️ /protect <नंबर> यूज करो।\n";
-      if (p.role === "Joker") msg += "🤡 तुम जोकर हो! वोट से निकलवाओ और जीतो। /fakekill <नंबर> (एक बार) और #mafia doublevote <नंबर> यूज करो।\n";
+      if (p.role === "Joker") msg += "🤡 तुम जोकर हो! वोट से निकलवाओ और जीतो। सावधान, माफिया तुम्हें मार सकता है! /fakekill <नंबर> (एक बार) यूज करो।\n";
       msg += "\nजीवित खिलाड़ी:\n" + formatPlayerList();
       api.sendMessage(msg, p.id);
       if (p.role === "Joker") {
@@ -249,14 +256,14 @@ module.exports.run = async function ({ api, event, args, botState }) {
         api.sendMessage("⏰ नाइट टाइम खत्म! ऑटो रिजल्ट प्रोसेस हो रहा है।", threadID);
         module.exports.run({ api, event: { threadID, senderID }, args: ["next"], botState });
       }
-    }, 60000);
+    }, 60000); // 60 सेकंड
     botState.commandCooldowns[threadID] = { [command]: true };
     setTimeout(() => delete botState.commandCooldowns[threadID][command], 10000);
     return;
   }
 
   if (command === "next" && mafiaGame.phase === "night") {
-    let killedPlayers = [mafiaGame.mafiaTarget];
+    let killedPlayers = Array.isArray(mafiaGame.mafiaTarget) ? mafiaGame.mafiaTarget : [mafiaGame.mafiaTarget];
     if (mafiaGame.witchPoison) killedPlayers.push(mafiaGame.witchPoison);
     let saved = mafiaGame.doctorTarget || mafiaGame.witchHeal;
     let msg = `🌙 नाइट ${mafiaGame.round} रिजल्ट:\n`;
@@ -303,11 +310,11 @@ module.exports.run = async function ({ api, event, args, botState }) {
       msg += `\n🎮 गेम ओवर: ${gameEnd}\n`;
       msg += `📜 गेम लॉग:\n${mafiaGame.log.join("\n")}\n`;
       msg += `🏆 माफिया किल्स: ${mafiaGame.mafiaKills}`;
-      let winners = gameEnd.includes("Villagers") ? getAlivePlayers().filter(p => p.role !== "Mafia") : getAlivePlayers().filter(p => p.role === "Mafia");
+      let winners = gameEnd.includes("Villagers") ? getAlivePlayers().filter(p => p.role !== "Mafia" && p.role !== "Werewolf") : getAlivePlayers().filter(p => p.role === "Mafia" || p.role === "Werewolf");
       winners.forEach(p => {
         botState.leaderboard[p.id] = (botState.leaderboard[p.id] || 0) + 5;
       });
-      mafiaGame.players.filter(p => p.role === "Mafia").forEach(p => {
+      mafiaGame.players.filter(p => p.role === "Mafia" || p.role === "Werewolf").forEach(p => {
         botState.leaderboard[p.id] = (botState.leaderboard[p.id] || 0) + mafiaGame.mafiaKills * 10;
       });
       fs.writeFileSync(LEARNED_RESPONSES_PATH, JSON.stringify(botState.learnedResponses, null, 2));
@@ -319,20 +326,20 @@ module.exports.run = async function ({ api, event, args, botState }) {
     }
 
     mafiaGame.phase = "day";
-    msg += `\n☀️ डे ${mafiaGame.round} शुरू!\nजीवित खिलाड़ी:\n${formatPlayerList()}\nचर्चा करें और #mafia vote <नंबर> या #mafia doublevote <नंबर> से वोट करें।`;
+    msg += `\n☀️ डे ${mafiaGame.round} शुरू!\nजीवित खिलाड़ी:\n${formatPlayerList()}\nचर्चा करें और #mafia vote <नंबर> से वोट करें।`;
     api.sendMessage(msg, threadID);
     setTimeout(() => {
       if (mafiaGame.phase === "day") {
         api.sendMessage("⏰ डे टाइम खत्म! ऑटो वोट रिजल्ट प्रोसेस हो रहा है।", threadID);
         module.exports.run({ api, event: { threadID, senderID }, args: ["endvote"], botState });
       }
-    }, 60000);
+    }, 60000); // 60 सेकंड
     botState.commandCooldowns[threadID] = { [command]: true };
     setTimeout(() => delete botState.commandCooldowns[threadID][command], 10000);
     return;
   }
 
-  if (command === "vote" || command === "doublevote" && mafiaGame.phase === "day") {
+  if (command === "vote" && mafiaGame.phase === "day") {
     let choice = args[1];
     let target = null;
     let alive = getAlivePlayers();
@@ -350,7 +357,10 @@ module.exports.run = async function ({ api, event, args, botState }) {
         return api.sendMessage("⚠️ यूजर जानकारी नहीं मिली।", threadID);
       }
       const voterName = ret[senderID].name || "Unknown";
-      let voteCount = command === "doublevote" && mafiaGame.players.find(p => p.id === senderID).role === "Joker" ? 1.5 : 1;
+      let voteCount = 1;
+      if (mafiaGame.players.find(p => p.id === senderID).role === "Joker" && args[0] === "doublevote") {
+        voteCount = 2;
+      }
       mafiaGame.votes[target.id] = (mafiaGame.votes[target.id] || 0) + voteCount;
       api.sendMessage(`🗳️ ${voterName} ने ${target.name} को वोट दिया! कुल वोट्स: ${mafiaGame.votes[target.id]}`, threadID);
       botState.commandCooldowns[threadID] = { [command]: true };
@@ -381,7 +391,7 @@ module.exports.run = async function ({ api, event, args, botState }) {
         botState.leaderboard[eliminated.id] = (botState.leaderboard[eliminated.id] || 0) + 20;
         botState.jokerWins = botState.jokerWins || {};
         botState.jokerWins[eliminated.id] = (botState.jokerWins[eliminated.id] || 0) + 1;
-        if (botState.jokerWins[eliminated.id] >= 3) {
+        if (botState.jokerWins[eliminated.id] === 3) {
           msg += `\n👑 ${eliminated.name} जोकर किंग बन गया! 🤡`;
         }
         fs.writeFileSync(LEARNED_RESPONSES_PATH, JSON.stringify(botState.learnedResponses, null, 2));
@@ -400,11 +410,11 @@ module.exports.run = async function ({ api, event, args, botState }) {
       msg += `\n🎮 गेम ओवर: ${gameEnd}\n`;
       msg += `📜 गेम लॉग:\n${mafiaGame.log.join("\n")}\n`;
       msg += `🏆 माफिया किल्स: ${mafiaGame.mafiaKills}`;
-      let winners = gameEnd.includes("Villagers") ? getAlivePlayers().filter(p => p.role !== "Mafia") : getAlivePlayers().filter(p => p.role === "Mafia");
+      let winners = gameEnd.includes("Villagers") ? getAlivePlayers().filter(p => p.role !== "Mafia" && p.role !== "Werewolf") : getAlivePlayers().filter(p => p.role === "Mafia" || p.role === "Werewolf");
       winners.forEach(p => {
         botState.leaderboard[p.id] = (botState.leaderboard[p.id] || 0) + 5;
       });
-      mafiaGame.players.filter(p => p.role === "Mafia").forEach(p => {
+      mafiaGame.players.filter(p => p.role === "Mafia" || p.role === "Werewolf").forEach(p => {
         botState.leaderboard[p.id] = (botState.leaderboard[p.id] || 0) + mafiaGame.mafiaKills * 10;
       });
       fs.writeFileSync(LEARNED_RESPONSES_PATH, JSON.stringify(botState.learnedResponses, null, 2));
@@ -424,7 +434,7 @@ module.exports.run = async function ({ api, event, args, botState }) {
         api.sendMessage("⏰ नाइट टाइम खत्म! ऑटो रिजल्ट प्रोसेस हो रहा है।", threadID);
         module.exports.run({ api, event: { threadID, senderID }, args: ["next"], botState });
       }
-    }, 60000);
+    }, 60000); // 60 सेकंड
     botState.commandCooldowns[threadID] = { [command]: true };
     setTimeout(() => delete botState.commandCooldowns[threadID][command], 10000);
     return;
@@ -461,5 +471,5 @@ module.exports.run = async function ({ api, event, args, botState }) {
     return;
   }
 
-  api.sendMessage("❌ गलत कमांड। यूज: #mafia [start|join|begin|next|vote|doublevote|endvote|stop|status|reveal]", threadID);
+  api.sendMessage("❌ गलत कमांड। यूज: #mafia [start|join|begin|next|vote|endvote|stop|status|reveal]", threadID);
 };
