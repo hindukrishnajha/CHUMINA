@@ -82,6 +82,8 @@ if (!botState.roastEnabled) botState.roastEnabled = {};
 if (!botState.roastTargets) botState.roastTargets = {};
 if (!botState.mutedUsers) botState.mutedUsers = {};
 if (!botState.roastCooldowns) botState.roastCooldowns = {};
+if (!botState.leaderboard) botState.leaderboard = {};
+if (!botState.jokerWins) botState.jokerWins = {};
 
 try {
   if (fs.existsSync(LEARNED_RESPONSES_PATH)) {
@@ -94,6 +96,8 @@ try {
     botState.roastEnabled = botState.learnedResponses.roastEnabled || {};
     botState.roastTargets = botState.learnedResponses.roastTargets || {};
     botState.mutedUsers = botState.learnedResponses.mutedUsers || {};
+    botState.leaderboard = botState.learnedResponses.leaderboard || {};
+    botState.jokerWins = botState.learnedResponses.jokerWins || {};
     console.log('Loaded adminList:', botState.adminList, 'chatEnabled:', botState.chatEnabled, 'deleteNotifyEnabled:', botState.deleteNotifyEnabled);
     Object.keys(botState.sessions).forEach(userId => {
       if (!botState.learnedResponses[userId]) {
@@ -101,7 +105,7 @@ try {
       }
     });
   } else {
-    botState.learnedResponses = { adminList: [MASTER_ID], chatEnabled: {}, deleteNotifyEnabled: {}, roastEnabled: {}, roastTargets: {}, mutedUsers: {} };
+    botState.learnedResponses = { adminList: [MASTER_ID], chatEnabled: {}, deleteNotifyEnabled: {}, roastEnabled: {}, roastTargets: {}, mutedUsers: {}, leaderboard: {}, jokerWins: {} };
     fs.writeFileSync(LEARNED_RESPONSES_PATH, JSON.stringify(botState.learnedResponses, null, 2), 'utf8');
     botState.adminList = [MASTER_ID];
     botState.chatEnabled = {};
@@ -109,17 +113,21 @@ try {
     botState.roastEnabled = {};
     botState.roastTargets = {};
     botState.mutedUsers = {};
+    botState.leaderboard = {};
+    botState.jokerWins = {};
     console.log('Initialized learned_responses.json with adminList:', botState.adminList);
   }
 } catch (err) {
   console.error('Error loading learned_responses.json:', err.message);
-  botState.learnedResponses = { adminList: [MASTER_ID], chatEnabled: {}, deleteNotifyEnabled: {}, roastEnabled: {}, roastTargets: {}, mutedUsers: {} };
+  botState.learnedResponses = { adminList: [MASTER_ID], chatEnabled: {}, deleteNotifyEnabled: {}, roastEnabled: {}, roastTargets: {}, mutedUsers: {}, leaderboard: {}, jokerWins: {} };
   botState.adminList = [MASTER_ID];
   botState.chatEnabled = {};
   botState.deleteNotifyEnabled = {};
   botState.roastEnabled = {};
   botState.roastTargets = {};
   botState.mutedUsers = {};
+  botState.leaderboard = {};
+  botState.jokerWins = {};
   fs.writeFileSync(LEARNED_RESPONSES_PATH, JSON.stringify(botState.learnedResponses, null, 2), 'utf8');
 }
 
@@ -391,6 +399,16 @@ function startBot(userId, cookieContent, prefix, adminID) {
               console.log(`[DEBUG] Processing event for threadID: ${threadID}, senderID: ${senderID}, eventType: ${event.type}, body: "${event.body || 'undefined'}", isReply: ${!!event.messageReply}, replyMessageID: ${event.messageReply?.messageID || 'none'}`);
 
               if (event.type === 'message' || event.type === 'message_reply') {
+                // Call handleEvent for mafia command
+                const cmd = commands.get('mafia');
+                if (cmd && cmd.handleEvent) {
+                  try {
+                    await cmd.handleEvent({ api, event, botState });
+                  } catch (err) {
+                    console.error(`[ERROR] Mafia handleEvent error: ${err.message}`);
+                    sendBotMessage(api, `❌ Mafia event error: ${err.message} 🕉️`, event.threadID, event.messageID);
+                  }
+                }
                 const content = event.body ? event.body.trim() : (event.attachments && event.attachments.length > 0 ? '[attachment: ' + event.attachments[0].type + ']' : '');
                 if (!content) {
                   console.log('[DEBUG] Empty message content, skipping');
@@ -516,7 +534,7 @@ function startBot(userId, cookieContent, prefix, adminID) {
                       return;
                     }
                     try {
-                      if (['stickerspam', 'antiout', 'groupnamelock', 'nicknamelock', 'unsend', 'roast', 'mute', 'unmute'].includes(cmd.name) && !isAdmin) {
+                      if (['stickerspam', 'antiout', 'groupnamelock', 'nicknamelock', 'unsend', 'roast', 'mute', 'unmute', 'mafia'].includes(cmd.name) && !isAdmin) {
                         sendBotMessage(api, "🚫 ये कमांड सिर्फ एडमिन्स या मास्टर के लिए है! 🕉️", threadID, messageID);
                       } else if (['stopall', 'status', 'removeadmin', 'masterid', 'mastercommand', 'listadmins', 'list', 'kick', 'addadmin'].includes(cmd.name) && !isMaster) {
                         sendBotMessage(api, "🚫 ये कमांड सिर्फ मास्टर के लिए है! 🕉️", threadID, messageID);
