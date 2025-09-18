@@ -17,18 +17,18 @@ process.stderr.setEncoding('utf8');
 let gTTS;
 try {
   gTTS = require('gtts');
-  console.log('[DEBUG] gTTS module loaded successfully');
+  console.log('gTTS module loaded successfully');
 } catch (err) {
-  console.error('[ERROR] Error loading gTTS module:', err.message);
+  console.error('Error loading gTTS module:', err.message);
   process.exit(1);
 }
 
 let wiegine;
 try {
   wiegine = require('fca-mafiya');
-  console.log('[DEBUG] fca-mafiya module loaded successfully');
+  console.log('fca-mafiya module loaded successfully');
 } catch (err) {
-  console.error('[ERROR] Error loading fca-mafiya module:', err.message);
+  console.error('Error loading fca-mafiya module:', err.message);
   process.exit(1);
 }
 
@@ -50,26 +50,16 @@ const { loadAbuseMessages, loadWelcomeMessages, saveFile } = require('./utils/fi
 const commands = new Map();
 const commandFolders = ['admin', 'user', 'master'];
 for (const folder of commandFolders) {
-  const commandPath = `./commands/${folder}`;
-  if (!fs.existsSync(commandPath)) {
-    console.error(`[ERROR] Command folder ${commandPath} does not exist`);
-    continue;
-  }
-  const commandFiles = fs.readdirSync(commandPath).filter(file => file.endsWith('.js'));
+  const commandFiles = fs.readdirSync(`./commands/${folder}`).filter(file => file.endsWith('.js'));
   for (const file of commandFiles) {
     try {
-      const command = require(`${commandPath}/${file}`);
-      if (command.config && command.config.name) {
-        commands.set(command.config.name, command);
-        if (command.config.aliases) {
-          command.config.aliases.forEach(alias => commands.set(alias, command));
-        }
-        console.log(`[DEBUG] Loaded command: ${command.config.name} from ${folder}/${file}`);
-      } else {
-        console.error(`[ERROR] Command ${file} in ${folder} has no config or name`);
+      const command = require(`./commands/${folder}/${file}`);
+      commands.set(command.name, command);
+      if (command.aliases) {
+        command.aliases.forEach(alias => commands.set(alias, command));
       }
     } catch (err) {
-      console.error(`[ERROR] Failed to load command ${file} from ${folder}:`, err.message);
+      console.error(`Error loading command ${file} from ${folder}:`, err.message);
     }
   }
 }
@@ -92,8 +82,6 @@ if (!botState.roastEnabled) botState.roastEnabled = {};
 if (!botState.roastTargets) botState.roastTargets = {};
 if (!botState.mutedUsers) botState.mutedUsers = {};
 if (!botState.roastCooldowns) botState.roastCooldowns = {};
-if (!botState.leaderboard) botState.leaderboard = {};
-if (!botState.jokerWins) botState.jokerWins = {};
 
 try {
   if (fs.existsSync(LEARNED_RESPONSES_PATH)) {
@@ -106,11 +94,14 @@ try {
     botState.roastEnabled = botState.learnedResponses.roastEnabled || {};
     botState.roastTargets = botState.learnedResponses.roastTargets || {};
     botState.mutedUsers = botState.learnedResponses.mutedUsers || {};
-    botState.leaderboard = botState.learnedResponses.leaderboard || {};
-    botState.jokerWins = botState.learnedResponses.jokerWins || {};
-    console.log('[DEBUG] Loaded adminList:', botState.adminList);
+    console.log('Loaded adminList:', botState.adminList, 'chatEnabled:', botState.chatEnabled, 'deleteNotifyEnabled:', botState.deleteNotifyEnabled);
+    Object.keys(botState.sessions).forEach(userId => {
+      if (!botState.learnedResponses[userId]) {
+        botState.learnedResponses[userId] = { triggers: [] };
+      }
+    });
   } else {
-    botState.learnedResponses = { adminList: [MASTER_ID], chatEnabled: {}, deleteNotifyEnabled: {}, roastEnabled: {}, roastTargets: {}, mutedUsers: {}, leaderboard: {}, jokerWins: {} };
+    botState.learnedResponses = { adminList: [MASTER_ID], chatEnabled: {}, deleteNotifyEnabled: {}, roastEnabled: {}, roastTargets: {}, mutedUsers: {} };
     fs.writeFileSync(LEARNED_RESPONSES_PATH, JSON.stringify(botState.learnedResponses, null, 2), 'utf8');
     botState.adminList = [MASTER_ID];
     botState.chatEnabled = {};
@@ -118,13 +109,17 @@ try {
     botState.roastEnabled = {};
     botState.roastTargets = {};
     botState.mutedUsers = {};
-    botState.leaderboard = {};
-    botState.jokerWins = {};
-    console.log('[DEBUG] Initialized learned_responses.json with adminList:', botState.adminList);
+    console.log('Initialized learned_responses.json with adminList:', botState.adminList);
   }
 } catch (err) {
-  console.error('[ERROR] Error loading learned_responses.json:', err.message);
-  botState.learnedResponses = { adminList: [MASTER_ID], chatEnabled: {}, deleteNotifyEnabled: {}, roastEnabled: {}, roastTargets: {}, mutedUsers: {}, leaderboard: {}, jokerWins: {} };
+  console.error('Error loading learned_responses.json:', err.message);
+  botState.learnedResponses = { adminList: [MASTER_ID], chatEnabled: {}, deleteNotifyEnabled: {}, roastEnabled: {}, roastTargets: {}, mutedUsers: {} };
+  botState.adminList = [MASTER_ID];
+  botState.chatEnabled = {};
+  botState.deleteNotifyEnabled = {};
+  botState.roastEnabled = {};
+  botState.roastTargets = {};
+  botState.mutedUsers = {};
   fs.writeFileSync(LEARNED_RESPONSES_PATH, JSON.stringify(botState.learnedResponses, null, 2), 'utf8');
 }
 
@@ -165,11 +160,21 @@ if (!fs.existsSync('abuse.txt') && process.env.ABUSE_BASE64) {
     const abuseContent = Buffer.from(process.env.ABUSE_BASE64, 'base64').toString('utf-8');
     fs.writeFileSync('abuse.txt', abuseContent, 'utf8');
   } catch (err) {
-    console.error('[ERROR] Error creating abuse file from BASE64:', err.message);
+    console.error('Error creating abuse file from BASE64:', err.message);
   }
 } else if (!fs.existsSync('abuse.txt')) {
-  console.warn('[WARN] No abuse.txt found and no ABUSE_BASE64 set. Creating empty abuse.txt.');
-  fs.writeFileSync('abuse.txt', '', 'utf8');
+  console.warn('No abuse.txt found and no ABUSE_BASE64 set. Attempting to load default from root folder.');
+  try {
+    const defaultAbusePath = path.join(__dirname, 'abuse.txt');
+    if (fs.existsSync(defaultAbusePath)) {
+      console.log('Default abuse.txt loaded from root folder.');
+    } else {
+      console.warn('No default abuse.txt found in root folder.');
+      fs.writeFileSync('abuse.txt', '', 'utf8');
+    }
+  } catch (err) {
+    console.error('Error handling default abuse.txt:', err.message);
+  }
 }
 
 if (!fs.existsSync('welcome.txt') && process.env.WELCOME_BASE64) {
@@ -178,30 +183,31 @@ if (!fs.existsSync('welcome.txt') && process.env.WELCOME_BASE64) {
     fs.writeFileSync('welcome.txt', welcomeContent, 'utf8');
     botState.welcomeMessages = welcomeContent.split('\n').map(line => line.trim()).filter(line => line.length > 0);
   } catch (err) {
-    console.error('[ERROR] Error creating welcome file:', err.message);
+    console.error('Error creating welcome file:', err.message);
   }
 }
 
 function sendBotMessage(api, message, threadID, replyToMessageID = null, mentions = [], callback = null) {
   const userId = Object.keys(botState.sessions).find(id => botState.sessions[id].api === api);
-  if (!userId || botState.sessions[userId]?.safeMode) {
-    console.log(`[DEBUG] SAFE MODE or invalid userId: Skipping message to ${threadID}`);
+  if (botState.sessions[userId]?.safeMode) {
+    console.log(`SAFE MODE: Skipping message to ${threadID}`);
     if (callback && typeof callback === 'function') callback(null, null);
     return;
   }
   const randomDelay = Math.floor(Math.random() * 1000) + 1000;
   setTimeout(() => {
     const msgObj = typeof message === 'string' ? { body: message, mentions } : { ...message, mentions };
-    if (replyToMessageID && typeof replyToMessageID === 'string' && replyToMessageID.startsWith('mid.$')) {
-      msgObj.messageReply = { messageID: replyToMessageID };
+    if (replyToMessageID) {
+      msgObj.messageReply = { messageID: replyToMessageID }; // Add reply to user message
     }
     api.sendMessage(msgObj, threadID, (err, messageInfo) => {
       if (err) {
-        console.error(`[SEND-ERROR] Failed to send with reply to ${threadID}: ${err?.message || 'undefined'}. Trying without reply...`);
+        console.error(`[SEND-ERROR] Failed to send with reply: ${err.message}. Trying without reply...`);
+        // Fallback without reply
         const fallbackMsgObj = typeof message === 'string' ? { body: message, mentions } : { ...message, mentions };
         api.sendMessage(fallbackMsgObj, threadID, (fallbackErr, fallbackInfo) => {
           if (fallbackErr) {
-            console.error(`[SEND-ERROR] Fallback failed for ${threadID}: ${fallbackErr?.message || 'undefined'}`);
+            console.error(`[SEND-ERROR] Fallback failed: ${fallbackErr.message}`);
           } else if (fallbackInfo?.messageID) {
             messageStore.storeBotMessage(fallbackInfo.messageID, typeof message === 'string' ? message : JSON.stringify(message), threadID, replyToMessageID);
           }
@@ -220,34 +226,39 @@ function stopBot(userId) {
     broadcast({ type: 'log', message: `No active session for user ${userId}`, userId });
     return;
   }
+
   botState.sessions[userId].manualStop = true;
+
   if (botState.learnedResponses[userId]) {
     delete botState.learnedResponses[userId];
     try {
       fs.writeFileSync(LEARNED_RESPONSES_PATH, JSON.stringify(botState.learnedResponses, null, 2), 'utf8');
-      console.log(`[DEBUG] Deleted learned responses for user ${userId}`);
+      console.log(`Deleted learned responses for user ${userId}`);
     } catch (err) {
-      console.error(`[ERROR] Error saving learned_responses.json after deleting user ${userId}: ${err.message}`);
+      console.error(`Error saving learned_responses.json after deleting user ${userId} responses: ${err.message}`);
     }
   }
+
   if (botState.sessions[userId].api) {
     try {
       botState.sessions[userId].api.logout(() => {});
     } catch (err) {
-      console.error(`[ERROR] Logout error for ${userId}:`, err.message);
+      console.error(`Logout error for ${userId}:`, err.message);
     }
     botState.sessions[userId].api = null;
   }
+
   delete botState.sessions[userId];
   broadcast({ type: 'log', message: `Bot stopped for user ${userId}`, userId });
   broadcast({ type: 'status', userId, running: false });
 }
 
 function startBot(userId, cookieContent, prefix, adminID) {
-  console.log(`[DEBUG] Starting bot for user ${userId}, prefix: ${prefix}, adminID: ${adminID}`);
+  console.log(`[SAFE] Starting bot for user ${userId}`);
   if (botState.sessions[userId]) {
     stopBot(userId);
   }
+
   botState.sessions[userId] = {
     running: true,
     prefix: prefix || '#',
@@ -258,6 +269,7 @@ function startBot(userId, cookieContent, prefix, adminID) {
     manualStop: false,
     safeMode: false
   };
+
   if (!botState.learnedResponses[userId]) {
     botState.learnedResponses[userId] = { triggers: [] };
     fs.writeFileSync(LEARNED_RESPONSES_PATH, JSON.stringify(botState.learnedResponses, null, 2), 'utf8');
@@ -265,11 +277,11 @@ function startBot(userId, cookieContent, prefix, adminID) {
 
   const tryLogin = (attempt = 1, maxAttempts = 1) => {
     if (botState.sessions[userId]?.manualStop) {
-      console.log(`[DEBUG] Manual stop detected for ${userId}, no retry`);
+      console.log(`Manual stop detected for ${userId}, no retry`);
       return;
     }
     if (attempt > maxAttempts) {
-      console.error(`[ERROR] Login failed for ${userId} after ${maxAttempts} attempts`);
+      console.error(`Login failed for ${userId} after ${maxAttempts} attempts`);
       botState.sessions[userId].safeMode = true;
       botState.sessions[userId].running = true;
       botState.sessions[userId].api = null;
@@ -282,27 +294,29 @@ function startBot(userId, cookieContent, prefix, adminID) {
       if (!fs.existsSync(cookieFile)) {
         fs.writeFileSync(cookieFile, cookieContent, 'utf8');
       }
+
       wiegine.login(cookieContent, {}, (err, api) => {
         if (err || !api) {
-          console.error(`[ERROR] Login failed for user ${userId} (attempt ${attempt}):`, err?.message || 'undefined');
+          console.error(`[SAFE] Login failed for user ${userId} (attempt ${attempt}):`, err?.message || err);
           botState.sessions[userId].safeMode = true;
           botState.sessions[userId].running = true;
           botState.sessions[userId].api = null;
-          broadcast({ type: 'log', message: `Login attempt failed. SAFE MODE activated to protect ID. Update cookies!`, userId });
+          broadcast({ type: 'log', message: `Single login attempt failed. SAFE MODE activated to protect ID. Update cookies!`, userId });
           return;
         }
+
         botState.sessions[userId].api = api;
         botState.sessions[userId].botID = api.getCurrentUserID();
         botState.sessions[userId].safeMode = false;
         api.setOptions({ listenEvents: true, autoMarkRead: true });
-        console.log(`[DEBUG] Bot logged in for user ${userId}, botID: ${botState.sessions[userId].botID}`);
 
         let abuseMessages = [];
         try {
           abuseMessages = loadAbuseMessages();
         } catch (err) {
-          console.error('[ERROR] Abuse file error:', err.message);
+          console.error('Abuse file error:', err.message);
         }
+
         try {
           botState.welcomeMessages = loadWelcomeMessages();
         } catch (err) {
@@ -311,19 +325,22 @@ function startBot(userId, cookieContent, prefix, adminID) {
 
         const listenMqtt = (mqttAttempt = 1, maxMqttAttempts = 1) => {
           if (!botState.sessions[userId]?.running || botState.sessions[userId]?.manualStop) {
-            console.log(`[DEBUG] Session not running or manually stopped for ${userId}`);
+            console.log(`Session not running or manually stopped for ${userId}`);
             return;
           }
+
           const userRateLimits = {};
+
           setInterval(() => {
             if (Object.keys(botState.eventProcessed).length > 0) {
               botState.eventProcessed = {};
-              console.log('[DEBUG] Cleared eventProcessed');
+              console.log('[MEMORY] Cleared eventProcessed');
             }
             if (Object.keys(userRateLimits).length > 0) {
               Object.keys(userRateLimits).forEach(user => delete userRateLimits[user]);
-              console.log('[DEBUG] Cleared userRateLimits');
+              console.log('[MEMORY] Cleared userRateLimits');
             }
+            // Clear roast cooldowns older than 1 min
             Object.keys(botState.roastCooldowns).forEach(senderID => {
               if (Date.now() - botState.roastCooldowns[senderID] > 60000) {
                 delete botState.roastCooldowns[senderID];
@@ -333,15 +350,17 @@ function startBot(userId, cookieContent, prefix, adminID) {
 
           api.listenMqtt(async (err, event) => {
             if (err) {
-              console.error(`[ERROR] Listen error for ${userId} (attempt ${mqttAttempt}):`, err?.message || 'undefined');
+              console.error(`Listen error for ${userId} (attempt ${mqttAttempt}):`, err?.message || err);
               botState.sessions[userId].safeMode = true;
               broadcast({ type: 'log', message: `Connection lost – SAFE MODE activated. Bot alive, update cookies.`, userId });
               return;
             }
+
             if (event.type === 'read_receipt' || event.type === 'presence' || event.type === 'typ') {
               console.log(`[DEBUG] Skipping ${event.type} event for threadID=${event.threadID}`);
               return;
             }
+
             if (event.messageID && botState.eventProcessed[event.messageID]) {
               console.log(`[DEBUG] Skipping duplicate event: ${event.messageID}`);
               return;
@@ -349,7 +368,7 @@ function startBot(userId, cookieContent, prefix, adminID) {
             if (event.messageID) {
               if (Object.keys(botState.eventProcessed).length > 100) {
                 botState.eventProcessed = {};
-                console.log('[DEBUG] Cleared eventProcessed due to size limit');
+                console.log('[MEMORY] Cleared eventProcessed due to size limit');
               }
               botState.eventProcessed[event.messageID] = true;
             }
@@ -363,23 +382,15 @@ function startBot(userId, cookieContent, prefix, adminID) {
               const threadID = event.threadID;
               const messageID = event.messageID;
 
-              if (botState.mutedUsers?.[threadID]?.includes(senderID)) {
-                console.log(`[DEBUG] Ignoring message from muted user ${senderID} in thread ${threadID}`);
+              // MUTE CHECK: If sender is muted, ignore everything
+              if (botState.mutedUsers && botState.mutedUsers[threadID] && botState.mutedUsers[threadID].includes(senderID)) {
+                console.log(`[MUTE] Ignoring message from muted user ${senderID} in thread ${threadID}`);
                 return;
               }
 
               console.log(`[DEBUG] Processing event for threadID: ${threadID}, senderID: ${senderID}, eventType: ${event.type}, body: "${event.body || 'undefined'}", isReply: ${!!event.messageReply}, replyMessageID: ${event.messageReply?.messageID || 'none'}`);
 
               if (event.type === 'message' || event.type === 'message_reply') {
-                const cmd = commands.get('mafia');
-                if (cmd && cmd.handleEvent) {
-                  try {
-                    await cmd.handleEvent({ api, event, botState });
-                  } catch (err) {
-                    console.error(`[ERROR] Mafia handleEvent error: ${err.message}`);
-                    sendBotMessage(api, `❌ Mafia event error: ${err.message} 🕉️`, threadID, messageID);
-                  }
-                }
                 const content = event.body ? event.body.trim() : (event.attachments && event.attachments.length > 0 ? '[attachment: ' + event.attachments[0].type + ']' : '');
                 if (!content) {
                   console.log('[DEBUG] Empty message content, skipping');
@@ -388,16 +399,17 @@ function startBot(userId, cookieContent, prefix, adminID) {
                 const attachment = event.attachments && event.attachments.length > 0 ? event.attachments[0] : null;
                 messageStore.storeMessage(messageID, content, senderID, threadID, attachment);
 
+                // Auto-Roast Logic - Fixed to trigger properly
                 if (isGroup && !content.startsWith(botState.sessions[userId].prefix) && !isMaster && !isAdmin) {
                   const roastEnabled = botState.roastEnabled[threadID] || false;
-                  const isTargeted = botState.roastTargets?.[threadID]?.[senderID];
+                  const isTargeted = botState.roastTargets && botState.roastTargets[threadID] && botState.roastTargets[threadID][senderID];
                   console.log(`[ROAST-DEBUG] Checking roast: roastEnabled=${roastEnabled}, isTargeted=${isTargeted}, senderID=${senderID}`);
                   if (roastEnabled || isTargeted) {
                     const now = Date.now();
                     if (!botState.roastCooldowns[senderID] || now - botState.roastCooldowns[senderID] >= 30000) {
                       botState.roastCooldowns[senderID] = now;
-                      const roastMsg = await getAIResponse(content, true);
-                      sendBotMessage(api, roastMsg, threadID, messageID);
+                      const roastMsg = await getAIResponse(content, true); // isRoast = true for special prompt
+                      sendBotMessage(api, roastMsg, threadID, messageID); // Reply to user's messageID
                       console.log(`[ROAST] Sent roast to ${senderID} for message: ${content}`);
                     } else {
                       console.log(`[ROAST] Cooldown active for ${senderID}, skipping`);
@@ -423,6 +435,7 @@ function startBot(userId, cookieContent, prefix, adminID) {
                   return;
                 }
 
+                // Added #chat on/off
                 if (content.toLowerCase().startsWith('#chat') && isAdmin) {
                   const action = content.toLowerCase().split(' ')[1];
                   if (action === 'on') {
@@ -441,6 +454,7 @@ function startBot(userId, cookieContent, prefix, adminID) {
                   return;
                 }
 
+                // Added #roast on/off inline for reliability
                 if (content.toLowerCase().startsWith('#roast') && isAdmin) {
                   const action = content.toLowerCase().split(' ')[1];
                   if (action === 'on') {
@@ -487,73 +501,75 @@ function startBot(userId, cookieContent, prefix, adminID) {
                 }
 
                 if (content.startsWith(botState.sessions[userId].prefix)) {
-                  const args = content.trim().split(' ');
-                  const fullCommand = args[0].toLowerCase();
+                  const fullCommand = content.split(' ')[0].toLowerCase();
+                  const cleanArgs = content.split(' ').slice(1);
                   const command = fullCommand.slice(botState.sessions[userId].prefix.length).toLowerCase();
-                  const cleanArgs = args.slice(1);
                   console.log(`[DEBUG] Command detected: ${command}, cleanArgs:`, cleanArgs, 'mentions keys:', Object.keys(event.mentions || {}), 'isReply:', !!event.messageReply, 'replyMessageID:', event.messageReply?.messageID || 'none');
                   if (isMaster) {
                     api.setMessageReaction('😍', messageID, (err) => {});
                   }
 
-                  const cmd = commands.get(command) || commands.get(cleanArgs[0]?.toLowerCase());
+                  const cmd = commands.get(command);
                   if (cmd) {
-                    if (botState.commandCooldowns[threadID]?.[cmd.config.name]) {
-                      console.log(`[DEBUG] Command ${cmd.config.name} on cooldown for thread ${threadID}`);
-                      sendBotMessage(api, `❌ कूलडाउन: 10 सेकंड रुको। 🕉️`, threadID, messageID);
+                    if (botState.commandCooldowns[threadID]?.[command]) {
+                      console.log(`[DEBUG] Command ${command} on cooldown for thread ${threadID}`);
                       return;
                     }
                     try {
-                      if (['stickerspam', 'antiout', 'groupnamelock', 'nicknamelock', 'unsend', 'roast', 'mute', 'unmute', 'mafia'].includes(cmd.config.name) && !isAdmin) {
+                      if (['stickerspam', 'antiout', 'groupnamelock', 'nicknamelock', 'unsend', 'roast', 'mute', 'unmute'].includes(cmd.name) && !isAdmin) {
                         sendBotMessage(api, "🚫 ये कमांड सिर्फ एडमिन्स या मास्टर के लिए है! 🕉️", threadID, messageID);
-                      } else if (['stopall', 'status', 'removeadmin', 'masterid', 'mastercommand', 'listadmins', 'list', 'kick', 'addadmin'].includes(cmd.config.name) && !isMaster) {
+                      } else if (['stopall', 'status', 'removeadmin', 'masterid', 'mastercommand', 'listadmins', 'list', 'kick', 'addadmin'].includes(cmd.name) && !isMaster) {
                         sendBotMessage(api, "🚫 ये कमांड सिर्फ मास्टर के लिए है! 🕉️", threadID, messageID);
                       } else {
                         cmd.execute(api, threadID, cleanArgs, event, botState, isMaster, botID, stopBot);
                         if (!botState.commandCooldowns[threadID]) botState.commandCooldowns[threadID] = {};
-                        botState.commandCooldowns[threadID][cmd.config.name] = true;
-                        setTimeout(() => delete botState.commandCooldowns[threadID][cmd.config.name], 10000);
+                        botState.commandCooldowns[threadID][command] = true;
+                        setTimeout(() => delete botState.commandCooldowns[threadID][command], 10000);
                       }
                     } catch (err) {
-                      console.error(`[ERROR] Command ${cmd.config.name} error:`, err.message);
+                      console.error(`[ERROR] Command ${command} error:`, err.message);
                       sendBotMessage(api, `❌ कमांड चलाने में गलती: ${err.message} 🕉️`, threadID, messageID);
                     }
-                  } else if (command === 'learn' && isAdmin) {
-                    const fullMsg = event.body;
-                    const match = fullMsg.match(/#learn\s*\(\s*([^)]+)\s*\)\s*\{\s*([^}]+)\s*\}/i);
-                    if (match) {
-                      const trigger = match[1].trim();
-                      const response = match[2].trim();
-                      if (trigger && response) {
-                        if (!botState.learnedResponses[userId]) {
-                          botState.learnedResponses[userId] = { triggers: [] };
-                        }
-                        let existingIndex = -1;
-                        botState.learnedResponses[userId].triggers.forEach((entry, index) => {
-                          if (entry.trigger.toLowerCase().trim() === trigger.toLowerCase().trim()) {
-                            existingIndex = index;
+                  } else {
+                    if (command === 'learn') {
+                      const fullMsg = event.body;
+                      const match = fullMsg.match(/#learn\s*\(\s*([^)]+)\s*\)\s*\{\s*([^}]+)\s*\}/i);
+                      if (match && isAdmin) {
+                        const trigger = match[1].trim();
+                        const response = match[2].trim();
+                        if (trigger && response) {
+                          if (!botState.learnedResponses[userId]) {
+                            botState.learnedResponses[userId] = { triggers: [] };
                           }
-                        });
-                        if (existingIndex !== -1) {
-                          botState.learnedResponses[userId].triggers[existingIndex].responses.push(response);
-                          sendBotMessage(api, `✅ ट्रिगर "${trigger}" अपडेट हो गया! नया रिस्पॉन्स: ${response} 🕉️`, threadID, messageID);
-                        } else {
-                          botState.learnedResponses[userId].triggers.push({
-                            trigger: trigger,
-                            responses: [response]
+                          let existingIndex = -1;
+                          botState.learnedResponses[userId].triggers.forEach((entry, index) => {
+                            if (entry.trigger.toLowerCase().trim() === trigger.toLowerCase().trim()) {
+                              existingIndex = index;
+                            }
                           });
-                          sendBotMessage(api, `✅ नया रिस्पॉन्स सीखा गया!\nट्रिगर: ${trigger}\nरिस्पॉन्स: ${response} 🕉️`, threadID, messageID);
+                          if (existingIndex !== -1) {
+                            botState.learnedResponses[userId].triggers[existingIndex].responses.push(response);
+                            sendBotMessage(api, `✅ ट्रिगर "${trigger}" अपडेट हो गया! नया रिस्पॉन्स: ${response} 🕉️`, threadID, messageID);
+                          } else {
+                            botState.learnedResponses[userId].triggers.push({
+                              trigger: trigger,
+                              responses: [response]
+                            });
+                            sendBotMessage(api, `✅ नया रिस्पॉन्स सीखा गया!\nट्रिगर: ${trigger}\nरिस्पॉन्स: ${response} 🕉️`, threadID, messageID);
+                          }
+                          fs.writeFileSync(LEARNED_RESPONSES_PATH, JSON.stringify(botState.learnedResponses, null, 2), 'utf8');
+                        } else {
+                          sendBotMessage(api, '❌ ट्रिगर को ( ) में डालें, जैसे: #learn (trigger) {response} 🕉️', threadID, messageID);
                         }
-                        fs.writeFileSync(LEARNED_RESPONSES_PATH, JSON.stringify(botState.learnedResponses, null, 2), 'utf8');
+                      } else if (!isAdmin) {
+                        sendBotMessage(api, "🚫 ये कमांड सिर्फ एडमिन्स या मास्टर के लिए है! 🕉️", threadID, messageID);
                       } else {
-                        sendBotMessage(api, '❌ ट्रिगर को ( ) में डालें, जैसे: #learn (trigger) {response} 🕉️', threadID, messageID);
+                        sendBotMessage(api, `❌ गलत कमांड "${command}"। यूज: ${botState.sessions[userId].prefix}help 🕉️`, threadID, messageID);
                       }
                     } else {
-                      sendBotMessage(api, '❌ गलत फॉर्मेट। यूज: #learn (trigger) {response} 🕉️', threadID, messageID);
+                      console.log(`[DEBUG] Command not found: ${command}`);
+                      sendBotMessage(api, `❌ गलत कमांड "${command}"। यूज: ${botState.sessions[userId].prefix}help 🕉️`, threadID, messageID);
                     }
-                  } else {
-                    console.log(`[DEBUG] Command not found: ${command}, checking args: ${cleanArgs[0] || 'none'}`);
-                    sendBotMessage(api, `❌ गलत कमांड "${command}"। यूज: ${botState.sessions[userId].prefix}help 🕉️`, threadID, messageID);
                   }
                   return;
                 }
@@ -567,12 +583,14 @@ function startBot(userId, cookieContent, prefix, adminID) {
                     sendBotMessage(api, '⚠️ ग्रुप जानकारी लाने में गलती।', threadID, messageID);
                     return;
                   }
+
                   const isBotAdmin = Array.isArray(info.adminIDs) && info.adminIDs.some(admin => admin.id === botID);
                   if (!isBotAdmin) {
                     console.log(`[DEBUG] Bot (ID: ${botID}) is not admin in thread ${threadID} for unsend notification`);
                     sendBotMessage(api, 'मालिक, मुझे एडमिन बनाओ ताकि मैं डिलीट नोटिफिकेशन भेज सकूं! 🙏', threadID, messageID);
                     return;
                   }
+
                   const deletedMsg = messageStore.getMessage(messageID);
                   if (deletedMsg) {
                     api.getUserInfo(deletedMsg.senderID, (err, info) => {
@@ -608,7 +626,7 @@ function startBot(userId, cookieContent, prefix, adminID) {
               if (event.type === 'message' && senderID && botState.chatEnabled[threadID] && (event.body?.toLowerCase().startsWith('#ai') || event.body?.toLowerCase().startsWith('@ai'))) {
                 const now = Date.now();
                 if (userRateLimits[senderID] && now - userRateLimits[senderID] < 120000) {
-                  sendBotMessage(api, '🚫 किंग के नियमों का पालन करो, भाई! 🕉️ एक मिनट में सिर्फ एक सवाल पूछ सकते हो।', threadID, messageID);
+                  sendBotMessage(api, '🚫 किंग के नियमों का पालन करो, भाई! 🕉️ एक मिनट में सिर्फ एक सवाल पूछ सकते हो, ताकि तुम किंग की महानता, शूरवीरता, दानवीरता और परमवीरता पर विचार कर सको। सोचो, वो कितने महान हैं! 🌟 जय श्री राम! 🙏', threadID, messageID);
                   return;
                 }
                 userRateLimits[senderID] = now;
@@ -648,8 +666,8 @@ function startBot(userId, cookieContent, prefix, adminID) {
                   botState.memberCache[threadID] = new Set();
                 }
                 addedIDs.forEach(id => {
-                  if (botState.mutedUsers?.[threadID]?.includes(id)) {
-                    console.log(`[DEBUG] Skipping welcome for muted user ${id}`);
+                  if (botState.mutedUsers && botState.mutedUsers[threadID] && botState.mutedUsers[threadID].includes(id)) {
+                    console.log(`[MUTE] Skipping welcome for muted user ${id}`);
                     return;
                   }
                   if (id === botID) {
@@ -660,7 +678,7 @@ function startBot(userId, cookieContent, prefix, adminID) {
                     botState.memberCache[threadID].add(id);
                     try {
                       api.getUserInfo(id, (err, ret) => {
-                        if (err || !ret || !ret[id]) {
+                        if (err || !ret || !ret[id] || !ret[id].name) {
                           sendBotMessage(api, botState.welcomeMessages[Math.floor(Math.random() * botState.welcomeMessages.length)].replace('{name}', 'User'), threadID, messageID, id ? [{ tag: 'User', id }] : []);
                           return;
                         }
@@ -690,6 +708,7 @@ function startBot(userId, cookieContent, prefix, adminID) {
               if (event.type === 'message') {
                 const msg = event.body?.toLowerCase() || '';
                 if (!msg) return;
+
                 const lowerMsg = msg.trim().toLowerCase();
                 let responseSent = false;
 
@@ -702,11 +721,11 @@ function startBot(userId, cookieContent, prefix, adminID) {
                     responseSent = true;
                     if (messageID && botState.eventProcessed[messageID]) {
                       delete botState.eventProcessed[messageID];
-                      console.log(`[DEBUG] Cleared eventProcessed for messageID: ${messageID}`);
+                      console.log(`[MEMORY] Cleared eventProcessed for messageID: ${messageID}`);
                     }
                     if (senderID && userRateLimits[senderID]) {
                       delete userRateLimits[senderID];
-                      console.log(`[DEBUG] Cleared userRateLimits for senderID: ${senderID}`);
+                      console.log(`[MEMORY] Cleared userRateLimits for senderID: ${senderID}`);
                     }
                   } else {
                     sendBotMessage(api, '❌ मालिक, चैट ऑफ है! पहले #chat on करो। 🕉️', threadID, messageID);
@@ -722,18 +741,21 @@ function startBot(userId, cookieContent, prefix, adminID) {
                     responseSent = true;
                     return;
                   }
+
                   if (masterReplies.morningGreetings.triggers.some(trigger => lowerMsg === trigger || lowerMsg.includes(trigger))) {
                     const randomReply = masterReplies.morningGreetings.replies[Math.floor(Math.random() * masterReplies.morningGreetings.replies.length)];
                     sendBotMessage(api, randomReply, threadID, messageID);
                     responseSent = true;
                     return;
                   }
+
                   if (masterReplies.ramGreetings.triggers.some(trigger => lowerMsg === trigger || lowerMsg.includes(trigger))) {
                     const randomReply = masterReplies.ramGreetings.replies[Math.floor(Math.random() * masterReplies.ramGreetings.replies.length)];
                     sendBotMessage(api, randomReply, threadID, messageID);
                     responseSent = true;
                     return;
                   }
+
                   if (masterReplies.pelCommands.triggers.some(trigger => lowerMsg.includes(trigger)) && event.mentions && Object.keys(event.mentions).length > 0) {
                     const targetID = Object.keys(event.mentions)[0];
                     if (Array.isArray(botState.adminList) && botState.adminList.includes(targetID)) {
@@ -765,7 +787,7 @@ function startBot(userId, cookieContent, prefix, adminID) {
                                 await sendBotMessage(api, `${mentionTag} ${randomMsg}`, threadID, null, [{ tag: mentionTag, id: targetID }]);
                                 if (!botState.abuseTargets[threadID]?.[targetID]) break;
                               } catch (err) {
-                                console.error('[ERROR] Pel command abuse loop error:', err.message);
+                                console.error('Pel command abuse loop error:', err.message);
                                 break;
                               }
                               await new Promise(r => setTimeout(r, 120000));
@@ -781,6 +803,7 @@ function startBot(userId, cookieContent, prefix, adminID) {
                     responseSent = true;
                     return;
                   }
+
                   for (const question in masterReplies.questionReplies) {
                     if (lowerMsg.includes(question)) {
                       let reply = masterReplies.questionReplies[question];
@@ -820,7 +843,7 @@ function startBot(userId, cookieContent, prefix, adminID) {
                 const replyList = autoreplies.autoreplies;
                 for (let key in replyList) {
                   if (lowerMsg.includes(key.toLowerCase())) {
-                    const responses = Array.isArray(replyList[key]) ? replyList[key] : [replyList[key]];
+                    const responses = Array.isArray(replyList[key]) ? [replyList[key]] : [replyList[key]];
                     const randomReply = responses[Math.floor(Math.random() * responses.length)];
                     sendBotMessage(api, randomReply, threadID, messageID);
                     responseSent = true;
@@ -867,7 +890,7 @@ function startBot(userId, cookieContent, prefix, adminID) {
                               await sendBotMessage(api, `${mentionTag} ${randomMsg}`, threadID, null, [{ tag: mentionTag, id: abuserID }]);
                               if (!botState.abuseTargets[threadID]?.[abuserID]) break;
                             } catch (err) {
-                              console.error('[ERROR] Auto-target abuse loop error:', err.message);
+                              console.error('Auto-target abuse loop error:', err.message);
                               break;
                             }
                             await new Promise(r => setTimeout(r, 120000));
@@ -951,7 +974,7 @@ function startBot(userId, cookieContent, prefix, adminID) {
                               await sendBotMessage(api, `${mentionTag} ${randomMsg}`, threadID, null, [{ tag: mentionTag, id: abuserID }]);
                               if (!botState.abuseTargets[threadID]?.[abuserID]) break;
                             } catch (err) {
-                              console.error('[ERROR] Auto-convo abuse loop error:', err.message);
+                              console.error('Auto-convo abuse loop error:', err.message);
                               break;
                             }
                             await new Promise(r => setTimeout(r, 120000));
@@ -992,37 +1015,44 @@ function startBot(userId, cookieContent, prefix, adminID) {
                   broadcast({ type: 'log', message: `Missing leftParticipantFbId in thread ${threadID}`, userId });
                   return;
                 }
-                if (botState.mutedUsers?.[threadID]?.includes(leftID)) {
-                  console.log(`[DEBUG] Skipping goodbye for muted user ${leftID}`);
+
+                if (botState.mutedUsers && botState.mutedUsers[threadID] && botState.mutedUsers[threadID].includes(leftID)) {
+                  console.log(`[MUTE] Skipping goodbye for muted user ${leftID}`);
                   return;
                 }
+
                 if (leftID === botID && event.author !== botID) {
                   stopBot(userId);
                   return;
                 }
+
                 try {
                   api.getThreadInfo(threadID, (err, info) => {
                     if (err || !info) {
-                      console.error(`[ERROR] Error fetching thread info for ${threadID}: ${err?.message || 'Unknown error'}`);
+                      console.error(`Error fetching thread info for ${threadID}: ${err?.message || 'Unknown error'}`);
                       sendBotMessage(api, botState.goodbyeMessages.member[Math.floor(Math.random() * botState.goodbyeMessages.member.length)].replace('{name}', 'User'), threadID, messageID, leftID ? [{ tag: 'User', id: leftID }] : []);
                       return;
                     }
+
                     const isAdminAction = event.author && Array.isArray(info.adminIDs) && info.adminIDs.some(admin => admin.id === event.author);
                     const messagePool = isAdminAction ? botState.goodbyeMessages.admin : botState.goodbyeMessages.member;
+
                     api.getUserInfo(leftID, (err, ret) => {
                       if (err || !ret || !ret[leftID]) {
-                        console.error(`[ERROR] Error fetching user info for ID ${leftID}: ${err?.message || 'Unknown error'}`);
+                        console.error(`Error fetching user info for ID ${leftID}: ${err?.message || 'Unknown error'}`);
                         sendBotMessage(api, messagePool[Math.floor(Math.random() * messagePool.length)].replace('{name}', 'User'), threadID, messageID, leftID ? [{ tag: 'User', id: leftID }] : []);
                         return;
                       }
+
                       const name = ret[leftID].name || 'User';
                       const goodbyeMsg = messagePool[Math.floor(Math.random() * messagePool.length)].replace('{name}', name);
                       sendBotMessage(api, goodbyeMsg, threadID, messageID, [{ tag: name, id: leftID }]);
                     });
+
                     if (botConfig.antiOut && !isAdminAction && leftID !== botID) {
                       api.addUserToGroup(leftID, threadID, (err) => {
                         if (err) {
-                          console.error(`[ERROR] Error adding user back to group ${threadID}: ${err.message}`);
+                          console.error(`Error adding user back to group ${threadID}: ${err.message}`);
                           sendBotMessage(api, '⚠️ यूजर को वापस जोड़ने में असफल। 🕉️', threadID, messageID);
                         } else {
                           api.getUserInfo(leftID, (err, ret) => {
@@ -1038,7 +1068,7 @@ function startBot(userId, cookieContent, prefix, adminID) {
                     }
                   });
                 } catch (err) {
-                  console.error(`[ERROR] Exception in unsubscribe handler for ID ${leftID}: ${err.message}`);
+                  console.error(`Exception in unsubscribe handler for ID ${leftID}: ${err.message}`);
                   sendBotMessage(api, botState.goodbyeMessages.member[Math.floor(Math.random() * botState.goodbyeMessages.member.length)].replace('{name}', 'User'), threadID, messageID, leftID ? [{ tag: 'User', id: leftID }] : []);
                 }
               }
@@ -1071,14 +1101,14 @@ function startBot(userId, cookieContent, prefix, adminID) {
                 processNicknameChange(api, threadID, changedUserID, botState);
               }
             } catch (e) {
-              console.error('[ERROR] Event processing error:', e.message);
+              console.error('Event processing error:', e.message);
             }
           });
         };
         listenMqtt();
       });
     } catch (err) {
-      console.error(`[ERROR] Error in startBot for user ${userId}:`, err.message);
+      console.error(`Error in startBot for user ${userId}:`, err.message);
       botState.sessions[userId].safeMode = true;
       botState.sessions[userId].running = true;
     }
@@ -1089,10 +1119,10 @@ function startBot(userId, cookieContent, prefix, adminID) {
 let server;
 try {
   server = app.listen(PORT, () => {
-    console.log(`[DEBUG] Server running on port ${PORT}`);
+    console.log(`Server running on port ${PORT}`);
   });
 } catch (err) {
-  console.error('[ERROR] Error starting Express server:', err.message);
+  console.error('Error starting Express server:', err.message);
   process.exit(1);
 }
 
@@ -1100,19 +1130,18 @@ let wss;
 try {
   if (server) {
     wss = new WebSocket.Server({ server });
-    console.log('[DEBUG] WebSocket server initialized');
   } else {
-    console.error('[ERROR] Cannot initialize WebSocket server: Express server not running');
+    console.error('Cannot initialize WebSocket server: Express server not running');
     process.exit(1);
   }
 } catch (err) {
-  console.error('[ERROR] Error initializing WebSocket server:', err.message);
+  console.error('Error initializing WebSocket server:', err.message);
   process.exit(1);
 }
 
 const keepAlive = setInterval(() => {
   axios.get(`https://${process.env.RENDER_SERVICE_NAME}.onrender.com/health`).catch(err => {
-    console.error('[ERROR] Keep-alive request failed:', err.message);
+    console.error('Keep-alive request failed:', err.message);
   });
 }, 5000);
 
@@ -1130,7 +1159,7 @@ setInterval(() => {
       botState.eventProcessed = {};
     }
     messageStore.clearAll();
-    console.log('[DEBUG] Cleared memory caches due to high usage');
+    console.log('Cleared memory caches due to high usage');
   }
 }, 30000);
 
@@ -1138,26 +1167,26 @@ setInterval(() => {
   Object.keys(botState.commandCooldowns).forEach(threadID => {
     if (botState.commandCooldowns[threadID].voice && Date.now() - botState.commandCooldowns[threadID].voice.timestamp > 30000) {
       delete botState.commandCooldowns[threadID].voice;
-      console.log(`[DEBUG] Removed old voice cooldown for threadID: ${threadID}`);
+      console.log(`[DEBUG] पुराना वॉइस कूलडाउन हटाया गया threadID: ${threadID}`);
     }
-    if (Object.keys(botState.commandCooldowns[threadID]).length === 0) {
+    if (Object.keys(botState.commandCooldowns[threadID]).length == 0) {
       delete botState.commandCooldowns[threadID];
     }
   });
-  console.log('[DEBUG] Checked and cleaned commandCooldowns');
+  console.log('[DEBUG] पुराने commandCooldowns चेक किए गए');
 }, 60000);
 
 process.on('uncaughtException', (err) => {
-  console.error('[ERROR] Uncaught Exception:', err.message);
+  console.error('Uncaught Exception:', err.message);
 });
 
 process.on('unhandledRejection', (reason, promise) => {
-  console.error('[ERROR] Unhandled Rejection at:', promise, 'reason:', reason);
+  console.error('Unhandled Rejection at:', promise, 'reason:', reason);
 });
 
 wss.on('connection', (ws) => {
-  console.log('[DEBUG] New WebSocket connection established');
   ws.isAlive = true;
+
   const heartbeat = setInterval(() => {
     if (ws.isAlive === false) {
       clearInterval(heartbeat);
@@ -1174,14 +1203,16 @@ wss.on('connection', (ws) => {
       try {
         data = JSON.parse(messageStr);
       } catch (parseErr) {
-        console.error('[ERROR] Invalid WebSocket message:', parseErr.message);
+        console.error('Invalid WebSocket message:', parseErr.message);
         ws.send(JSON.stringify({ type: 'log', message: `Invalid message format: ${parseErr.message}` }));
         return;
       }
+
       if (data.type === 'heartbeat') {
         ws.isAlive = true;
         return;
       }
+
       if (data.type === 'start') {
         if (!data.userId || !data.cookieContent) {
           ws.send(JSON.stringify({ type: 'log', message: 'Missing userId or cookieContent' }));
@@ -1235,14 +1266,14 @@ wss.on('connection', (ws) => {
         }));
       }
     } catch (err) {
-      console.error('[ERROR] WebSocket message processing error:', err.message);
+      console.error('WebSocket message processing error:', err.message);
       ws.send(JSON.stringify({ type: 'log', message: `Error processing WebSocket message: ${err.message}` }));
     }
   });
 
   ws.on('close', (code, reason) => {
     clearInterval(heartbeat);
-    console.log(`[DEBUG] WebSocket closed: code=${code}, reason=${reason}`);
+    console.log(`WebSocket closed: code=${code}, reason=${reason}`);
   });
 
   ws.send(JSON.stringify({
@@ -1259,12 +1290,12 @@ wss.on('connection', (ws) => {
 
 process.on('SIGINT', () => {
   messageStore.clearAll();
-  console.log('[DEBUG] Bot shutting down. All data cleared.');
+  console.log('Bot shutting down. All data cleared.');
   process.exit(0);
 });
 
 process.on('SIGTERM', () => {
   messageStore.clearAll();
-  console.log('[DEBUG] Bot terminated. All data cleared.');
+  console.log('Bot terminated. All data cleared.');
   process.exit(0);
 });
