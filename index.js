@@ -82,6 +82,11 @@ if (!botState.roastEnabled) botState.roastEnabled = {};
 if (!botState.roastTargets) botState.roastTargets = {};
 if (!botState.mutedUsers) botState.mutedUsers = {};
 if (!botState.roastCooldowns) botState.roastCooldowns = {};
+// Mafia-specific state init
+if (!botState.mafiaGames) botState.mafiaGames = {};
+if (!botState.playerGame) botState.playerGame = {};
+if (!botState.leaderboard) botState.leaderboard = {};
+if (!botState.jokerWins) botState.jokerWins = {};
 
 try {
   if (fs.existsSync(LEARNED_RESPONSES_PATH)) {
@@ -94,6 +99,9 @@ try {
     botState.roastEnabled = botState.learnedResponses.roastEnabled || {};
     botState.roastTargets = botState.learnedResponses.roastTargets || {};
     botState.mutedUsers = botState.learnedResponses.mutedUsers || {};
+    // Mafia leaderboard load
+    botState.leaderboard = botState.learnedResponses.leaderboard || {};
+    botState.jokerWins = botState.learnedResponses.jokerWins || {};
     console.log('Loaded adminList:', botState.adminList, 'chatEnabled:', botState.chatEnabled, 'deleteNotifyEnabled:', botState.deleteNotifyEnabled);
     Object.keys(botState.sessions).forEach(userId => {
       if (!botState.learnedResponses[userId]) {
@@ -101,7 +109,7 @@ try {
       }
     });
   } else {
-    botState.learnedResponses = { adminList: [MASTER_ID], chatEnabled: {}, deleteNotifyEnabled: {}, roastEnabled: {}, roastTargets: {}, mutedUsers: {} };
+    botState.learnedResponses = { adminList: [MASTER_ID], chatEnabled: {}, deleteNotifyEnabled: {}, roastEnabled: {}, roastTargets: {}, mutedUsers: {}, leaderboard: {}, jokerWins: {} };
     fs.writeFileSync(LEARNED_RESPONSES_PATH, JSON.stringify(botState.learnedResponses, null, 2), 'utf8');
     botState.adminList = [MASTER_ID];
     botState.chatEnabled = {};
@@ -109,17 +117,22 @@ try {
     botState.roastEnabled = {};
     botState.roastTargets = {};
     botState.mutedUsers = {};
+    // Mafia init
+    botState.leaderboard = {};
+    botState.jokerWins = {};
     console.log('Initialized learned_responses.json with adminList:', botState.adminList);
   }
 } catch (err) {
   console.error('Error loading learned_responses.json:', err.message);
-  botState.learnedResponses = { adminList: [MASTER_ID], chatEnabled: {}, deleteNotifyEnabled: {}, roastEnabled: {}, roastTargets: {}, mutedUsers: {} };
+  botState.learnedResponses = { adminList: [MASTER_ID], chatEnabled: {}, deleteNotifyEnabled: {}, roastEnabled: {}, roastTargets: {}, mutedUsers: {}, leaderboard: {}, jokerWins: {} };
   botState.adminList = [MASTER_ID];
   botState.chatEnabled = {};
   botState.deleteNotifyEnabled = {};
   botState.roastEnabled = {};
   botState.roastTargets = {};
   botState.mutedUsers = {};
+  botState.leaderboard = {};
+  botState.jokerWins = {};
   fs.writeFileSync(LEARNED_RESPONSES_PATH, JSON.stringify(botState.learnedResponses, null, 2), 'utf8');
 }
 
@@ -522,9 +535,12 @@ function startBot(userId, cookieContent, prefix, adminID) {
                         sendBotMessage(api, "🚫 ये कमांड सिर्फ मास्टर के लिए है! 🕉️", threadID, messageID);
                       } else {
                         cmd.execute(api, threadID, cleanArgs, event, botState, isMaster, botID, stopBot);
-                        if (!botState.commandCooldowns[threadID]) botState.commandCooldowns[threadID] = {};
-                        botState.commandCooldowns[threadID][command] = true;
-                        setTimeout(() => delete botState.commandCooldowns[threadID][command], 10000);
+                        // Cooldown skip for mafia to allow multiple subcommands (vote/join)
+                        if (cmd.name !== 'mafia') {
+                          if (!botState.commandCooldowns[threadID]) botState.commandCooldowns[threadID] = {};
+                          botState.commandCooldowns[threadID][command] = true;
+                          setTimeout(() => delete botState.commandCooldowns[threadID][command], 10000);
+                        }
                       }
                     } catch (err) {
                       console.error(`[ERROR] Command ${command} error:`, err.message);
@@ -572,6 +588,15 @@ function startBot(userId, cookieContent, prefix, adminID) {
                     }
                   }
                   return;
+                }
+
+                // Mafia handleEvent call for night actions (PM messages)
+                if ((event.type === 'message' || event.type === 'message_reply') && commands.has('mafia') && typeof commands.get('mafia').handleEvent === 'function') {
+                  try {
+                    await commands.get('mafia').handleEvent({ api, event, botState });
+                  } catch (err) {
+                    console.error('[MAFIA] handleEvent error:', err.message);
+                  }
                 }
               }
 
