@@ -89,6 +89,7 @@ if (!botState.roastTargets) botState.roastTargets = {};
 if (!botState.mutedUsers) botState.mutedUsers = {};
 if (!botState.roastCooldowns) botState.roastCooldowns = {};
 if (!botState.lastNicknameChange) botState.lastNicknameChange = {};
+if (!botState.mafiaGames) botState.mafiaGames = {};
 
 try {
   if (fs.existsSync(LEARNED_RESPONSES_PATH)) {
@@ -105,6 +106,7 @@ try {
     botState.lockedNicknames = botState.learnedResponses.lockedNicknames || {};
     botState.nicknameQueues = botState.learnedResponses.nicknameQueues || {};
     botState.lastNicknameChange = botState.learnedResponses.lastNicknameChange || {};
+    botState.mafiaGames = botState.learnedResponses.mafiaGames || {};
     console.log('Loaded adminList:', botState.adminList, 'chatEnabled:', botState.chatEnabled, 'deleteNotifyEnabled:', botState.deleteNotifyEnabled);
     Object.keys(botState.sessions).forEach(userId => {
       if (!botState.learnedResponses[userId]) {
@@ -122,7 +124,8 @@ try {
       lockedGroups: {}, 
       lockedNicknames: {},
       nicknameQueues: {},
-      lastNicknameChange: {}
+      lastNicknameChange: {},
+      mafiaGames: {}
     };
     fs.writeFileSync(LEARNED_RESPONSES_PATH, JSON.stringify(botState.learnedResponses, null, 2), 'utf8');
     botState.adminList = [MASTER_ID];
@@ -135,6 +138,7 @@ try {
     botState.lockedNicknames = {};
     botState.nicknameQueues = {};
     botState.lastNicknameChange = {};
+    botState.mafiaGames = {};
     console.log('Initialized learned_responses.json with adminList:', botState.adminList);
   }
 } catch (err) {
@@ -149,7 +153,8 @@ try {
     lockedGroups: {}, 
     lockedNicknames: {},
     nicknameQueues: {},
-    lastNicknameChange: {}
+    lastNicknameChange: {},
+    mafiaGames: {}
   };
   botState.adminList = [MASTER_ID];
   botState.chatEnabled = {};
@@ -161,6 +166,7 @@ try {
   botState.lockedNicknames = {};
   botState.nicknameQueues = {};
   botState.lastNicknameChange = {};
+  botState.mafiaGames = {};
   fs.writeFileSync(LEARNED_RESPONSES_PATH, JSON.stringify(botState.learnedResponses, null, 2), 'utf8');
 }
 
