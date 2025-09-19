@@ -54,7 +54,7 @@ module.exports = function (defaultFuncs, api, ctx) {
       }),
     };
 
-    defaultFuncs.post("https://www.facebook.com/api/graphql/", ctx.jar, form)
+    defaultFuncs.post("https://www.facebook.com/api/graphql/", form, null, ctx.jar)
       .then(function (res) {
         if (res.error || res.errors) {
           throw res;
