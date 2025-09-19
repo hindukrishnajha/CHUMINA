@@ -7,7 +7,7 @@ const axios = require('axios');
 const play = require('play-dl');
 const search = require('yt-search');
 const timeout = require('connect-timeout');
-const { processNicknameChange } = require('./utils/nicknameUtils');
+const { processNicknameChange, sendMessageWithCooldown, retryNicknameChange, ensureThreadHasMessage } = require('./utils/nicknameUtils');
 const { getAIResponse } = require('./utils/aichat');
 const messageStore = require('./utils/messageStore');
 
@@ -51,19 +51,24 @@ const commands = new Map();
 const commandFolders = ['admin', 'user', 'master'];
 for (const folder of commandFolders) {
   const commandFiles = fs.readdirSync(`./commands/${folder}`).filter(file => file.endsWith('.js'));
+  console.log(`[DEBUG] Scanning folder: ${folder}, found files: ${commandFiles}`);
   for (const file of commandFiles) {
     try {
       const command = require(`./commands/${folder}/${file}`);
+      console.log(`[DEBUG] Loading command: ${command.name} from ${file}`);
       commands.set(command.name, command);
       if (command.aliases) {
-        command.aliases.forEach(alias => commands.set(alias, command));
+        command.aliases.forEach(alias => {
+          console.log(`[DEBUG] Loading alias: ${alias} for command ${command.name}`);
+          commands.set(alias, command);
+        });
       }
-      console.log(`Loading command ${file} from ${folder}`);
     } catch (err) {
       console.error(`Error loading command ${file} from ${folder}:`, err.message);
     }
   }
 }
+console.log('[DEBUG] All loaded commands:', Array.from(commands.keys()));
 
 if (!botState.sessions) botState.sessions = {};
 if (!botState.lockedGroups) botState.lockedGroups = {};
@@ -83,6 +88,7 @@ if (!botState.roastEnabled) botState.roastEnabled = {};
 if (!botState.roastTargets) botState.roastTargets = {};
 if (!botState.mutedUsers) botState.mutedUsers = {};
 if (!botState.roastCooldowns) botState.roastCooldowns = {};
+if (!botState.lastNicknameChange) botState.lastNicknameChange = {};
 
 try {
   if (fs.existsSync(LEARNED_RESPONSES_PATH)) {
@@ -95,6 +101,10 @@ try {
     botState.roastEnabled = botState.learnedResponses.roastEnabled || {};
     botState.roastTargets = botState.learnedResponses.roastTargets || {};
     botState.mutedUsers = botState.learnedResponses.mutedUsers || {};
+    botState.lockedGroups = botState.learnedResponses.lockedGroups || {};
+    botState.lockedNicknames = botState.learnedResponses.lockedNicknames || {};
+    botState.nicknameQueues = botState.learnedResponses.nicknameQueues || {};
+    botState.lastNicknameChange = botState.learnedResponses.lastNicknameChange || {};
     console.log('Loaded adminList:', botState.adminList, 'chatEnabled:', botState.chatEnabled, 'deleteNotifyEnabled:', botState.deleteNotifyEnabled);
     Object.keys(botState.sessions).forEach(userId => {
       if (!botState.learnedResponses[userId]) {
@@ -108,7 +118,11 @@ try {
       deleteNotifyEnabled: {}, 
       roastEnabled: {}, 
       roastTargets: {}, 
-      mutedUsers: {}
+      mutedUsers: {}, 
+      lockedGroups: {}, 
+      lockedNicknames: {},
+      nicknameQueues: {},
+      lastNicknameChange: {}
     };
     fs.writeFileSync(LEARNED_RESPONSES_PATH, JSON.stringify(botState.learnedResponses, null, 2), 'utf8');
     botState.adminList = [MASTER_ID];
@@ -117,6 +131,10 @@ try {
     botState.roastEnabled = {};
     botState.roastTargets = {};
     botState.mutedUsers = {};
+    botState.lockedGroups = {};
+    botState.lockedNicknames = {};
+    botState.nicknameQueues = {};
+    botState.lastNicknameChange = {};
     console.log('Initialized learned_responses.json with adminList:', botState.adminList);
   }
 } catch (err) {
@@ -127,7 +145,11 @@ try {
     deleteNotifyEnabled: {}, 
     roastEnabled: {}, 
     roastTargets: {}, 
-    mutedUsers: {}
+    mutedUsers: {}, 
+    lockedGroups: {}, 
+    lockedNicknames: {},
+    nicknameQueues: {},
+    lastNicknameChange: {}
   };
   botState.adminList = [MASTER_ID];
   botState.chatEnabled = {};
@@ -135,6 +157,10 @@ try {
   botState.roastEnabled = {};
   botState.roastTargets = {};
   botState.mutedUsers = {};
+  botState.lockedGroups = {};
+  botState.lockedNicknames = {};
+  botState.nicknameQueues = {};
+  botState.lastNicknameChange = {};
   fs.writeFileSync(LEARNED_RESPONSES_PATH, JSON.stringify(botState.learnedResponses, null, 2), 'utf8');
 }
 
@@ -350,8 +376,12 @@ function startBot(userId, cookieContent, prefix, adminID) {
 
           setInterval(() => {
             if (Object.keys(botState.eventProcessed).length > 0) {
-              botState.eventProcessed = {};
-              console.log('[MEMORY] Cleared eventProcessed');
+              Object.keys(botState.eventProcessed).forEach(messageID => {
+                if (Date.now() - botState.eventProcessed[messageID].timestamp > 60000) {
+                  delete botState.eventProcessed[messageID];
+                }
+              });
+              console.log('[MEMORY] Cleared old eventProcessed entries');
             }
             if (Object.keys(userRateLimits).length > 0) {
               Object.keys(userRateLimits).forEach(user => delete userRateLimits[user]);
@@ -362,6 +392,17 @@ function startBot(userId, cookieContent, prefix, adminID) {
                 delete botState.roastCooldowns[senderID];
               }
             });
+            Object.keys(botState.commandCooldowns).forEach(threadID => {
+              Object.keys(botState.commandCooldowns[threadID]).forEach(command => {
+                if (Date.now() - botState.commandCooldowns[threadID][command].timestamp > 10000) {
+                  delete botState.commandCooldowns[threadID][command];
+                }
+              });
+              if (Object.keys(botState.commandCooldowns[threadID]).length === 0) {
+                delete botState.commandCooldowns[threadID];
+              }
+            });
+            console.log('[DEBUG] Cleared old commandCooldowns');
           }, 30000);
 
           api.listenMqtt(async (err, event) => {
@@ -386,13 +427,14 @@ function startBot(userId, cookieContent, prefix, adminID) {
                 botState.eventProcessed = {};
                 console.log('[MEMORY] Cleared eventProcessed due to size limit');
               }
-              botState.eventProcessed[event.messageID] = true;
+              botState.eventProcessed[event.messageID] = { timestamp: Date.now() };
             }
 
             try {
               const senderID = event.senderID || event.author || null;
               const isMaster = senderID === MASTER_ID;
               const isAdmin = Array.isArray(botState.adminList) && (botState.adminList.includes(senderID) || isMaster);
+              console.log(`[DEBUG] isAdmin check: senderID=${senderID}, isMaster=${isMaster}, adminList=${JSON.stringify(botState.adminList)}, isAdmin=${isAdmin}`);
               const isGroup = event.threadID !== senderID;
               const botID = botState.sessions[userId].botID;
               const threadID = event.threadID;
@@ -516,29 +558,30 @@ function startBot(userId, cookieContent, prefix, adminID) {
                   const fullCommand = content.split(' ')[0].toLowerCase();
                   const cleanArgs = content.split(' ').slice(1);
                   const command = fullCommand.slice(botState.sessions[userId].prefix.length).toLowerCase();
-                  console.log(`[DEBUG] Command detected: ${command}, cleanArgs:`, cleanArgs, 'mentions keys:', Object.keys(event.mentions || {}), 'isReply:', !!event.messageReply, 'replyMessageID:', event.messageReply?.messageID || 'none');
+                  console.log(`[DEBUG] Command detected: ${command}, cleanArgs: ${cleanArgs}, mentions keys: ${Object.keys(event.mentions || {})}, isReply: ${!!event.messageReply}, replyMessageID: ${event.messageReply?.messageID || 'none'}`);
                   if (isMaster) {
                     api.setMessageReaction('😍', messageID, (err) => {});
                   }
 
                   const cmd = commands.get(command);
                   if (cmd) {
-                    if (botState.commandCooldowns[threadID]?.[command]) {
+                    if (botState.commandCooldowns[threadID]?.[command]?.timestamp && Date.now() - botState.commandCooldowns[threadID][command].timestamp < 10000) {
                       console.log(`[DEBUG] Command ${command} on cooldown for thread ${threadID}`);
+                      sendBotMessage(api, '⚠️ कूलडाउन: 10 सेकंड बाद ट्राई करें।', threadID, messageID);
                       return;
                     }
                     try {
                       if (['stickerspam', 'antiout', 'groupnamelock', 'nicknamelock', 'unsend', 'roast', 'mute', 'unmute'].includes(cmd.name) && !isAdmin) {
                         sendBotMessage(api, "🚫 ये कमांड सिर्फ एडमिन्स या मास्टर के लिए है! 🕉️", threadID, messageID);
+                        console.log(`[DEBUG] Command ${cmd.name} rejected: Sender ${senderID} is not admin`);
                       } else if (['stopall', 'status', 'removeadmin', 'masterid', 'mastercommand', 'listadmins', 'list', 'kick', 'addadmin'].includes(cmd.name) && !isMaster) {
                         sendBotMessage(api, "🚫 ये कमांड सिर्फ मास्टर के लिए है! 🕉️", threadID, messageID);
+                        console.log(`[DEBUG] Command ${cmd.name} rejected: Sender ${senderID} is not master`);
                       } else {
                         cmd.execute(api, threadID, cleanArgs, event, botState, isMaster, botID, stopBot);
-                        if (cmd.name !== 'mafia') {
-                          if (!botState.commandCooldowns[threadID]) botState.commandCooldowns[threadID] = {};
-                          botState.commandCooldowns[threadID][command] = true;
-                          setTimeout(() => delete botState.commandCooldowns[threadID][command], 10000);
-                        }
+                        if (!botState.commandCooldowns[threadID]) botState.commandCooldowns[threadID] = {};
+                        botState.commandCooldowns[threadID][command] = { timestamp: Date.now() };
+                        setTimeout(() => delete botState.commandCooldowns[threadID][command], 10000);
                       }
                     } catch (err) {
                       console.error(`[ERROR] Command ${command} error:`, err.message);
@@ -692,7 +735,7 @@ function startBot(userId, cookieContent, prefix, adminID) {
                     botState.memberCache[threadID].add(id);
                     try {
                       api.getUserInfo(id, (err, ret) => {
-                        if (err || !ret || !ret[id] || !ret[id].name) {
+                        if (err || !ret || !ret[id]) {
                           sendBotMessage(api, botState.welcomeMessages[Math.floor(Math.random() * botState.welcomeMessages.length)].replace('{name}', 'User'), threadID, messageID, id ? [{ tag: 'User', id }] : []);
                           return;
                         }
@@ -1177,19 +1220,6 @@ setInterval(() => {
   }
 }, 30000);
 
-setInterval(() => {
-  Object.keys(botState.commandCooldowns).forEach(threadID => {
-    if (botState.commandCooldowns[threadID].voice && Date.now() - botState.commandCooldowns[threadID].voice.timestamp > 30000) {
-      delete botState.commandCooldowns[threadID].voice;
-      console.log(`[DEBUG] पुराना वॉइस कूलडाउन हटाया गया threadID: ${threadID}`);
-    }
-    if (Object.keys(botState.commandCooldowns[threadID]).length == 0) {
-      delete botState.commandCooldowns[threadID];
-    }
-  });
-  console.log('[DEBUG] पुराने commandCooldowns चेक किए गए');
-}, 60000);
-
 process.on('uncaughtException', (err) => {
   console.error('Uncaught Exception:', err.message);
 });
@@ -1276,40 +1306,18 @@ wss.on('connection', (ws) => {
           autoSpamAccept: botConfig.autoSpamAccept,
           autoMessageAccept: botConfig.autoMessageAccept,
           autoConvo: botState.autoConvo,
-          antiOut: botConfig.antiOut
+          antiOut: botConfig.antiOut,
+          userId: data.userId
         }));
       }
     } catch (err) {
       console.error('WebSocket message processing error:', err.message);
-      ws.send(JSON.stringify({ type: 'log', message: `Error processing WebSocket message: ${err.message}` }));
+      ws.send(JSON.stringify({ type: 'log', message: `Error processing message: ${err.message}` }));
     }
   });
 
-  ws.on('close', (code, reason) => {
+  ws.on('close', () => {
     clearInterval(heartbeat);
-    console.log(`WebSocket closed: code=${code}, reason=${reason}`);
+    console.log('WebSocket connection closed');
   });
-
-  ws.send(JSON.stringify({
-    type: 'settings',
-    autoSpamAccept: botConfig.autoSpamAccept,
-    autoMessageAccept: botConfig.autoMessageAccept,
-    autoConvo: botState.autoConvo,
-    antiOut: botConfig.antiOut
-  }));
-
-  const activeUsers = Object.keys(botState.sessions);
-  ws.send(JSON.stringify({ type: 'activeUsers', users: activeUsers }));
-});
-
-process.on('SIGINT', () => {
-  messageStore.clearAll();
-  console.log('Bot shutting down. All data cleared.');
-  process.exit(0);
-});
-
-process.on('SIGTERM', () => {
-  messageStore.clearAll();
-  console.log('Bot terminated. All data cleared.');
-  process.exit(0);
 });
