@@ -1,8 +1,5 @@
 "use strict";
 
-const utils = require("../utils/utils");
-// @Mafiyahunter
-
 module.exports = function (defaultFuncs, api, ctx) {
   return function addUserToGroup(userID, threadID, callback) {
     let resolveFunc = function () {};
@@ -12,14 +9,8 @@ module.exports = function (defaultFuncs, api, ctx) {
       rejectFunc = reject;
     });
 
-    if (
-      !callback &&
-      (utils.getType(threadID) === "Function" ||
-        utils.getType(threadID) === "AsyncFunction")
-    ) {
-      throw new utils.CustomError({
-        error: "please pass a threadID as a second argument.",
-      });
+    if (!callback && (typeof threadID === "function")) {
+      throw new Error("please pass a threadID as a second argument.");
     }
 
     if (!callback) {
@@ -31,31 +22,23 @@ module.exports = function (defaultFuncs, api, ctx) {
       };
     }
 
-    if (
-      utils.getType(threadID) !== "Number" &&
-      utils.getType(threadID) !== "String"
-    ) {
-      throw new utils.CustomError({
-        error:
-          "ThreadID should be of type Number or String and not " +
-          utils.getType(threadID) +
-          ".",
-      });
+    if (typeof threadID !== "number" && typeof threadID !== "string") {
+      throw new Error("ThreadID should be of type Number or String.");
     }
 
-    if (utils.getType(userID) !== "Array") {
+    if (!Array.isArray(userID)) {
       userID = [userID];
     }
 
-    const messageAndOTID = utils.generateOfflineThreadingID();
+    const messageAndOTID = Date.now() + Math.floor(Math.random() * 1000000);
     const form = {
       client: "mercury",
       action_type: "ma-type:log-message",
-      author: "fbid:" + (ctx.userID),
+      author: "fbid:" + ctx.userID,
       thread_id: "",
       timestamp: Date.now(),
       timestamp_absolute: "Today",
-      timestamp_relative: utils.generateTimestampRelative(),
+      timestamp_relative: new Date().toTimeString().split(' ')[0],
       timestamp_time_passed: "0",
       is_unread: false,
       is_cleared: false,
@@ -70,43 +53,27 @@ module.exports = function (defaultFuncs, api, ctx) {
       status: "0",
       offline_threading_id: messageAndOTID,
       message_id: messageAndOTID,
-      threading_id: utils.generateThreadingID(ctx.clientID),
+      threading_id: `<${Date.now()}:${Math.floor(Math.random() * 1000000)}-${ctx.clientID || 'default'}>`,
       manual_retry_cnt: "0",
       thread_fbid: threadID,
     };
 
-    for (let i = 0; i < userID.length; i++) {
-      if (
-        utils.getType(userID[i]) !== "Number" &&
-        utils.getType(userID[i]) !== "String"
-      ) {
-        throw new utils.CustomError({
-          error:
-            "Elements of userID should be of type Number or String and not " +
-            utils.getType(userID[i]) +
-            ".",
-        });
+    userID.forEach((id, i) => {
+      if (typeof id !== "number" && typeof id !== "string") {
+        throw new Error("Elements of userID should be of type Number or String.");
       }
+      form[`log_message_data[added_participants][${i}]`] = "fbid:" + id;
+    });
 
-      form["log_message_data[added_participants][" + i + "]"] =
-        "fbid:" + userID[i];
-    }
-
-    defaultFuncs
-      .post("https://www.facebook.com/messaging/send/", ctx.jar, form)
-      .then(utils.parseAndCheckLogin(ctx, defaultFuncs))
-      .then(function (resData) {
-        if (!resData) {
-          throw new utils.CustomError({ error: "Add to group failed." });
+    defaultFuncs.post("https://www.facebook.com/messaging/send/", ctx.jar, form)
+      .then(function (res) {
+        if (!res || res.error) {
+          throw new Error("Add to group failed.");
         }
-        if (resData.error) {
-          throw new utils.CustomError(resData);
-        }
-
         return callback();
       })
       .catch(function (err) {
-        utils.error("addUserToGroup", err);
+        console.error("[addUserToGroup] Error:", err.message || JSON.stringify(err));
         return callback(err);
       });
 
