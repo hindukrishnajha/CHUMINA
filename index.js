@@ -388,7 +388,7 @@ function stopBot(userId) {
     botState.sessions[userId].api = null;
   }
 
- тепер delete botState.sessions[userId];
+ delete botState.sessions[userId];
   broadcast({ type: 'log', message: `Bot stopped for user ${userId}`, userId });
   broadcast({ type: 'status', userId, running: false });
 }
