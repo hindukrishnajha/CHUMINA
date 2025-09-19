@@ -65,7 +65,7 @@ module.exports = function (defaultFuncs, api, ctx) {
       form[`log_message_data[added_participants][${i}]`] = "fbid:" + id;
     });
 
-    defaultFuncs.post("https://www.facebook.com/messaging/send/", ctx.jar, form)
+    defaultFuncs.post("https://www.facebook.com/messaging/send/", form, null, ctx.jar)
       .then(function (res) {
         if (!res || res.error) {
           throw new Error("Add to group failed.");
