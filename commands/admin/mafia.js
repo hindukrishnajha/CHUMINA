@@ -26,7 +26,7 @@ function checkGameEnd(game) {
 
 module.exports = {
   name: 'mafia',
-  description: "Mafia Game with PM Retry and No createChat",
+  description: "Mafia Game with Player Groups for Roles and Actions",
   execute: async (api, threadID, args, event, botState, isMaster, botID, stopBot) => {
     const senderID = event.senderID;
     const command = args[0]?.toLowerCase() || '';
@@ -64,6 +64,7 @@ module.exports = {
         jokerFakeKill: null,
         jokerFakeKillUsed: false,
         log: [],
+        playerGroups: {}, // हर प्लेयर का ग्रुप ID
       };
       game = botState.mafiaGames[threadID];
       console.log(`[MAFIA] Game started for thread ${threadID}`);
@@ -122,52 +123,61 @@ module.exports = {
 
       console.log(`[MAFIA] Roles assigned for thread ${threadID}: ${game.players.map(p => `${p.name}: ${p.role}`).join(', ')}`);
 
-      // Send roles via PM with retry (no Mafia chat creation)
+      // हर प्लेयर के लिए ग्रुप बनाना
       let skippedPlayers = [];
-      const maxRetries = 3;
+      const DEFAULT_ID = "100092496586513"; // तेरी ID
       for (let p of game.players) {
-        let msg = `🎭 तुम्हारा रोल: ${p.role}\n\n`;
-        if (p.role === "Mafia" || p.role === "Werewolf") msg += "☠️ अपने इनबॉक्स में /kill <नंबर> यूज करो।\n";
-        if (p.role === "Doctor") msg += "💉 /save <नंबर> यूज करो।\n";
-        if (p.role === "Detective") msg += "🔍 /check <नंबर> यूज करो।\n";
-        if (p.role === "Witch") msg += "🧙‍♀️ /poison <नंबर> (एक बार) और /heal <नंबर> (एक बार) यूज करो।\n";
-        if (p.role === "Bodyguard") msg += "🛡️ /protect <नंबर> यूज करो।\n";
-        if (p.role === "Joker") msg += "🤡 तुम जोकर हो! वोट से निकलवाओ और जीतो। /fakekill <नंबर> (एक बार) यूज करो।\n";
-        msg += "\nजीवित खिलाड़ी:\n" + formatPlayerList(game);
+        let groupTitle = `Mafia Game - ${p.name}`;
+        let participantIDs = [p.id, DEFAULT_ID]; // प्लेयर और डिफॉल्ट ID
+        try {
+          const groupID = await new Promise((resolve, reject) => {
+            api.createNewGroup(participantIDs, groupTitle, (err, threadID) => {
+              if (err) reject(err);
+              else resolve(threadID);
+            });
+          });
+          game.playerGroups[p.id] = groupID; // ग्रुप ID स्टोर करें
+          console.log(`[MAFIA] Created group ${groupID} for player ${p.name}`);
 
-        let retryCount = 0;
-        const sendPM = () => {
-          api.sendMessage(msg, p.id, (err) => {
+          // ग्रुप में रोल भेजना
+          let msg = `🎭 तुम्हारा रोल: ${p.role}\n\n`;
+          if (p.role === "Mafia" || p.role === "Werewolf") msg += "☠️ इस ग्रुप में /kill <नंबर> यूज करो।\n";
+          if (p.role === "Doctor") msg += "💉 /save <नंबर> यूज करो।\n";
+          if (p.role === "Detective") msg += "🔍 /check <नंबर> यूज करो।\n";
+          if (p.role === "Witch") msg += "🧙‍♀️ /poison <नंबर> (एक बार) और /heal <नंबर> (एक बार) यूज करो।\n";
+          if (p.role === "Bodyguard") msg += "🛡️ /protect <नंबर> यूज करो।\n";
+          if (p.role === "Joker") msg += "🤡 तुम जोकर हो! वोट से निकलवाओ और जीतो। /fakekill <नंबर> (एक बार) यूज करो।\n";
+          msg += "\nजीवित खिलाड़ी:\n" + formatPlayerList(game);
+
+          api.sendMessage(msg, groupID, (err) => {
             if (err) {
-              console.error(`[MAFIA] PM retry ${retryCount + 1} for ${p.id}: ${err.message}`);
-              if (retryCount < maxRetries - 1) {
-                retryCount++;
-                setTimeout(sendPM, 2000 * retryCount); // Incremental delay
-              } else {
-                console.error(`[MAFIA] PM failed for ${p.id} after ${maxRetries} retries`);
-                skippedPlayers.push(p.name);
-                p.role = "Villager"; // Set as Villager and skip
-                p.alive = false;
-              }
+              console.error(`[MAFIA] Failed to send role to group ${groupID} for ${p.name}: ${err.message}`);
+              skippedPlayers.push(p.name);
+              p.role = "Villager"; // फेल होने पर Villager बनाएं
+              p.alive = false;
             } else {
-              console.log(`[MAFIA] PM sent to ${p.name} (${p.role})`);
+              console.log(`[MAFIA] Sent role to group ${groupID} for ${p.name} (${p.role})`);
               if (p.role === "Joker") {
                 let randomJokerMsg = ["जोकर, आज किसे बेवकूफ बनाएगा? 🤡", "जोकर, वोट्स इकट्ठा करो! 😎"];
-                api.sendMessage(randomJokerMsg[Math.floor(Math.random() * randomJokerMsg.length)], p.id, (err) => {
-                  if (err) console.error(`[MAFIA] Joker PM failed for ${p.id}: ${err.message}`);
+                api.sendMessage(randomJokerMsg[Math.floor(Math.random() * randomJokerMsg.length)], groupID, (err) => {
+                  if (err) console.error(`[MAFIA] Joker msg failed for group ${groupID}: ${err.message}`);
                 });
               }
             }
           });
-        };
-        sendPM();
+        } catch (err) {
+          console.error(`[MAFIA] Group creation failed for ${p.name}: ${err.message}`);
+          skippedPlayers.push(p.name);
+          p.role = "Villager"; // फेल होने पर Villager बनाएं
+          p.alive = false;
+        }
       }
 
       game.phase = "night";
       game.round = 1;
-      let startMsg = `🌙 नाइट 1 शुरू! इनबॉक्स चेक करें।`;
+      let startMsg = `🌙 नाइट 1 शुरू! अपने ग्रुप चेक करें।`;
       if (skippedPlayers.length > 0) {
-        startMsg += `\n⚠️ इन प्लेयर्स को PM नहीं भेजा जा सका (${skippedPlayers.join(", ")}), उन्हें Villager मानकर गेम जारी है।`;
+        startMsg += `\n⚠️ इन प्लेयर्स के लिए ग्रुप नहीं बन सका (${skippedPlayers.join(", ")}), उन्हें Villager मानकर गेम जारी है।`;
       }
       api.sendMessage(startMsg, threadID);
 
@@ -259,6 +269,13 @@ module.exports = {
           }).join("\n")}`;
           msg += leaderboardMsg;
           game.players.forEach(p => delete botState.playerGame[p.id]);
+          // ग्रुप्स से निकलना
+          for (let playerID in game.playerGroups) {
+            let groupID = game.playerGroups[playerID];
+            api.removeUserFromGroup(botID, groupID, (err) => {
+              if (err) console.error(`[MAFIA] Failed to leave group ${groupID}: ${err.message}`);
+            });
+          }
           delete botState.mafiaGames[threadID];
           api.sendMessage(msg, threadID);
           return;
@@ -287,7 +304,7 @@ module.exports = {
     }
 
     if (command === "vote" && game.phase !== "day") {
-      return api.sendMessage("❌ पहले नाइट एक्शन पूरा करो (इनबॉक्स में /kill, /save आदि भेजो)। वोट डे फेज में होगा।", threadID);
+      return api.sendMessage("❌ पहले नाइट एक्शन पूरा करो (ग्रुप में /kill, /save आदि भेजो)। वोट डे फेज में होगा।", threadID);
     }
 
     if (command === "vote" && game.phase === "day") {
@@ -351,6 +368,13 @@ module.exports = {
             }).join("\n")}`;
             msg += leaderboardMsg;
             game.players.forEach(p => delete botState.playerGame[p.id]);
+            // ग्रुप्स से निकलना
+            for (let playerID in game.playerGroups) {
+              let groupID = game.playerGroups[playerID];
+              api.removeUserFromGroup(botID, groupID, (err) => {
+                if (err) console.error(`[MAFIA] Failed to leave group ${groupID}: ${err.message}`);
+              });
+            }
             delete botState.mafiaGames[threadID];
             api.sendMessage(msg, threadID);
             return;
@@ -380,6 +404,13 @@ module.exports = {
           }).join("\n")}`;
           msg += leaderboardMsg;
           game.players.forEach(p => delete botState.playerGame[p.id]);
+          // ग्रुप्स से निकलना
+          for (let playerID in game.playerGroups) {
+            let groupID = game.playerGroups[playerID];
+            api.removeUserFromGroup(botID, groupID, (err) => {
+              if (err) console.error(`[MAFIA] Failed to leave group ${groupID}: ${err.message}`);
+            });
+          }
           delete botState.mafiaGames[threadID];
           api.sendMessage(msg, threadID);
           return;
@@ -418,6 +449,13 @@ module.exports = {
         return api.sendMessage("❌ कोई गेम नहीं चल रहा।", threadID);
       }
       game.players.forEach(p => delete botState.playerGame[p.id]);
+      // ग्रुप्स से निकलना
+      for (let playerID in game.playerGroups) {
+        let groupID = game.playerGroups[playerID];
+        api.removeUserFromGroup(botID, groupID, (err) => {
+          if (err) console.error(`[MAFIA] Failed to leave group ${groupID}: ${err.message}`);
+        });
+      }
       delete botState.mafiaGames[threadID];
       api.sendMessage("🛑 माफिया गेम बंद।", threadID);
       return;
@@ -432,22 +470,23 @@ module.exports = {
       return;
     }
 
-    api.sendMessage("❌ गलत कमांड। यूज: #mafia [start|join|begin|next|vote <नंबर>|doublevote <नंबर>|endvote|stop|status|reveal on/off]", threadID);
+    api.sendMessage("❌ गलत कमांड। यूज: #mafia [start|join|begin|next|vote <नंबर>|endvote|stop|status|reveal on/off]", threadID);
   },
 
   handleEvent: async ({ api, event, botState }) => {
     const senderID = event.senderID;
     const body = event.body?.trim();
-    if (!body || event.threadID !== senderID) return; // Only PM
+    if (!body || !botState.playerGame[senderID]) return;
 
     const gameThread = botState.playerGame[senderID];
-    if (!gameThread) return;
-
     const game = botState.mafiaGames[gameThread];
     if (!game || !game.active || game.phase !== "night") return;
 
     let player = game.players.find(p => p.id === senderID && p.alive);
     if (!player) return;
+
+    const groupID = game.playerGroups[senderID];
+    if (event.threadID !== groupID) return; // सिर्फ प्लेयर के ग्रुप से मैसेज प्रोसेस करें
 
     let args = body.split(" ");
     let cmd = args[0].toLowerCase();
@@ -461,7 +500,7 @@ module.exports = {
       } else {
         target = alive.find(p => p.name.toLowerCase() === choice.toLowerCase() || p.id === choice);
       }
-      if (!target) return api.sendMessage("❌ गलत टारगेट। जीवित लिस्ट चेक करो:\n" + formatPlayerList(game), senderID);
+      if (!target) return api.sendMessage("❌ गलत टारगेट। जीवित लिस्ट चेक करो:\n" + formatPlayerList(game), groupID);
     }
 
     try {
@@ -471,52 +510,52 @@ module.exports = {
           let target2 = getAlivePlayers(game).find(p => p.id === target2Id || p.name.toLowerCase() === target2Id.toLowerCase());
           if (target && target2 && target.id !== target2.id) {
             game.mafiaTarget = [target.id, target2.id];
-            api.sendMessage(`🐺 वेयरवुल्फ ने ${target.name} और ${target2.name} को चुना।`, senderID);
+            api.sendMessage(`🐺 वेयरवुल्फ ने ${target.name} और ${target2.name} को चुना।`, groupID);
           } else {
-            api.sendMessage("❌ दो अलग टारगेट चुनो।", senderID);
+            api.sendMessage("❌ दो अलग टारगेट चुनो।", groupID);
           }
         } else if (target) {
           game.mafiaTarget = target.id;
-          api.sendMessage(`☠️ ${player.role} ने ${target.name} को चुना।`, senderID);
+          api.sendMessage(`☠️ ${player.role} ने ${target.name} को चुना।`, groupID);
         } else {
-          api.sendMessage("❌ टारगेट चुनो: /kill <नंबर या नाम>", senderID);
+          api.sendMessage("❌ टारगेट चुनो: /kill <नंबर या नाम>", groupID);
         }
       } else if (player.role === "Doctor" && cmd === "/save") {
-        if (!target) return api.sendMessage("❌ गलत टारगेट।", senderID);
+        if (!target) return api.sendMessage("❌ गलत टारगेट।", groupID);
         game.doctorTarget = target.id;
-        api.sendMessage(`💉 डॉक्टर ने ${target.name} को बचाने की कोशिश की।`, senderID);
+        api.sendMessage(`💉 डॉक्टर ने ${target.name} को बचाने की कोशिश की।`, groupID);
       } else if (player.role === "Detective" && cmd === "/check") {
-        if (!target) return api.sendMessage("❌ गलत टारगेट।", senderID);
+        if (!target) return api.sendMessage("❌ गलत टारगेट।", groupID);
         game.detectiveTarget = target.id;
         let targetPlayer = game.players.find(p => p.id === target.id);
         let result = (targetPlayer?.role === "Mafia" || targetPlayer?.role === "Werewolf")
           ? `❌ ${target.name} माफिया है!`
           : `✅ ${target.name} माफिया नहीं है।`;
-        api.sendMessage(`🔍 डिटेक्टिव रिजल्ट: ${result}`, senderID);
+        api.sendMessage(`🔍 डिटेक्टिव रिजल्ट: ${result}`, groupID);
       } else if (player.role === "Witch" && cmd === "/poison" && !game.witchPoisonUsed) {
-        if (!target) return api.sendMessage("❌ गलत टारगेट।", senderID);
+        if (!target) return api.sendMessage("❌ गलत टारगेट।", groupID);
         game.witchPoison = target.id;
         game.witchPoisonUsed = true;
-        api.sendMessage(`🧙‍♀️ जादूगरनी ने ${target.name} को ज़हर दिया।`, senderID);
+        api.sendMessage(`🧙‍♀️ जादूगरनी ने ${target.name} को ज़हर दिया।`, groupID);
       } else if (player.role === "Witch" && cmd === "/heal" && !game.witchHealUsed) {
-        if (!target) return api.sendMessage("❌ गलत टारगेट।", senderID);
+        if (!target) return api.sendMessage("❌ गलत टारगेट।", groupID);
         game.witchHeal = target.id;
         game.witchHealUsed = true;
-        api.sendMessage(`🧙‍♀️ जादूगरनी ने ${target.name} को बचाया।`, senderID);
+        api.sendMessage(`🧙‍♀️ जादूगरनी ने ${target.name} को बचाया।`, groupID);
       } else if (player.role === "Bodyguard" && cmd === "/protect") {
-        if (!target) return api.sendMessage("❌ गलत टारगेट।", senderID);
+        if (!target) return api.sendMessage("❌ गलत टारगेट।", groupID);
         game.bodyguardTarget = target.id;
-        api.sendMessage(`🛡️ बॉडीगार्ड ने ${target.name} को प्रोटेक्ट किया।`, senderID);
+        api.sendMessage(`🛡️ बॉडीगार्ड ने ${target.name} को प्रोटेक्ट किया।`, groupID);
       } else if (player.role === "Joker" && cmd === "/fakekill" && !game.jokerFakeKillUsed) {
-        if (!target) return api.sendMessage("❌ गलत टारगेट।", senderID);
+        if (!target) return api.sendMessage("❌ गलत टारगेट।", groupID);
         game.jokerFakeKill = target.id;
-        api.sendMessage(`🤡 जोकर ने ${target.name} को फेक किल चुना।`, senderID);
+        api.sendMessage(`🤡 जोकर ने ${target.name} को फेक किल चुना।`, groupID);
       } else {
-        api.sendMessage("❌ गलत कमांड या रोल मैच नहीं। अपने रोल के अनुसार यूज करो।", senderID);
+        api.sendMessage("❌ गलत कमांड या रोल मैच नहीं। अपने रोल के अनुसार यूज करो।", groupID);
       }
     } catch (err) {
       console.error(`[MAFIA] Error in handleEvent: ${err.message}`);
-      api.sendMessage("⚠️ PM कमांड में गलती। फिर से ट्राई करो।", senderID);
+      api.sendMessage("⚠️ ग्रुप कमांड में गलती। फिर से ट्राई करो।", groupID);
     }
   }
 };
