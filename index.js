@@ -58,6 +58,7 @@ for (const folder of commandFolders) {
       if (command.aliases) {
         command.aliases.forEach(alias => commands.set(alias, command));
       }
+      console.log(`Loading command ${file} from ${folder}`);
     } catch (err) {
       console.error(`Error loading command ${file} from ${folder}:`, err.message);
     }
@@ -82,11 +83,6 @@ if (!botState.roastEnabled) botState.roastEnabled = {};
 if (!botState.roastTargets) botState.roastTargets = {};
 if (!botState.mutedUsers) botState.mutedUsers = {};
 if (!botState.roastCooldowns) botState.roastCooldowns = {};
-// Mafia-specific state init
-if (!botState.mafiaGames) botState.mafiaGames = {};
-if (!botState.playerGame) botState.playerGame = {};
-if (!botState.leaderboard) botState.leaderboard = {};
-if (!botState.jokerWins) botState.jokerWins = {};
 
 try {
   if (fs.existsSync(LEARNED_RESPONSES_PATH)) {
@@ -99,9 +95,6 @@ try {
     botState.roastEnabled = botState.learnedResponses.roastEnabled || {};
     botState.roastTargets = botState.learnedResponses.roastTargets || {};
     botState.mutedUsers = botState.learnedResponses.mutedUsers || {};
-    // Mafia leaderboard load
-    botState.leaderboard = botState.learnedResponses.leaderboard || {};
-    botState.jokerWins = botState.learnedResponses.jokerWins || {};
     console.log('Loaded adminList:', botState.adminList, 'chatEnabled:', botState.chatEnabled, 'deleteNotifyEnabled:', botState.deleteNotifyEnabled);
     Object.keys(botState.sessions).forEach(userId => {
       if (!botState.learnedResponses[userId]) {
@@ -109,7 +102,14 @@ try {
       }
     });
   } else {
-    botState.learnedResponses = { adminList: [MASTER_ID], chatEnabled: {}, deleteNotifyEnabled: {}, roastEnabled: {}, roastTargets: {}, mutedUsers: {}, leaderboard: {}, jokerWins: {} };
+    botState.learnedResponses = { 
+      adminList: [MASTER_ID], 
+      chatEnabled: {}, 
+      deleteNotifyEnabled: {}, 
+      roastEnabled: {}, 
+      roastTargets: {}, 
+      mutedUsers: {}
+    };
     fs.writeFileSync(LEARNED_RESPONSES_PATH, JSON.stringify(botState.learnedResponses, null, 2), 'utf8');
     botState.adminList = [MASTER_ID];
     botState.chatEnabled = {};
@@ -117,21 +117,24 @@ try {
     botState.roastEnabled = {};
     botState.roastTargets = {};
     botState.mutedUsers = {};
-    botState.leaderboard = {};
-    botState.jokerWins = {};
     console.log('Initialized learned_responses.json with adminList:', botState.adminList);
   }
 } catch (err) {
   console.error('Error loading learned_responses.json:', err.message);
-  botState.learnedResponses = { adminList: [MASTER_ID], chatEnabled: {}, deleteNotifyEnabled: {}, roastEnabled: {}, roastTargets: {}, mutedUsers: {}, leaderboard: {}, jokerWins: {} };
+  botState.learnedResponses = { 
+    adminList: [MASTER_ID], 
+    chatEnabled: {}, 
+    deleteNotifyEnabled: {}, 
+    roastEnabled: {}, 
+    roastTargets: {}, 
+    mutedUsers: {}
+  };
   botState.adminList = [MASTER_ID];
   botState.chatEnabled = {};
   botState.deleteNotifyEnabled = {};
   botState.roastEnabled = {};
   botState.roastTargets = {};
   botState.mutedUsers = {};
-  botState.leaderboard = {};
-  botState.jokerWins = {};
   fs.writeFileSync(LEARNED_RESPONSES_PATH, JSON.stringify(botState.learnedResponses, null, 2), 'utf8');
 }
 
@@ -143,13 +146,7 @@ const PORT = process.env.PORT || 3000;
 app.use(timeout('60s'));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
-app.use(express.static('public')); // HTML फाइल्स सर्व करने के लिए
-
-// टोकन स्टोर करने के लिए इन-मेमोरी ऑब्जेक्ट
-const roleTokens = {};
-
-// माफिया कमांड्स के लिए
-const mafia = require('./commands/user/mafia');
+app.use(express.static('public'));
 
 app.get('/', (req, res) => {
   if (req.timedout) return res.status(504).send('Server timeout');
@@ -174,75 +171,6 @@ app.get('/health', (req, res) => {
 
 app.get('/keepalive', (req, res) => {
   res.status(200).json({ status: 'alive' });
-});
-
-// माफिया रोल दिखाने के लिए endpoint
-app.get('/role', (req, res) => {
-  const { token, uid } = req.query;
-  if (!token || !uid || !roleTokens[token] || roleTokens[token].uid !== uid) {
-    return res.status(403).send('Invalid or unauthorized access.');
-  }
-
-  const { role, threadID } = roleTokens[token];
-  const game = botState.mafiaGames[threadID];
-  if (!game || !game.players || !game.players.find(p => p.id === uid && p.alive)) {
-    return res.status(403).send('Player not found or eliminated.');
-  }
-
-  const player = game.players.find(p => p.id === uid);
-  const players = game.players
-    .filter(p => p.alive && (role !== 'Mafia' || p.role !== 'Mafia'))
-    .map((p, i) => ({ id: p.id, name: p.name, index: i + 1 }));
-  
-  res.sendFile(path.join(__dirname, 'public', 'role.html'), {
-    headers: {
-      'X-Role': role,
-      'X-Token': token,
-      'X-UID': uid,
-      'X-ThreadID': threadID,
-      'X-Players': JSON.stringify(players),
-    },
-  });
-});
-
-// माफिया एक्शन प्रोसेस करने के लिए endpoint
-app.post('/action', (req, res) => {
-  const { token, uid, action, targetIndex } = req.body;
-  if (!token || !uid || !action || !targetIndex || !roleTokens[token] || roleTokens[token].uid !== uid) {
-    return res.status(403).json({ error: 'Invalid or unauthorized action.' });
-  }
-
-  const { role, threadID } = roleTokens[token];
-  const game = botState.mafiaGames[threadID];
-  if (!game || !game.players || !game.players.find(p => p.id === uid && p.alive)) {
-    return res.status(403).json({ error: 'Player not found or eliminated.' });
-  }
-
-  const target = game.players[parseInt(targetIndex) - 1];
-  if (!target || !target.alive) {
-    return res.status(400).json({ error: 'Invalid target.' });
-  }
-
-  const api = Object.values(botState.sessions)[0]?.api;
-  if (!api) {
-    return res.status(500).json({ error: 'Bot API not available.' });
-  }
-
-  if (role === 'Mafia' && action === 'kill') {
-    game.nightActions.mafia = target.id;
-    res.json({ message: `Action submitted: You chose to kill ${target.name}.` });
-  } else if (role === 'Doctor' && action === 'save') {
-    game.nightActions.doctor = target.id;
-    res.json({ message: `Action submitted: You chose to save ${target.name}.` });
-  } else if (role === 'Detective' && action === 'check') {
-    res.json({ message: `Action submitted: ${target.name} is ${target.role === 'Mafia' ? 'माफिया' : 'नॉन-माफिया'}.` });
-    game.nightActions.detective = { id: target.id, role: target.role };
-  } else {
-    return res.status(403).json({ error: 'Invalid action for your role.' });
-  }
-
-  // नाइट फेज चेक करें
-  mafia.checkNightActions(api, threadID);
 });
 
 if (!fs.existsSync('abuse.txt') && process.env.ABUSE_BASE64) {
@@ -605,7 +533,7 @@ function startBot(userId, cookieContent, prefix, adminID) {
                       } else if (['stopall', 'status', 'removeadmin', 'masterid', 'mastercommand', 'listadmins', 'list', 'kick', 'addadmin'].includes(cmd.name) && !isMaster) {
                         sendBotMessage(api, "🚫 ये कमांड सिर्फ मास्टर के लिए है! 🕉️", threadID, messageID);
                       } else {
-                        cmd.execute(api, threadID, cleanArgs, event, botState, isMaster, botID, stopBot, roleTokens);
+                        cmd.execute(api, threadID, cleanArgs, event, botState, isMaster, botID, stopBot);
                         if (cmd.name !== 'mafia') {
                           if (!botState.commandCooldowns[threadID]) botState.commandCooldowns[threadID] = {};
                           botState.commandCooldowns[threadID][command] = true;
@@ -658,14 +586,6 @@ function startBot(userId, cookieContent, prefix, adminID) {
                     }
                   }
                   return;
-                }
-
-                if ((event.type === 'message' || event.type === 'message_reply') && commands.has('mafia') && typeof commands.get('mafia').handleEvent === 'function') {
-                  try {
-                    await commands.get('mafia').handleEvent({ api, event, botState, roleTokens });
-                  } catch (err) {
-                    console.error('[MAFIA] handleEvent error:', err.message);
-                  }
                 }
               }
 
