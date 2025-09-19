@@ -194,13 +194,13 @@ app.get('/mafia/:gameID', (req, res) => {
     return res.render('error', { message: '🚫 गेम नहीं मिला या खत्म हो चुका है! 🕉️' });
   }
 
-  // लोडिंग पेज दिखाओ, जो 5 सेकंड बाद रोल पेज पर रीडायरेक्ट करेगा
+  // लोडिंग पेज दिखाओ, जो 5 सेकंड बाद UID मांगेगा
   res.render('loading', { gameID });
 });
 
-app.get('/mafia/:gameID/role', (req, res) => {
+app.post('/mafia/:gameID/auth', (req, res) => {
   const gameID = req.params.gameID;
-  const userID = req.query.uid; // यूजर ID क्वेरी पैरामीटर से लें
+  const userID = req.body.userID;
   const game = botState.mafiaGames[gameID];
 
   if (!game || !game.active) {
@@ -208,7 +208,23 @@ app.get('/mafia/:gameID/role', (req, res) => {
   }
 
   if (!userID || !game.players[userID]) {
-    return res.render('error', { message: '🚫 यूजर गेम में नहीं है या गलत UID! 🕉️' });
+    return res.render('error', { message: '🚫 गलत UID या यूजर गेम में नहीं है! 🕉️' });
+  }
+
+  res.redirect(`/mafia/${gameID}/role?uid=${userID}`);
+});
+
+app.get('/mafia/:gameID/role', (req, res) => {
+  const gameID = req.params.gameID;
+  const userID = req.query.uid;
+  const game = botState.mafiaGames[gameID];
+
+  if (!game || !game.active) {
+    return res.render('error', { message: '🚫 गेम नहीं मिला या खत्म हो चुका है! 🕉️' });
+  }
+
+  if (!userID || !game.players[userID]) {
+    return res.render('error', { message: '🚫 गलत UID या यूजर गेम में नहीं है! 🕉️' });
   }
 
   const player = game.players[userID];
@@ -232,7 +248,9 @@ app.get('/mafia/:gameID/role', (req, res) => {
     actionDescription: currentAction.description,
     players: Object.keys(game.players)
       .filter(id => id !== userID && game.alive.has(id))
-      .map(id => ({ id, name: game.players[id].name }))
+      .map(id => ({ id, name: game.players[id].name })),
+    botState,
+    message: null // कोई मैसेज अगर हो, तो यहाँ पास करें
   });
 });
 
@@ -240,7 +258,6 @@ app.post('/mafia/:gameID/action', (req, res) => {
   const gameID = req.params.gameID;
   const userID = req.body.userID;
   const targetID = req.body.targetID;
-  const action = req.body.action;
   const game = botState.mafiaGames[gameID];
 
   if (!game || !game.active) {
@@ -256,12 +273,12 @@ app.post('/mafia/:gameID/action', (req, res) => {
   }
 
   const player = game.players[userID];
-  if (player.role === 'Mafia' && action === 'eliminate') {
+  if (player.role === 'Mafia') {
     game.actions.mafia = game.actions.mafia || [];
     game.actions.mafia.push(targetID);
-  } else if (player.role === 'Doctor' && action === 'save') {
+  } else if (player.role === 'Doctor') {
     game.actions.doctor = targetID;
-  } else if (player.role === 'Detective' && action === 'check') {
+  } else if (player.role === 'Detective') {
     game.actions.detective = targetID;
   } else {
     return res.json({ success: false, message: '🚫 गलत एक्शन या रोल! 🕉️' });
