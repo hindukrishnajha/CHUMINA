@@ -117,7 +117,6 @@ try {
     botState.roastEnabled = {};
     botState.roastTargets = {};
     botState.mutedUsers = {};
-    // Mafia init
     botState.leaderboard = {};
     botState.jokerWins = {};
     console.log('Initialized learned_responses.json with adminList:', botState.adminList);
@@ -142,6 +141,15 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 app.use(timeout('60s'));
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+app.use(express.static('public')); // HTML फाइल्स सर्व करने के लिए
+
+// टोकन स्टोर करने के लिए इन-मेमोरी ऑब्जेक्ट
+const roleTokens = {};
+
+// माफिया कमांड्स के लिए
+const mafia = require('./commands/user/mafia');
 
 app.get('/', (req, res) => {
   if (req.timedout) return res.status(504).send('Server timeout');
@@ -166,6 +174,75 @@ app.get('/health', (req, res) => {
 
 app.get('/keepalive', (req, res) => {
   res.status(200).json({ status: 'alive' });
+});
+
+// माफिया रोल दिखाने के लिए endpoint
+app.get('/role', (req, res) => {
+  const { token, uid } = req.query;
+  if (!token || !uid || !roleTokens[token] || roleTokens[token].uid !== uid) {
+    return res.status(403).send('Invalid or unauthorized access.');
+  }
+
+  const { role, threadID } = roleTokens[token];
+  const game = botState.mafiaGames[threadID];
+  if (!game || !game.players || !game.players.find(p => p.id === uid && p.alive)) {
+    return res.status(403).send('Player not found or eliminated.');
+  }
+
+  const player = game.players.find(p => p.id === uid);
+  const players = game.players
+    .filter(p => p.alive && (role !== 'Mafia' || p.role !== 'Mafia'))
+    .map((p, i) => ({ id: p.id, name: p.name, index: i + 1 }));
+  
+  res.sendFile(path.join(__dirname, 'public', 'role.html'), {
+    headers: {
+      'X-Role': role,
+      'X-Token': token,
+      'X-UID': uid,
+      'X-ThreadID': threadID,
+      'X-Players': JSON.stringify(players),
+    },
+  });
+});
+
+// माफिया एक्शन प्रोसेस करने के लिए endpoint
+app.post('/action', (req, res) => {
+  const { token, uid, action, targetIndex } = req.body;
+  if (!token || !uid || !action || !targetIndex || !roleTokens[token] || roleTokens[token].uid !== uid) {
+    return res.status(403).json({ error: 'Invalid or unauthorized action.' });
+  }
+
+  const { role, threadID } = roleTokens[token];
+  const game = botState.mafiaGames[threadID];
+  if (!game || !game.players || !game.players.find(p => p.id === uid && p.alive)) {
+    return res.status(403).json({ error: 'Player not found or eliminated.' });
+  }
+
+  const target = game.players[parseInt(targetIndex) - 1];
+  if (!target || !target.alive) {
+    return res.status(400).json({ error: 'Invalid target.' });
+  }
+
+  const api = Object.values(botState.sessions)[0]?.api;
+  if (!api) {
+    return res.status(500).json({ error: 'Bot API not available.' });
+  }
+
+  if (role === 'Mafia' && action === 'kill') {
+    game.nightActions.mafia = target.id;
+    res.json({ message: `Action submitted: You chose to kill ${target.name}.` });
+  } else if (role === 'Doctor' && action === 'save') {
+    game.nightActions.doctor = target.id;
+    res.json({ message: `Action submitted: You chose to save ${target.name}.` });
+  } else if (role === 'Detective' && action === 'check') {
+    res.json({ message: `Action submitted: ${target.name} is ${target.role === 'Mafia' ? 'माफिया' : 'नॉन-माफिया'}.` });
+    game.nightActions.detective = { id: target.id, role: target.role };
+  } else {
+    return res.status(403).json({ error: 'Invalid action for your role.' });
+  }
+
+  // नाइट फेज चेक करें
+  mafia.checkNightActions(api, threadID);
 });
 
 if (!fs.existsSync('abuse.txt') && process.env.ABUSE_BASE64) {
@@ -211,12 +288,11 @@ function sendBotMessage(api, message, threadID, replyToMessageID = null, mention
   setTimeout(() => {
     const msgObj = typeof message === 'string' ? { body: message, mentions } : { ...message, mentions };
     if (replyToMessageID) {
-      msgObj.messageReply = { messageID: replyToMessageID }; // Add reply to user message
+      msgObj.messageReply = { messageID: replyToMessageID };
     }
     api.sendMessage(msgObj, threadID, (err, messageInfo) => {
       if (err) {
         console.error(`[SEND-ERROR] Failed to send with reply: ${err.message}. Trying without reply...`);
-        // Fallback without reply
         const fallbackMsgObj = typeof message === 'string' ? { body: message, mentions } : { ...message, mentions };
         api.sendMessage(fallbackMsgObj, threadID, (fallbackErr, fallbackInfo) => {
           if (fallbackErr) {
@@ -323,12 +399,6 @@ function startBot(userId, cookieContent, prefix, adminID) {
         botState.sessions[userId].safeMode = false;
         api.setOptions({ listenEvents: true, autoMarkRead: true });
 
-        // api में createNewGroup और addUserToGroup जोड़ना
-        const createNewGroupFunc = require('./utils/createNewGroup');
-        const addUserToGroupFunc = require('./utils/addUserToGroup');
-        api.createNewGroup = createNewGroupFunc({ post: api.httpPost, get: api.httpGet }, api, { userID: api.getCurrentUserID(), jar: api.jar });
-        api.addUserToGroup = addUserToGroupFunc({ post: api.httpPost, get: api.httpGet }, api, { userID: api.getCurrentUserID(), jar: api.jar });
-
         let abuseMessages = [];
         try {
           abuseMessages = loadAbuseMessages();
@@ -359,7 +429,6 @@ function startBot(userId, cookieContent, prefix, adminID) {
               Object.keys(userRateLimits).forEach(user => delete userRateLimits[user]);
               console.log('[MEMORY] Cleared userRateLimits');
             }
-            // Clear roast cooldowns older than 1 min
             Object.keys(botState.roastCooldowns).forEach(senderID => {
               if (Date.now() - botState.roastCooldowns[senderID] > 60000) {
                 delete botState.roastCooldowns[senderID];
@@ -401,7 +470,6 @@ function startBot(userId, cookieContent, prefix, adminID) {
               const threadID = event.threadID;
               const messageID = event.messageID;
 
-              // MUTE CHECK: If sender is muted, ignore everything
               if (botState.mutedUsers && botState.mutedUsers[threadID] && botState.mutedUsers[threadID].includes(senderID)) {
                 console.log(`[MUTE] Ignoring message from muted user ${senderID} in thread ${threadID}`);
                 return;
@@ -418,7 +486,6 @@ function startBot(userId, cookieContent, prefix, adminID) {
                 const attachment = event.attachments && event.attachments.length > 0 ? event.attachments[0] : null;
                 messageStore.storeMessage(messageID, content, senderID, threadID, attachment);
 
-                // Auto-Roast Logic - Fixed to trigger properly
                 if (isGroup && !content.startsWith(botState.sessions[userId].prefix) && !isMaster && !isAdmin) {
                   const roastEnabled = botState.roastEnabled[threadID] || false;
                   const isTargeted = botState.roastTargets && botState.roastTargets[threadID] && botState.roastTargets[threadID][senderID];
@@ -427,8 +494,8 @@ function startBot(userId, cookieContent, prefix, adminID) {
                     const now = Date.now();
                     if (!botState.roastCooldowns[senderID] || now - botState.roastCooldowns[senderID] >= 30000) {
                       botState.roastCooldowns[senderID] = now;
-                      const roastMsg = await getAIResponse(content, true); // isRoast = true for special prompt
-                      sendBotMessage(api, roastMsg, threadID, messageID); // Reply to user's messageID
+                      const roastMsg = await getAIResponse(content, true);
+                      sendBotMessage(api, roastMsg, threadID, messageID);
                       console.log(`[ROAST] Sent roast to ${senderID} for message: ${content}`);
                     } else {
                       console.log(`[ROAST] Cooldown active for ${senderID}, skipping`);
@@ -454,7 +521,6 @@ function startBot(userId, cookieContent, prefix, adminID) {
                   return;
                 }
 
-                // Added #chat on/off
                 if (content.toLowerCase().startsWith('#chat') && isAdmin) {
                   const action = content.toLowerCase().split(' ')[1];
                   if (action === 'on') {
@@ -473,7 +539,6 @@ function startBot(userId, cookieContent, prefix, adminID) {
                   return;
                 }
 
-                // Added #roast on/off inline for reliability
                 if (content.toLowerCase().startsWith('#roast') && isAdmin) {
                   const action = content.toLowerCase().split(' ')[1];
                   if (action === 'on') {
@@ -540,8 +605,7 @@ function startBot(userId, cookieContent, prefix, adminID) {
                       } else if (['stopall', 'status', 'removeadmin', 'masterid', 'mastercommand', 'listadmins', 'list', 'kick', 'addadmin'].includes(cmd.name) && !isMaster) {
                         sendBotMessage(api, "🚫 ये कमांड सिर्फ मास्टर के लिए है! 🕉️", threadID, messageID);
                       } else {
-                        cmd.execute(api, threadID, cleanArgs, event, botState, isMaster, botID, stopBot);
-                        // Cooldown skip for mafia to allow multiple subcommands (vote/join)
+                        cmd.execute(api, threadID, cleanArgs, event, botState, isMaster, botID, stopBot, roleTokens);
                         if (cmd.name !== 'mafia') {
                           if (!botState.commandCooldowns[threadID]) botState.commandCooldowns[threadID] = {};
                           botState.commandCooldowns[threadID][command] = true;
@@ -596,10 +660,9 @@ function startBot(userId, cookieContent, prefix, adminID) {
                   return;
                 }
 
-                // Mafia handleEvent call for night actions (now in groups)
                 if ((event.type === 'message' || event.type === 'message_reply') && commands.has('mafia') && typeof commands.get('mafia').handleEvent === 'function') {
                   try {
-                    await commands.get('mafia').handleEvent({ api, event, botState });
+                    await commands.get('mafia').handleEvent({ api, event, botState, roleTokens });
                   } catch (err) {
                     console.error('[MAFIA] handleEvent error:', err.message);
                   }
