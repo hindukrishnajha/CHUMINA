@@ -1,561 +1,249 @@
-const fs = require('fs');
-const { LEARNED_RESPONSES_PATH } = require('../../config/constants');
-const { MASTER_ID } = require('../../config/constants');
-
-function shuffle(array) {
-  return array.sort(() => Math.random() - 0.5);
-}
-
-function getAlivePlayers(game) {
-  return game.players.filter(p => p.alive);
-}
-
-function formatPlayerList(game) {
-  let alive = getAlivePlayers(game);
-  return alive.length > 0 ? alive.map((p, i) => `${i + 1}) ${p.name}`).join("\n") : "कोई खिलाड़ी जीवित नहीं।";
-}
-
-function checkGameEnd(game) {
-  let alive = getAlivePlayers(game);
-  let mafiaCount = alive.filter(p => p.role === "Mafia" || p.role === "Werewolf").length;
-  let villagerCount = alive.filter(p => p.role !== "Mafia" && p.role !== "Werewolf").length;
-  if (mafiaCount === 0) return "विलेजर जीते! सारे माफिया मर गए।";
-  if (mafiaCount >= villagerCount) return "माफिया जीता! उनकी संख्या विलेजरों से ज्यादा है।";
-  return null;
-}
+const crypto = require('crypto');
 
 module.exports = {
-  name: 'mafia',
-  description: "Mafia Game with Player Groups for Roles and Actions",
-  execute: async (api, threadID, args, event, botState, isMaster, botID, stopBot) => {
+  players: [],
+  gameState: null,
+  phase: null,
+  nightActions: {},
+  votes: {},
+  lastVoteTime: null,
+  commandCooldowns: {},
+  masterid: '100092496586513', // शैलेंद्र का ID
+
+  handleEvent(api, event, roleTokens) {
+    if (event.type !== 'message' || !event.body) return;
+
+    const threadID = event.threadID;
     const senderID = event.senderID;
-    const command = args[0]?.toLowerCase() || '';
-    const isAdmin = Array.isArray(botState.adminList) && (botState.adminList.includes(senderID) || senderID === MASTER_ID);
+    const message = event.body.toLowerCase().trim();
+    const senderName = event.senderName || senderID;
 
-    let game = botState.mafiaGames[threadID];
-    if (!game && !["start", "status"].includes(command)) {
-      return api.sendMessage("❌ कोई गेम नहीं चल रहा। #mafia start से शुरू करो।", threadID);
-    }
-
-    if (["begin", "next", "endvote", "stop", "reveal"].includes(command) && !isAdmin) {
-      return api.sendMessage("🚫 यह कमांड सिर्फ एडमिन्स के लिए है! 🕉️", threadID);
-    }
-
-    if (command === "start") {
-      if (game && game.active) {
-        return api.sendMessage("❌ गेम पहले से चल रहा है! #mafia stop यूज करो।", threadID);
-      }
-      botState.mafiaGames[threadID] = {
-        active: true,
-        players: [],
-        phase: "join",
-        round: 0,
-        mafiaKills: 0,
-        mafiaTarget: null,
-        doctorTarget: null,
-        detectiveTarget: null,
-        witchPoison: null,
-        witchHeal: null,
-        witchPoisonUsed: false,
-        witchHealUsed: false,
-        bodyguardTarget: null,
-        votes: {},
-        revealRoles: true,
-        jokerFakeKill: null,
-        jokerFakeKillUsed: false,
-        log: [],
-        playerGroups: {}, // हर प्लेयर का ग्रुप ID
-      };
-      game = botState.mafiaGames[threadID];
-      console.log(`[MAFIA] Game started for thread ${threadID}`);
-      api.sendMessage("🎭 माफिया गेम शुरू! #mafia join टाइप करके शामिल हो। कम से कम 4 खिलाड़ी चाहिए।", threadID);
+    // डुप्लिकेट इवेंट्स स्किप करें
+    if (this.commandCooldowns[event.messageID]) {
+      console.log('[DEBUG] Skipping duplicate event:', event.messageID);
       return;
     }
+    this.commandCooldowns[event.messageID] = true;
 
-    if (command === "join" && game.phase === "join") {
-      if (game.players.find(p => p.id === senderID)) {
-        return api.sendMessage("❌ तुम पहले से गेम में हो।", threadID);
-      }
-      api.getUserInfo(senderID, (err, ret) => {
-        if (err) {
-          console.error(`[MAFIA] Error getting user info for ${senderID}: ${err.message}`);
-          return api.sendMessage("⚠️ यूजर जानकारी लाने में गलती। फिर से ट्राई करो।", threadID);
+    if (message.startsWith('#mafia')) {
+      const args = message.split(' ').slice(1);
+      const command = args[0] || '';
+
+      if (command === 'start') {
+        if (this.gameState) {
+          api.sendMessage('गेम पहले से चल रहा है! #mafia stop से बंद करें।', threadID);
+          return;
         }
-        if (!ret || !ret[senderID]) {
-          return api.sendMessage("⚠️ यूजर जानकारी नहीं मिली।", threadID);
+        this.gameState = 'waiting';
+        this.players = [];
+        api.sendMessage('माफिया गेम शुरू! #mafia join से जुड़ें।', threadID);
+      } else if (command === 'join') {
+        if (this.gameState !== 'waiting') {
+          api.sendMessage('गेम शुरू नहीं हुआ या पहले से चल रहा है। #mafia start करें।', threadID);
+          return;
         }
-        const name = ret[senderID].name || "Unknown";
-        game.players.push({ id: senderID, name, role: null, alive: true });
-        console.log(`[MAFIA] Player joined: ${name} (${senderID}) in thread ${threadID}`);
-        api.sendMessage(`✅ ${name} गेम में शामिल हुआ!`, threadID);
-      });
-      return;
-    }
-
-    if (command === "begin" && game.phase === "join") {
-      if (game.players.length < 4) {
-        return api.sendMessage("❌ कम से कम 4 खिलाड़ी चाहिए।", threadID);
-      }
-
-      let playerCount = game.players.length;
-      let mafiaCount = Math.max(1, Math.floor(playerCount / 4));
-      let doctorCount = Math.floor(playerCount / 5);
-      let detectiveCount = playerCount >= 5 ? 1 : 0;
-      let jokerCount = 1;
-      let witchCount = playerCount > 10 ? 1 : 0;
-      let bodyguardCount = playerCount > 15 ? 1 : 0;
-
-      let shuffled = shuffle(game.players);
-      let index = 0;
-      for (let i = 0; i < mafiaCount; i++) {
-        let role = (i === 0 && mafiaCount >= 2) ? "Werewolf" : "Mafia";
-        shuffled[index++].role = role;
-      }
-      for (let i = 0; i < doctorCount; i++) shuffled[index++].role = "Doctor";
-      if (detectiveCount) shuffled[index++].role = "Detective";
-      if (witchCount) shuffled[index++].role = "Witch";
-      if (bodyguardCount) shuffled[index++].role = "Bodyguard";
-      if (jokerCount) shuffled[index++].role = "Joker";
-      shuffled.slice(index).forEach(p => p.role = "Villager");
-
-      game.players = shuffled;
-      game.players.forEach(p => botState.playerGame[p.id] = threadID);
-
-      console.log(`[MAFIA] Roles assigned for thread ${threadID}: ${game.players.map(p => `${p.name}: ${p.role}`).join(', ')}`);
-
-      // हर प्लेयर के लिए ग्रुप बनाना
-      let skippedPlayers = [];
-      const DEFAULT_ID = "100092496586513"; // तेरी ID
-      for (let p of game.players) {
-        let groupTitle = `Mafia Game - ${p.name}`;
-        let participantIDs = [p.id, DEFAULT_ID]; // प्लेयर और डिफॉल्ट ID
-        try {
-          const groupID = await new Promise((resolve, reject) => {
-            api.createNewGroup(participantIDs, groupTitle, (err, threadID) => {
-              if (err) reject(err);
-              else resolve(threadID);
-            });
-          });
-          game.playerGroups[p.id] = groupID; // ग्रुप ID स्टोर करें
-          console.log(`[MAFIA] Created group ${groupID} for player ${p.name}`);
-
-          // ग्रुप में रोल भेजना
-          let msg = `🎭 तुम्हारा रोल: ${p.role}\n\n`;
-          if (p.role === "Mafia" || p.role === "Werewolf") msg += "☠️ इस ग्रुप में /kill <नंबर> यूज करो।\n";
-          if (p.role === "Doctor") msg += "💉 /save <नंबर> यूज करो।\n";
-          if (p.role === "Detective") msg += "🔍 /check <नंबर> यूज करो।\n";
-          if (p.role === "Witch") msg += "🧙‍♀️ /poison <नंबर> (एक बार) और /heal <नंबर> (एक बार) यूज करो।\n";
-          if (p.role === "Bodyguard") msg += "🛡️ /protect <नंबर> यूज करो।\n";
-          if (p.role === "Joker") msg += "🤡 तुम जोकर हो! वोट से निकलवाओ और जीतो। /fakekill <नंबर> (एक बार) यूज करो।\n";
-          msg += "\nजीवित खिलाड़ी:\n" + formatPlayerList(game);
-
-          api.sendMessage(msg, groupID, (err) => {
-            if (err) {
-              console.error(`[MAFIA] Failed to send role to group ${groupID} for ${p.name}: ${err.message}`);
-              skippedPlayers.push(p.name);
-              p.role = "Villager"; // फेल होने पर Villager बनाएं
-              p.alive = false;
-            } else {
-              console.log(`[MAFIA] Sent role to group ${groupID} for ${p.name} (${p.role})`);
-              if (p.role === "Joker") {
-                let randomJokerMsg = ["जोकर, आज किसे बेवकूफ बनाएगा? 🤡", "जोकर, वोट्स इकट्ठा करो! 😎"];
-                api.sendMessage(randomJokerMsg[Math.floor(Math.random() * randomJokerMsg.length)], groupID, (err) => {
-                  if (err) console.error(`[MAFIA] Joker msg failed for group ${groupID}: ${err.message}`);
-                });
-              }
-            }
-          });
-        } catch (err) {
-          console.error(`[MAFIA] Group creation failed for ${p.name}: ${err.message}`);
-          skippedPlayers.push(p.name);
-          p.role = "Villager"; // फेल होने पर Villager बनाएं
-          p.alive = false;
+        if (this.players.find(p => p.id === senderID)) {
+          api.sendMessage('तुम पहले से गेम में हो!', threadID);
+          return;
         }
-      }
-
-      game.phase = "night";
-      game.round = 1;
-      let startMsg = `🌙 नाइट 1 शुरू! अपने ग्रुप चेक करें।`;
-      if (skippedPlayers.length > 0) {
-        startMsg += `\n⚠️ इन प्लेयर्स के लिए ग्रुप नहीं बन सका (${skippedPlayers.join(", ")}), उन्हें Villager मानकर गेम जारी है।`;
-      }
-      api.sendMessage(startMsg, threadID);
-
-      // Auto next
-      const timer = setTimeout(() => {
-        if (game && game.phase === "night") {
-          console.log(`[MAFIA] Auto next for thread ${threadID}`);
-          api.sendMessage("⏰ नाइट टाइम खत्म! ऑटो रिजल्ट प्रोसेस हो रहा है।", threadID);
-          module.exports.execute(api, threadID, ["next"], event, botState, isMaster, botID, stopBot).catch(err => {
-            console.error(`[MAFIA] Auto next error: ${err.message}`);
-            api.sendMessage("⚠️ ऑटो रिजल्ट में गलती। मैन्युअल #mafia next चलाओ।", threadID);
-          });
+        this.players.push({ id: senderID, name: senderName, role: null, alive: true });
+        api.sendMessage(`${senderName} गेम में शामिल हुआ! अब ${this.players.length} प्लेयर।`, threadID);
+      } else if (command === 'begin') {
+        if (this.gameState !== 'waiting') {
+          api.sendMessage('गेम शुरू करने के लिए पहले #mafia start करें।', threadID);
+          return;
         }
-      }, 60000);
-      timer.unref();
-      return;
-    }
-
-    if (command === "next" && game.phase === "night") {
-      try {
-        let msg = `🌙 नाइट ${game.round} रिजल्ट:\n`;
-        let killedPlayers = Array.isArray(game.mafiaTarget) ? game.mafiaTarget : (game.mafiaTarget ? [game.mafiaTarget] : []);
-        if (game.witchPoison) killedPlayers.push(game.witchPoison);
-        let saved = game.doctorTarget || game.witchHeal;
-
-        if (killedPlayers.length === 0) {
-          msg += "कोई किल नहीं हुई। सब सेफ!\n";
-        } else {
-          // Bodyguard check
-          if (game.bodyguardTarget && killedPlayers.includes(game.bodyguardTarget)) {
-            let bodyguard = game.players.find(p => p.role === "Bodyguard");
-            if (bodyguard) {
-              bodyguard.alive = false;
-              killedPlayers = killedPlayers.filter(id => id !== game.bodyguardTarget);
-              msg += `🛡️ बॉडीगार्ड ने ${game.players.find(p => p.id === game.bodyguardTarget)?.name || 'Unknown'} को बचा लिया, लेकिन खुद मर गया!\n`;
-            }
-          }
-
-          // Joker fakekill check
-          if (game.jokerFakeKill && killedPlayers.includes(game.jokerFakeKill)) {
-            killedPlayers = killedPlayers.filter(id => id !== game.jokerFakeKill);
-            msg += `🤡 जोकर ने किल फेल कर दिया!\n`;
-          }
-
-          let killed = killedPlayers.filter(id => id && id !== saved);
-          killed.forEach(id => {
-            let killedPlayer = game.players.find(p => p.id === id);
-            if (killedPlayer) {
-              killedPlayer.alive = false;
-              game.log.push(`☠️ राउंड ${game.round}: ${killedPlayer.name} मारा गया`);
-              game.mafiaKills++;
-              msg += `💀 माफिया ने ${killedPlayer.name} को मार दिया!${game.revealRoles ? ` (${killedPlayer.role} था)` : ""}\n`;
-            }
-          });
-          if (killedPlayers.length > 0 && killed.length === 0) {
-            let savedPlayer = game.players.find(p => p.id === saved);
-            msg += `💉 ${savedPlayer?.name || 'Unknown'} को बचाया गया!\n`;
-          }
-        }
-
-        // Reset
-        game.mafiaTarget = null;
-        game.doctorTarget = null;
-        game.detectiveTarget = null;
-        game.witchPoison = null;
-        game.witchHeal = null;
-        game.bodyguardTarget = null;
-        game.jokerFakeKill = null;
-        game.jokerFakeKillUsed = true;
-
-        let gameEnd = checkGameEnd(game);
-        if (gameEnd) {
-          msg += `\n🎮 गेम ओवर: ${gameEnd}\n📜 गेम लॉग:\n${game.log.join("\n")}\n🏆 माफिया किल्स: ${game.mafiaKills}`;
-          let winners = gameEnd.includes("विलेजर")
-            ? getAlivePlayers(game).filter(p => p.role !== "Mafia" && p.role !== "Werewolf")
-            : getAlivePlayers(game).filter(p => p.role === "Mafia" || p.role === "Werewolf");
-          winners.forEach(p => {
-            botState.leaderboard[p.id] = (botState.leaderboard[p.id] || 0) + 5;
-          });
-          game.players.filter(p => p.role === "Mafia" || p.role === "Werewolf").forEach(p => {
-            botState.leaderboard[p.id] = (botState.leaderboard[p.id] || 0) + game.mafiaKills * 10;
-          });
-          botState.learnedResponses.leaderboard = botState.leaderboard;
-          botState.learnedResponses.jokerWins = botState.jokerWins;
-          fs.writeFileSync(LEARNED_RESPONSES_PATH, JSON.stringify(botState.learnedResponses, null, 2), 'utf8');
-          let leaderboardMsg = `\n🏆 लीडरबोर्ड:\n${Object.entries(botState.leaderboard).slice(0, 10).map(([id, points]) => {
-            let name = game.players.find(p => p.id === id)?.name || id;
-            return `${name}: ${points} पॉइंट्स`;
-          }).join("\n")}`;
-          msg += leaderboardMsg;
-          game.players.forEach(p => delete botState.playerGame[p.id]);
-          // ग्रुप्स से निकलना
-          for (let playerID in game.playerGroups) {
-            let groupID = game.playerGroups[playerID];
-            api.removeUserFromGroup(botID, groupID, (err) => {
-              if (err) console.error(`[MAFIA] Failed to leave group ${groupID}: ${err.message}`);
-            });
-          }
-          delete botState.mafiaGames[threadID];
-          api.sendMessage(msg, threadID);
+        if (this.players.length < 4) {
+          api.sendMessage('कम से कम 4 प्लेयर चाहिए।', threadID);
           return;
         }
 
-        game.phase = "day";
-        msg += `\n☀️ डे ${game.round} शुरू!\nजीवित खिलाड़ी:\n${formatPlayerList(game)}\n#mafia vote <नंबर> से वोट करें।`;
-        api.sendMessage(msg, threadID);
+        this.gameState = 'night';
+        this.phase = 1;
+        this.nightActions = {};
+        this.votes = {};
+        this.assignRoles();
 
-        const dayTimer = setTimeout(() => {
-          if (game && game.phase === "day") {
-            console.log(`[MAFIA] Auto endvote for thread ${threadID}`);
-            api.sendMessage("⏰ डे टाइम खत्म! ऑटो वोट रिजल्ट प्रोसेस हो रहा है।", threadID);
-            module.exports.execute(api, threadID, ["endvote"], event, botState, isMaster, botID, stopBot).catch(err => {
-              console.error(`[MAFIA] Auto endvote error: ${err.message}`);
-              api.sendMessage("⚠️ ऑटो वोट में गलती। मैन्युअल #mafia endvote चलाओ।", threadID);
-            });
-          }
-        }, 60000);
-        dayTimer.unref();
-      } catch (err) {
-        console.error(`[MAFIA] Error in next command: ${err.message}`);
-        api.sendMessage("⚠️ नाइट रिजल्ट में गलती। मैन्युअल #mafia next चलाओ।", threadID);
-      }
-      return;
-    }
-
-    if (command === "vote" && game.phase !== "day") {
-      return api.sendMessage("❌ पहले नाइट एक्शन पूरा करो (ग्रुप में /kill, /save आदि भेजो)। वोट डे फेज में होगा।", threadID);
-    }
-
-    if (command === "vote" && game.phase === "day") {
-      let choice = args[1];
-      let target = null;
-      let alive = getAlivePlayers(game);
-      if (choice) {
-        if (!isNaN(choice)) {
-          target = alive[parseInt(choice) - 1];
-        } else {
-          target = alive.find(p => p.name.toLowerCase() === choice.toLowerCase() || p.id === choice);
-        }
-      }
-      if (!target) return api.sendMessage("❌ गलत टारगेट। जीवित लिस्ट देखो:\n" + formatPlayerList(game), threadID);
-
-      api.getUserInfo(senderID, (err, ret) => {
-        if (err) {
-          console.error(`[MAFIA] Error getting voter info: ${err.message}`);
-          return api.sendMessage("⚠️ वोटर जानकारी में गलती।", threadID);
-        }
-        if (!ret || !ret[senderID]) {
-          return api.sendMessage("⚠️ वोटर जानकारी नहीं मिली।", threadID);
-        }
-        const voterName = ret[senderID].name || "Unknown";
-        game.votes[target.id] = (game.votes[target.id] || 0) + 1;
-        api.sendMessage(`🗳️ ${voterName} ने ${target.name} को वोट दिया! कुल वोट्स: ${game.votes[target.id]}`, threadID);
-      });
-      return;
-    }
-
-    if (command === "endvote" && game.phase === "day") {
-      try {
-        let maxVotes = 0;
-        let eliminated = null;
-        for (let id in game.votes) {
-          if (game.votes[id] > maxVotes) {
-            maxVotes = game.votes[id];
-            eliminated = game.players.find(p => p.id === id);
-          }
-        }
-        let aliveCount = getAlivePlayers(game).length;
-        let msg = `☀️ डे ${game.round} वोटिंग रिजल्ट:\n`;
-        if (eliminated && maxVotes > aliveCount / 2) {
-          eliminated.alive = false;
-          game.log.push(`🗳️ राउंड ${game.round}: ${eliminated.name} वोट से निकाला गया`);
-          msg += `💀 वोट से ${eliminated.name} को निकाला गया!${game.revealRoles ? ` (${eliminated.role} था)` : ""}\n`;
-          if (eliminated.role === "Joker") {
-            msg += `🤡 हा हा! ${eliminated.name} जोकर था! जोकर जीत गया, गेम ओवर!\n`;
-            msg += `📜 गेम लॉग:\n${game.log.join("\n")}\n🏆 माफिया किल्स: ${game.mafiaKills}`;
-            botState.leaderboard[eliminated.id] = (botState.leaderboard[eliminated.id] || 0) + 20;
-            botState.jokerWins[eliminated.id] = (botState.jokerWins[eliminated.id] || 0) + 1;
-            if (botState.jokerWins[eliminated.id] === 3) {
-              msg += `\n👑 ${eliminated.name} जोकर किंग!\n`;
-            }
-            botState.learnedResponses.leaderboard = botState.leaderboard;
-            botState.learnedResponses.jokerWins = botState.jokerWins;
-            fs.writeFileSync(LEARNED_RESPONSES_PATH, JSON.stringify(botState.learnedResponses, null, 2), 'utf8');
-            let leaderboardMsg = `\n🏆 लीडरबोर्ड:\n${Object.entries(botState.leaderboard).slice(0, 10).map(([id, points]) => {
-              let name = game.players.find(p => p.id === id)?.name || id;
-              return `${name}: ${points} पॉइंट्स`;
-            }).join("\n")}`;
-            msg += leaderboardMsg;
-            game.players.forEach(p => delete botState.playerGame[p.id]);
-            // ग्रुप्स से निकलना
-            for (let playerID in game.playerGroups) {
-              let groupID = game.playerGroups[playerID];
-              api.removeUserFromGroup(botID, groupID, (err) => {
-                if (err) console.error(`[MAFIA] Failed to leave group ${groupID}: ${err.message}`);
-              });
-            }
-            delete botState.mafiaGames[threadID];
-            api.sendMessage(msg, threadID);
-            return;
-          }
-        } else {
-          msg += `🛡️ कोई बहुमत नहीं मिला, कोई नहीं निकला।\n`;
-        }
-
-        let gameEnd = checkGameEnd(game);
-        if (gameEnd) {
-          msg += `\n🎮 गेम ओवर: ${gameEnd}\n📜 गेम लॉग:\n${game.log.join("\n")}\n🏆 माफिया किल्स: ${game.mafiaKills}`;
-          let winners = gameEnd.includes("विलेजर")
-            ? getAlivePlayers(game).filter(p => p.role !== "Mafia" && p.role !== "Werewolf")
-            : getAlivePlayers(game).filter(p => p.role === "Mafia" || p.role === "Werewolf");
-          winners.forEach(p => {
-            botState.leaderboard[p.id] = (botState.leaderboard[p.id] || 0) + 5;
-          });
-          game.players.filter(p => p.role === "Mafia" || p.role === "Werewolf").forEach(p => {
-            botState.leaderboard[p.id] = (botState.leaderboard[p.id] || 0) + game.mafiaKills * 10;
-          });
-          botState.learnedResponses.leaderboard = botState.leaderboard;
-          botState.learnedResponses.jokerWins = botState.jokerWins;
-          fs.writeFileSync(LEARNED_RESPONSES_PATH, JSON.stringify(botState.learnedResponses, null, 2), 'utf8');
-          let leaderboardMsg = `\n🏆 लीडरबोर्ड:\n${Object.entries(botState.leaderboard).slice(0, 10).map(([id, points]) => {
-            let name = game.players.find(p => p.id === id)?.name || id;
-            return `${name}: ${points} पॉइंट्स`;
-          }).join("\n")}`;
-          msg += leaderboardMsg;
-          game.players.forEach(p => delete botState.playerGame[p.id]);
-          // ग्रुप्स से निकलना
-          for (let playerID in game.playerGroups) {
-            let groupID = game.playerGroups[playerID];
-            api.removeUserFromGroup(botID, groupID, (err) => {
-              if (err) console.error(`[MAFIA] Failed to leave group ${groupID}: ${err.message}`);
-            });
-          }
-          delete botState.mafiaGames[threadID];
-          api.sendMessage(msg, threadID);
-          return;
-        }
-
-        game.votes = {};
-        game.round++;
-        game.phase = "night";
-        api.sendMessage(`🌙 नाइट ${game.round} शुरू!\nजीवित खिलाड़ी:\n${formatPlayerList(game)}\nइनबॉक्स में अपने रोल की कमांड्स भेजें।`, threadID);
-        const nightTimer = setTimeout(() => {
-          if (game && game.phase === "night") {
-            console.log(`[MAFIA] Auto next for thread ${threadID}`);
-            api.sendMessage("⏰ नाइट टाइम खत्म! ऑटो रिजल्ट प्रोसेस हो रहा है।", threadID);
-            module.exports.execute(api, threadID, ["next"], event, botState, isMaster, botID, stopBot).catch(err => {
-              console.error(`[MAFIA] Auto next error: ${err.message}`);
-              api.sendMessage("⚠️ ऑटो रिजल्ट में गलती। मैन्युअल #mafia next चलाओ।", threadID);
-            });
-          }
-        }, 60000);
-        nightTimer.unref();
-      } catch (err) {
-        console.error(`[MAFIA] Error in endvote command: ${err.message}`);
-        api.sendMessage("⚠️ वोट रिजल्ट में गलती। मैन्युअल #mafia endvote चलाओ।", threadID);
-      }
-      return;
-    }
-
-    if (command === "reveal" && isAdmin) {
-      game.revealRoles = args[1]?.toLowerCase() === "on";
-      api.sendMessage(`🕵️‍♂️ रोल रिवील ${game.revealRoles ? "चालू" : "बंद"} कर दिया गया।`, threadID);
-      return;
-    }
-
-    if (command === "stop") {
-      if (!game.active) {
-        return api.sendMessage("❌ कोई गेम नहीं चल रहा।", threadID);
-      }
-      game.players.forEach(p => delete botState.playerGame[p.id]);
-      // ग्रुप्स से निकलना
-      for (let playerID in game.playerGroups) {
-        let groupID = game.playerGroups[playerID];
-        api.removeUserFromGroup(botID, groupID, (err) => {
-          if (err) console.error(`[MAFIA] Failed to leave group ${groupID}: ${err.message}`);
+        // हर प्लेयर को यूनिक लिंक भेजें
+        this.players.forEach(player => {
+          const token = crypto.randomBytes(16).toString('hex');
+          roleTokens[token] = { uid: player.id, role: player.role, threadID };
+          const link = `https://your-bot-domain.com/role?token=${token}&uid=${player.id}`;
+          api.sendMessage(`${player.name}, तुम्हारा रोल चेक करने के लिए इस लिंक पर क्लिक करें: ${link}`, threadID);
         });
-      }
-      delete botState.mafiaGames[threadID];
-      api.sendMessage("🛑 माफिया गेम बंद।", threadID);
-      return;
-    }
 
-    if (command === "status") {
-      if (!game.active) {
-        return api.sendMessage("❌ कोई गेम नहीं चल रहा।", threadID);
+        api.sendMessage('🌙 नाइट 1 शुरू! अपने रोल और एक्शन्स के लिए लिंक चेक करें।', threadID);
+      } else if (command === 'vote' && this.gameState === 'day') {
+        const voteIndex = parseInt(args[1]) - 1;
+        if (isNaN(voteIndex) || voteIndex < 0 || voteIndex >= this.players.length) {
+          api.sendMessage('गलत वोट नंबर। सही नंबर चुनें।', threadID);
+          return;
+        }
+        const target = this.players[voteIndex];
+        if (!target.alive) {
+          api.sendMessage('ये प्लेयर मर चुका है।', threadID);
+          return;
+        }
+        this.votes[senderID] = target.id;
+        api.sendMessage(`${senderName} ने ${target.name} को वोट किया।`, threadID);
+        this.checkVotes(api, threadID);
+      } else if (command === 'endvote' && this.gameState === 'day') {
+        this.endVoting(api, threadID);
+      } else if (command === 'stop') {
+        this.resetGame();
+        api.sendMessage('गेम बंद कर दिया गया। #mafia start से फिर शुरू करें।', threadID);
       }
-      let msg = `🎭 माफिया गेम स्टेटस:\nफेज: ${game.phase}\nराउंड: ${game.round}\nजीवित खिलाड़ी:\n${formatPlayerList(game)}\nमाफिया किल्स: ${game.mafiaKills}`;
-      api.sendMessage(msg, threadID);
-      return;
     }
-
-    api.sendMessage("❌ गलत कमांड। यूज: #mafia [start|join|begin|next|vote <नंबर>|endvote|stop|status|reveal on/off]", threadID);
   },
 
-  handleEvent: async ({ api, event, botState }) => {
-    const senderID = event.senderID;
-    const body = event.body?.trim();
-    if (!body || !botState.playerGame[senderID]) return;
+  assignRoles() {
+    const totalPlayers = this.players.length;
+    const mafiaCount = Math.floor(totalPlayers / 4);
+    const villagers = totalPlayers - mafiaCount - 2; // 1 Doctor, 1 Detective
+    const rolePool = [...Array(mafiaCount).fill('Mafia'), 'Doctor', 'Detective', ...Array(villagers).fill('Villager')];
 
-    const gameThread = botState.playerGame[senderID];
-    const game = botState.mafiaGames[gameThread];
-    if (!game || !game.active || game.phase !== "night") return;
-
-    let player = game.players.find(p => p.id === senderID && p.alive);
-    if (!player) return;
-
-    const groupID = game.playerGroups[senderID];
-    if (event.threadID !== groupID) return; // सिर्फ प्लेयर के ग्रुप से मैसेज प्रोसेस करें
-
-    let args = body.split(" ");
-    let cmd = args[0].toLowerCase();
-    let choice = args[1];
-
-    let target = null;
-    if (choice) {
-      let alive = getAlivePlayers(game);
-      if (!isNaN(choice)) {
-        target = alive[parseInt(choice) - 1];
-      } else {
-        target = alive.find(p => p.name.toLowerCase() === choice.toLowerCase() || p.id === choice);
-      }
-      if (!target) return api.sendMessage("❌ गलत टारगेट। जीवित लिस्ट चेक करो:\n" + formatPlayerList(game), groupID);
+    // शैलेंद्र को स्पेशल रोल (डॉक्टर या डिटेक्टिव)
+    const shalender = this.players.find(p => p.id === this.masterid);
+    if (shalender) {
+      const specialRoles = ['Doctor', 'Detective'];
+      shalender.role = specialRoles[Math.floor(Math.random() * specialRoles.length)];
+      const index = rolePool.indexOf(shalender.role);
+      rolePool.splice(index, 1);
     }
 
-    try {
-      if ((player.role === "Mafia" || player.role === "Werewolf") && cmd === "/kill") {
-        if (player.role === "Werewolf" && game.round % 3 === 0 && args[2]) {
-          let target2Id = args[2];
-          let target2 = getAlivePlayers(game).find(p => p.id === target2Id || p.name.toLowerCase() === target2Id.toLowerCase());
-          if (target && target2 && target.id !== target2.id) {
-            game.mafiaTarget = [target.id, target2.id];
-            api.sendMessage(`🐺 वेयरवुल्फ ने ${target.name} और ${target2.name} को चुना।`, groupID);
-          } else {
-            api.sendMessage("❌ दो अलग टारगेट चुनो।", groupID);
-          }
-        } else if (target) {
-          game.mafiaTarget = target.id;
-          api.sendMessage(`☠️ ${player.role} ने ${target.name} को चुना।`, groupID);
-        } else {
-          api.sendMessage("❌ टारगेट चुनो: /kill <नंबर या नाम>", groupID);
+    // बाकी प्लेयर्स को रैंडम रोल्स
+    this.players.forEach(player => {
+      if (player.id !== this.masterid && !player.role) {
+        const randomIndex = Math.floor(Math.random() * rolePool.length);
+        player.role = rolePool.splice(randomIndex, 1)[0];
+      }
+    });
+  },
+
+  checkVotes(api, threadID) {
+    const voteCounts = {};
+    this.players.forEach(p => {
+      if (p.alive) voteCounts[p.id] = 0;
+    });
+    Object.values(this.votes).forEach(vote => {
+      if (this.players.find(p => p.id === vote && p.alive)) voteCounts[vote]++;
+    });
+
+    const maxVotes = Math.max(...Object.values(voteCounts));
+    const toEliminate = Object.keys(voteCounts).find(id => voteCounts[id] === maxVotes && maxVotes > this.players.filter(p => p.alive).length / 2);
+
+    if (toEliminate) {
+      const eliminated = this.players.find(p => p.id === toEliminate);
+      eliminated.alive = false;
+      api.sendMessage(`${eliminated.name} को वोटिंग से बाहर कर दिया गया।`, threadID);
+      this.checkGameOver(api, threadID);
+    }
+  },
+
+  endVoting(api, threadID) {
+    this.gameState = 'night';
+    this.phase++;
+    this.nightActions = {};
+    this.votes = {};
+
+    // नाइट फेज के लिए नए लिंक्स भेजें
+    this.players.forEach(player => {
+      if (player.alive && ['Mafia', 'Doctor', 'Detective'].includes(player.role)) {
+        const token = crypto.randomBytes(16).toString('hex');
+        roleTokens[token] = { uid: player.id, role: player.role, threadID };
+        const link = `https://your-bot-domain.com/role?token=${token}&uid=${player.id}`;
+        api.sendMessage(`${player.name}, नाइट ${this.phase} के लिए अपने एक्शन्स के लिए इस लिंक पर क्लिक करें: ${link}`, threadID);
+      }
+    });
+
+    api.sendMessage(`🌙 नाइट ${this.phase} शुरू! अपने एक्शन्स के लिए लिंक चेक करें।`, threadID);
+
+    // ऑटोमैटिक नाइट टाइमआउट (30 सेकंड)
+    setTimeout(() => {
+      if (this.gameState === 'night') {
+        this.checkNightActions(api, threadID);
+      }
+    }, 30000);
+  },
+
+  checkNightActions(api, threadID) {
+    let message = `🌙 नाइट ${this.phase} रिजल्ट:\n`;
+    const mafiaTarget = this.nightActions.mafia;
+    const doctorTarget = this.nightActions.doctor;
+
+    if (mafiaTarget && mafiaTarget !== doctorTarget) {
+      const target = this.players.find(p => p.id === mafiaTarget);
+      if (target) {
+        target.alive = false;
+        message += `${target.name} को माफिया ने मार दिया।\n`;
+      }
+    } else {
+      message += 'कोई किल नहीं हुई। सब सेफ!\n';
+    }
+
+    api.sendMessage(message, threadID);
+    this.checkGameOver(api, threadID);
+
+    if (this.gameState) {
+      this.gameState = 'day';
+      this.votes = {};
+      let voteMessage = `☀️ डे ${this.phase} शुरू!\nवोटिंग शुरू करें (#mafia vote <number>):\n`;
+      this.players.forEach((p, i) => {
+        if (p.alive) voteMessage += `${i + 1}. ${p.name}\n`;
+      });
+      api.sendMessage(voteMessage, threadID);
+
+      // ऑटोमैटिक डे टाइमआउट (30 सेकंड)
+      setTimeout(() => {
+        if (this.gameState === 'day') {
+          this.endVoting(api, threadID);
         }
-      } else if (player.role === "Doctor" && cmd === "/save") {
-        if (!target) return api.sendMessage("❌ गलत टारगेट।", groupID);
-        game.doctorTarget = target.id;
-        api.sendMessage(`💉 डॉक्टर ने ${target.name} को बचाने की कोशिश की।`, groupID);
-      } else if (player.role === "Detective" && cmd === "/check") {
-        if (!target) return api.sendMessage("❌ गलत टारगेट।", groupID);
-        game.detectiveTarget = target.id;
-        let targetPlayer = game.players.find(p => p.id === target.id);
-        let result = (targetPlayer?.role === "Mafia" || targetPlayer?.role === "Werewolf")
-          ? `❌ ${target.name} माफिया है!`
-          : `✅ ${target.name} माफिया नहीं है।`;
-        api.sendMessage(`🔍 डिटेक्टिव रिजल्ट: ${result}`, groupID);
-      } else if (player.role === "Witch" && cmd === "/poison" && !game.witchPoisonUsed) {
-        if (!target) return api.sendMessage("❌ गलत टारगेट।", groupID);
-        game.witchPoison = target.id;
-        game.witchPoisonUsed = true;
-        api.sendMessage(`🧙‍♀️ जादूगरनी ने ${target.name} को ज़हर दिया।`, groupID);
-      } else if (player.role === "Witch" && cmd === "/heal" && !game.witchHealUsed) {
-        if (!target) return api.sendMessage("❌ गलत टारगेट।", groupID);
-        game.witchHeal = target.id;
-        game.witchHealUsed = true;
-        api.sendMessage(`🧙‍♀️ जादूगरनी ने ${target.name} को बचाया।`, groupID);
-      } else if (player.role === "Bodyguard" && cmd === "/protect") {
-        if (!target) return api.sendMessage("❌ गलत टारगेट।", groupID);
-        game.bodyguardTarget = target.id;
-        api.sendMessage(`🛡️ बॉडीगार्ड ने ${target.name} को प्रोटेक्ट किया।`, groupID);
-      } else if (player.role === "Joker" && cmd === "/fakekill" && !game.jokerFakeKillUsed) {
-        if (!target) return api.sendMessage("❌ गलत टारगेट।", groupID);
-        game.jokerFakeKill = target.id;
-        api.sendMessage(`🤡 जोकर ने ${target.name} को फेक किल चुना।`, groupID);
-      } else {
-        api.sendMessage("❌ गलत कमांड या रोल मैच नहीं। अपने रोल के अनुसार यूज करो।", groupID);
-      }
-    } catch (err) {
-      console.error(`[MAFIA] Error in handleEvent: ${err.message}`);
-      api.sendMessage("⚠️ ग्रुप कमांड में गलती। फिर से ट्राई करो।", groupID);
+      }, 30000);
     }
-  }
+  },
+
+  checkGameOver(api, threadID) {
+    const aliveMafia = this.players.filter(p => p.alive && p.role === 'Mafia').length;
+    const aliveVillagers = this.players.filter(p => p.alive && p.role !== 'Mafia').length;
+
+    if (aliveMafia === 0) {
+      let message = '🎮 गेम ओवर: विलेजर जीते! सारे माफिया मर गए।\n📜 गेम लॉग:\n';
+      message += `🏆 माफिया किल्स: 0\n🏆 लीडरबोर्ड:\n`;
+      const shalender = this.players.find(p => p.id === this.masterid);
+      if (shalender) {
+        message += `@${shalender.name} 🏅 First, Score: 14/14\n`;
+      }
+      this.players.forEach((p, i) => {
+        if (p.id !== this.masterid) {
+          message += `${i + 1}. ${p.name} - ${p.role} (${p.alive ? 'Alive' : 'Dead'})\n`;
+        }
+      });
+      api.sendMessage(message, threadID);
+      this.resetGame();
+    } else if (aliveMafia >= aliveVillagers) {
+      let message = '🎮 गेम ओवर: माफिया जीते! विलेजर्स हार गए।\n📜 गेम लॉग:\n';
+      message += `🏆 माफिया किल्स: ${this.players.length - aliveVillagers}\n🏆 लीडरबोर्ड:\n`;
+      const shalender = this.players.find(p => p.id === this.masterid);
+      if (shalender) {
+        message += `@${shalender.name} 🏅 First, Score: 14/14\n`;
+      }
+      this.players.forEach((p, i) => {
+        if (p.id !== this.masterid) {
+          message += `${i + 1}. ${p.name} - ${p.role} (${p.alive ? 'Alive' : 'Dead'})\n`;
+        }
+      });
+      api.sendMessage(message, threadID);
+      this.resetGame();
+    }
+  },
+
+  resetGame() {
+    this.players = [];
+    this.gameState = null;
+    this.phase = null;
+    this.nightActions = {};
+    this.votes = {};
+    this.lastVoteTime = null;
+    this.commandCooldowns = {};
+  },
 };
