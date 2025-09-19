@@ -1,23 +1,18 @@
 "use strict";
 
-const utils = require("../utils/utils");
-// @Mafiyahunter
-
 module.exports = function (defaultFuncs, api, ctx) {
   return function createNewGroup(participantIDs, groupTitle, callback) {
-    if (utils.getType(groupTitle) == "Function") {
+    if (typeof groupTitle === "function") {
       callback = groupTitle;
       groupTitle = null;
     }
 
-    if (utils.getType(participantIDs) !== "Array") {
-      throw { error: "createNewGroup: participantIDs should be an array." };//
+    if (!Array.isArray(participantIDs)) {
+      throw { error: "createNewGroup: participantIDs should be an array." };
     }
 
     if (participantIDs.length < 2) {
-      throw {
-        error: "createNewGroup: participantIDs should have at least 2 IDs.",
-      };
+      throw { error: "createNewGroup: participantIDs should have at least 2 IDs." };
     }
 
     let resolveFunc = function () {};
@@ -36,19 +31,13 @@ module.exports = function (defaultFuncs, api, ctx) {
       };
     }
 
-    const pids = [];
-    for (const n in participantIDs) {
-      pids.push({
-        fbid: participantIDs[n],
-      });
-    }
+    const pids = participantIDs.map(id => ({ fbid: id }));
     pids.push({ fbid: ctx.userID });
 
     const form = {
       fb_api_caller_class: "RelayModern",
       fb_api_req_friendly_name: "MessengerGroupCreateMutation",
       av: ctx.userID,
-      //This doc_id is valid as of January 11th, 2020
       doc_id: "577041672419534",
       variables: JSON.stringify({
         input: {
@@ -65,21 +54,15 @@ module.exports = function (defaultFuncs, api, ctx) {
       }),
     };
 
-    defaultFuncs
-      .post("https://www.facebook.com/api/graphql/", ctx.jar, form)
-      .then(utils.parseAndCheckLogin(ctx, defaultFuncs))
-      .then(function (resData) {
-        if (resData.errors) {
-          throw resData;
+    defaultFuncs.post("https://www.facebook.com/api/graphql/", ctx.jar, form)
+      .then(function (res) {
+        if (res.error || res.errors) {
+          throw res;
         }
-        return callback(
-          null,
-          resData.data.messenger_group_thread_create.thread.thread_key
-            .thread_fbid,
-        );
+        return callback(null, res.data.messenger_group_thread_create.thread.thread_key.thread_fbid);
       })
       .catch(function (err) {
-        utils.error("createNewGroup", err);
+        console.error("[createNewGroup] Error:", err.message || JSON.stringify(err));
         return callback(err);
       });
 
