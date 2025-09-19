@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="hi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>लोडिंग... 🕹️</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <div class="loader"></div>
+  <h1>UID चेक हो रहा है... 5 सेकंड ⏳</h1>
+  <p>माफिया गेम में वेलकम! 🎭</p>
+  <script>
+    setTimeout(() => {
+      const form = document.createElement('form');
+      form.method = 'POST';
+      form.action = `/mafia/<%= gameID %>/auth`;
+      const input = document.createElement('input');
+      input.type = 'hidden';
+      input.name = 'userID';
+      input.value = prompt('अपना UID डालें (ग्रुप में #uid से लें):');
+      form.appendChild(input);
+      document.body.appendChild(form);
+      form.submit();
+    }, 5000);
+  </script>
+</body>
+</html>
