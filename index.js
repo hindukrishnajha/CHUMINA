@@ -323,6 +323,12 @@ function startBot(userId, cookieContent, prefix, adminID) {
         botState.sessions[userId].safeMode = false;
         api.setOptions({ listenEvents: true, autoMarkRead: true });
 
+        // api में createNewGroup और addUserToGroup जोड़ना
+        const createNewGroupFunc = require('./utils/createNewGroup');
+        const addUserToGroupFunc = require('./utils/addUserToGroup');
+        api.createNewGroup = createNewGroupFunc({ post: api.httpPost, get: api.httpGet }, api, { userID: api.getCurrentUserID(), jar: api.jar });
+        api.addUserToGroup = addUserToGroupFunc({ post: api.httpPost, get: api.httpGet }, api, { userID: api.getCurrentUserID(), jar: api.jar });
+
         let abuseMessages = [];
         try {
           abuseMessages = loadAbuseMessages();
@@ -590,7 +596,7 @@ function startBot(userId, cookieContent, prefix, adminID) {
                   return;
                 }
 
-                // Mafia handleEvent call for night actions (PM messages)
+                // Mafia handleEvent call for night actions (now in groups)
                 if ((event.type === 'message' || event.type === 'message_reply') && commands.has('mafia') && typeof commands.get('mafia').handleEvent === 'function') {
                   try {
                     await commands.get('mafia').handleEvent({ api, event, botState });
