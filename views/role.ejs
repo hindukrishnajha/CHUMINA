@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="hi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>तुम्हारा रोल 🎭</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <h1><%= role === 'Mafia' ? 'तुम Mafia हो! 😈' : role === 'Doctor' ? 'तुम Doctor हो! 🩺' : role === 'Detective' ? 'तुम Detective हो! 🔎' : 'तुम Villager हो! 🧑' %></h1>
+  <% if (message) { %>
+    <p class="message"><%= message %></p>
+  <% } %>
+  <% if (phase === 'night' && role !== 'Villager') { %>
+    <p><%= role === 'Mafia' ? 'आज रात किसे मारना है?' : role === 'Doctor' ? 'आज रात किसे बचाना है?' : 'किसे चेक करना है?' %></p>
+    <form method="POST" action="/mafia/<%= gameID %>/action">
+      <input type="hidden" name="userID" value="<%= userID %>">
+      <% players.forEach(playerID => { %>
+        <button type="submit" name="targetID" value="<%= playerID %>"><%= botState.mafiaGames[gameID].players[playerID].name %></button>
+      <% }); %>
+    </form>
+  <% } else if (role === 'Villager') { %>
+    <p>नाइट फेज में कोई एक्शन नहीं। ग्रुप में #eliminate @user से वोट करो। 🕉️</p>
+  <% } else { %>
+    <p>अभी डे फेज है! ग्रुप में #eliminate @user से वोट करो। 🕉️</p>
+  <% } %>
+</body>
+</html>
