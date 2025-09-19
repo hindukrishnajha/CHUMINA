@@ -1,4 +1,3 @@
-// commands/admin/removenick.js
 const { ensureThreadHasMessage, retryNicknameChange, sendMessageWithCooldown } = require('../../utils/nicknameUtils');
 
 module.exports = {
@@ -15,12 +14,12 @@ module.exports = {
       return;
     }
 
-    if (args.length < 2) {
+    if (args.length < 1) {
       sendMessageWithCooldown(api, threadID, 'उपयोग: #removenick on @everyone या #removenick on @user या #removenick off या #removenick off @user');
       return;
     }
 
-    const command = args[1].toLowerCase();
+    const command = args[0].toLowerCase(); // Fix: args[0] is 'on' or 'off'
     let targetID = Object.keys(event.mentions)[0] || null;
 
     try {
@@ -28,121 +27,131 @@ module.exports = {
       botState.removeNicknameTargets = botState.removeNicknameTargets || {};
       botState.lastNicknameChange = botState.lastNicknameChange || {};
 
-      if (command === 'on' && args[2] === '@everyone') {
-        // Remove nicknames for all with 20s delay per change and one message
-        botState.removeNicknameActive[threadID] = true;
-        botState.removeNicknameTargets[threadID] = null;
+      // Early admin permission check
+      api.getThreadInfo(threadID, (err, info) => {
+        if (err || !info) {
+          sendMessageWithCooldown(api, threadID, '⚠️ ग्रुप जानकारी लाने में असफल।');
+          return;
+        }
+        if (!info.adminIDs.some(admin => admin.id === api.getCurrentUserID())) {
+          sendMessageWithCooldown(api, threadID, '⚠️ निकनेम हटाने के लिए बॉट को एडमिन परमिशन चाहिए।');
+          console.log('[DEBUG] Bot lacks admin permissions');
+          return;
+        }
 
-        ensureThreadHasMessage(api, threadID, () => {
-          api.getThreadInfo(threadID, (err, info) => {
-            if (err || !info || !info.participantIDs) {
-              sendMessageWithCooldown(api, threadID, '⚠️ ग्रुप मेंबर्स की जानकारी लाने में असफल।');
-              return;
-            }
+        if (command === 'on' && args[1] === '@everyone') {
+          // Remove nicknames for all with 20s delay per change and one message
+          botState.removeNicknameActive[threadID] = true;
+          botState.removeNicknameTargets[threadID] = null;
 
-            if (!info.adminIDs.some(admin => admin.id === api.getCurrentUserID())) {
-              sendMessageWithCooldown(api, threadID, '⚠️ निकनेम हटाने के लिए बॉट को एडमिन परमिशन चाहिए।');
-              return;
-            }
-
-            const botID = api.getCurrentUserID();
-            const members = info.participantIDs.filter(id => id !== botID);
-            console.log(`[DEBUG] Processing ${members.length} members for remove nickname`);
-
-            let i = 0;
-            const removeNext = () => {
-              if (i >= members.length || !botState.removeNicknameActive[threadID]) return;
-
-              const memberID = members[i];
-              const lastChange = botState.lastNicknameChange[`${threadID}:${memberID}`] || 0;
-              if (Date.now() - lastChange < 20000) {
-                console.log(`[DEBUG] Skipped nickname removal for ${memberID} due to cooldown`);
-                i++;
-                setTimeout(removeNext, 20000);
+          ensureThreadHasMessage(api, threadID, () => {
+            api.getThreadInfo(threadID, (err, info) => {
+              if (err || !info || !info.participantIDs) {
+                sendMessageWithCooldown(api, threadID, '⚠️ ग्रुप मेंबर्स की जानकारी लाने में असफल।');
                 return;
               }
 
-              retryNicknameChange(api, threadID, memberID, '', 1, (success) => {
-                if (success) {
-                  botState.lastNicknameChange[`${threadID}:${memberID}`] = Date.now();
-                  console.log(`[DEBUG] Removed nickname for memberID=${memberID}`);
+              const botID = api.getCurrentUserID();
+              const members = info.participantIDs.filter(id => id !== botID);
+              console.log(`[DEBUG] Processing ${members.length} members for remove nickname`);
+
+              let i = 0;
+              const removeNext = () => {
+                if (i >= members.length || !botState.removeNicknameActive[threadID]) return;
+
+                const memberID = members[i];
+                const lastChange = botState.lastNicknameChange[`${threadID}:${memberID}`] || 0;
+                if (Date.now() - lastChange < 20000) {
+                  console.log(`[DEBUG] Skipped nickname removal for ${memberID} due to cooldown`);
+                  i++;
+                  setTimeout(removeNext, 20000);
+                  return;
                 }
-                i++;
-                setTimeout(removeNext, 20000); // 20s delay
-              });
-            };
-            removeNext();
-            sendMessageWithCooldown(api, threadID, '✅ ग्रुप के सभी मेंबर्स के निकनेम्स हटाने शुरू हो गए! (#removenick off से बंद होगा).'); // Only one message
+
+                retryNicknameChange(api, threadID, memberID, '', 3, (success) => { // Increased retry to 3
+                  if (success) {
+                    botState.lastNicknameChange[`${threadID}:${memberID}`] = Date.now();
+                    console.log(`[DEBUG] Removed nickname for memberID=${memberID}`);
+                  } else {
+                    console.log(`[DEBUG] Failed to remove nickname for ${memberID} after retries`);
+                  }
+                  i++;
+                  setTimeout(removeNext, 20000); // 20s delay
+                });
+              };
+              removeNext();
+              sendMessageWithCooldown(api, threadID, '✅ ग्रुप के सभी मेंबर्स के निकनेम्स हटाने शुरू हो गए! (#removenick off से बंद होगा).'); // Only one message
+            });
           });
-        });
-      } else if (command === 'on' && targetID) {
-        // Specific user remove
-        if (!targetID) {
-          sendMessageWithCooldown(api, threadID, '⚠️ कृपया एक वैलिड यूजर को मेंशन करें।');
-          return;
-        }
-
-        api.getUserInfo([targetID], (err, ret) => {
-          if (err || !ret || !ret[targetID]) {
-            sendMessageWithCooldown(api, threadID, '⚠️ यूजर जानकारी लाने में असफल।');
+        } else if (command === 'on' && targetID) {
+          // Specific user remove
+          if (!targetID) {
+            sendMessageWithCooldown(api, threadID, '⚠️ कृपया एक वैलिड यूजर को मेंशन करें।');
             return;
           }
 
-          const name = ret[targetID].name || 'User';
-          if (!botState.removeNicknameActive[threadID]) {
-            botState.removeNicknameActive[threadID] = true;
-            botState.removeNicknameTargets[threadID] = new Set();
-          }
-          botState.removeNicknameTargets[threadID].add(targetID);
-
-          const lastChange = botState.lastNicknameChange[`${threadID}:${targetID}`] || 0;
-          if (Date.now() - lastChange < 20000) {
-            sendMessageWithCooldown(api, threadID, '⚠️ कूलडाउन: 20 सेकंड बाद ट्राई करें।');
-            return;
-          }
-
-          retryNicknameChange(api, threadID, targetID, '', 1, (success) => {
-            if (success) {
-              sendMessageWithCooldown(api, threadID, `✅ ${name} का निकनेम हटा दिया गया! (#removenick off @user से बंद होगा).`);
-              botState.lastNicknameChange[`${threadID}:${targetID}`] = Date.now();
-            } else {
-              sendMessageWithCooldown(api, threadID, '⚠️ निकनेम हटाने में असफल। बाद में ट्राई करें।');
+          api.getUserInfo([targetID], (err, ret) => {
+            if (err || !ret || !ret[targetID]) {
+              sendMessageWithCooldown(api, threadID, '⚠️ यूजर जानकारी लाने में असफल।');
+              return;
             }
+
+            const name = ret[targetID].name || 'User';
+            if (!botState.removeNicknameActive[threadID]) {
+              botState.removeNicknameActive[threadID] = true;
+              botState.removeNicknameTargets[threadID] = new Set();
+            }
+            botState.removeNicknameTargets[threadID].add(targetID);
+
+            const lastChange = botState.lastNicknameChange[`${threadID}:${targetID}`] || 0;
+            if (Date.now() - lastChange < 20000) {
+              sendMessageWithCooldown(api, threadID, '⚠️ कूलडाउन: 20 सेकंड बाद ट्राई करें।');
+              return;
+            }
+
+            retryNicknameChange(api, threadID, targetID, '', 3, (success) => { // Increased retry
+              if (success) {
+                sendMessageWithCooldown(api, threadID, `✅ ${name} का निकनेम हटा दिया गया! (#removenick off @user से बंद होगा).`);
+                botState.lastNicknameChange[`${threadID}:${targetID}`] = Date.now();
+              } else {
+                sendMessageWithCooldown(api, threadID, '⚠️ निकनेम हटाने में असफल (API इश्यू)। बाद में ट्राई करें।');
+              }
+            });
           });
-        });
-      } else if (command === 'off' && !targetID) {
-        // Stop for group
-        if (!botState.removeNicknameActive?.[threadID]) {
-          sendMessageWithCooldown(api, threadID, '⚠️ निकनेम हटाने का मोड पहले से बंद है।');
-          return;
-        }
-
-        botState.removeNicknameActive[threadID] = false;
-        delete botState.removeNicknameTargets[threadID];
-        sendMessageWithCooldown(api, threadID, '✅ निकनेम हटाने का मोड बंद कर दिया गया!');
-      } else if (command === 'off' && targetID) {
-        // Stop for specific user
-        if (!botState.removeNicknameTargets?.[threadID]?.has(targetID)) {
-          sendMessageWithCooldown(api, threadID, '⚠️ इस यूजर के लिए निकनेम रिमूव मोड पहले से बंद है।');
-          return;
-        }
-
-        api.getUserInfo([targetID], (err, ret) => {
-          if (err || !ret || !ret[targetID]) {
-            sendMessageWithCooldown(api, threadID, '⚠️ यूजर जानकारी लाने में असफल।');
+        } else if (command === 'off' && !targetID) {
+          // Stop for group
+          if (!botState.removeNicknameActive?.[threadID]) {
+            sendMessageWithCooldown(api, threadID, '⚠️ निकनेम हटाने का मोड पहले से बंद है।');
             return;
           }
-          const name = ret[targetID].name || 'User';
-          botState.removeNicknameTargets[threadID].delete(targetID);
-          if (botState.removeNicknameTargets[threadID].size === 0) {
-            botState.removeNicknameActive[threadID] = false;
-            delete botState.removeNicknameTargets[threadID];
+
+          botState.removeNicknameActive[threadID] = false;
+          delete botState.removeNicknameTargets[threadID];
+          sendMessageWithCooldown(api, threadID, '✅ निकनेम हटाने का मोड बंद कर दिया गया!');
+        } else if (command === 'off' && targetID) {
+          // Stop for specific user
+          if (!botState.removeNicknameTargets?.[threadID]?.has(targetID)) {
+            sendMessageWithCooldown(api, threadID, '⚠️ इस यूजर के लिए निकनेम रिमूव मोड पहले से बंद है।');
+            return;
           }
-          sendMessageWithCooldown(api, threadID, `✅ ${name} के लिए निकनेम रिमूव मोड बंद कर दिया गया!`);
-        });
-      } else {
-        sendMessageWithCooldown(api, threadID, 'उपयोग: #removenick on @everyone या #removenick on @user या #removenick off या #removenick off @user');
-      }
+
+          api.getUserInfo([targetID], (err, ret) => {
+            if (err || !ret || !ret[targetID]) {
+              sendMessageWithCooldown(api, threadID, '⚠️ यूजर जानकारी लाने में असफल।');
+              return;
+            }
+            const name = ret[targetID].name || 'User';
+            botState.removeNicknameTargets[threadID].delete(targetID);
+            if (botState.removeNicknameTargets[threadID].size === 0) {
+              botState.removeNicknameActive[threadID] = false;
+              delete botState.removeNicknameTargets[threadID];
+            }
+            sendMessageWithCooldown(api, threadID, `✅ ${name} के लिए निकनेम रिमूव मोड बंद कर दिया गया!`);
+          });
+        } else {
+          sendMessageWithCooldown(api, threadID, 'उपयोग: #removenick on @everyone या #removenick on @user या #removenick off या #removenick off @user');
+        }
+      });
     } catch (e) {
       console.error(`[ERROR] removenick error: ${e?.message || 'Unknown error'}`);
       sendMessageWithCooldown(api, threadID, '⚠️ कुछ गड़बड़ हुई, बाद में ट्राई करें।');
