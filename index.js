@@ -175,10 +175,101 @@ botState.autoConvo = false;
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// EJS सेटअप
+const ejs = require('ejs');
+app.set('view engine', 'ejs');
+app.set('views', path.join(__dirname, 'views'));
+
 app.use(timeout('60s'));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static('public'));
+
+// Mafia गेम रूट्स
+app.get('/mafia/:gameID', (req, res) => {
+  const gameID = req.params.gameID;
+  const game = botState.mafiaGames[gameID];
+  
+  if (!game || !game.active) {
+    return res.render('error', { message: '🚫 गेम नहीं मिला या खत्म हो चुका है! 🕉️' });
+  }
+
+  // लोडिंग पेज दिखाओ, जो 5 सेकंड बाद रोल पेज पर रीडायरेक्ट करेगा
+  res.render('loading', { gameID });
+});
+
+app.get('/mafia/:gameID/role', (req, res) => {
+  const gameID = req.params.gameID;
+  const userID = req.query.uid; // यूजर ID क्वेरी पैरामीटर से लें
+  const game = botState.mafiaGames[gameID];
+
+  if (!game || !game.active) {
+    return res.render('error', { message: '🚫 गेम नहीं मिला या खत्म हो चुका है! 🕉️' });
+  }
+
+  if (!userID || !game.players[userID]) {
+    return res.render('error', { message: '🚫 यूजर गेम में नहीं है या गलत UID! 🕉️' });
+  }
+
+  const player = game.players[userID];
+  const isAlive = game.alive.has(userID);
+  const roleActions = {
+    Mafia: { action: 'eliminate', description: 'किसी को मारने के लिए चुनें। 😈' },
+    Doctor: { action: 'save', description: 'किसी को बचाने के लिए चुनें। 🩺' },
+    Detective: { action: 'check', description: 'किसी की भूमिका जाँचने के लिए चुनें। 🔎' },
+    Villager: { action: null, description: 'आपके पास कोई रात का एक्शन नहीं है। 😴' }
+  };
+  const currentAction = roleActions[player.role];
+
+  res.render('role', {
+    gameID,
+    userID,
+    role: player.role,
+    name: player.name,
+    isAlive,
+    phase: game.phase,
+    action: currentAction.action,
+    actionDescription: currentAction.description,
+    players: Object.keys(game.players)
+      .filter(id => id !== userID && game.alive.has(id))
+      .map(id => ({ id, name: game.players[id].name }))
+  });
+});
+
+app.post('/mafia/:gameID/action', (req, res) => {
+  const gameID = req.params.gameID;
+  const userID = req.body.userID;
+  const targetID = req.body.targetID;
+  const action = req.body.action;
+  const game = botState.mafiaGames[gameID];
+
+  if (!game || !game.active) {
+    return res.json({ success: false, message: '🚫 गेम नहीं मिला या खत्म हो चुका है! 🕉️' });
+  }
+
+  if (!userID || !game.players[userID] || !game.alive.has(userID)) {
+    return res.json({ success: false, message: '🚫 यूजर गेम में नहीं है या मर चुका है! 🕉️' });
+  }
+
+  if (game.phase !== 'night') {
+    return res.json({ success: false, message: '🚫 अभी नाइट फेज नहीं है! 🕉️' });
+  }
+
+  const player = game.players[userID];
+  if (player.role === 'Mafia' && action === 'eliminate') {
+    game.actions.mafia = game.actions.mafia || [];
+    game.actions.mafia.push(targetID);
+  } else if (player.role === 'Doctor' && action === 'save') {
+    game.actions.doctor = targetID;
+  } else if (player.role === 'Detective' && action === 'check') {
+    game.actions.detective = targetID;
+  } else {
+    return res.json({ success: false, message: '🚫 गलत एक्शन या रोल! 🕉️' });
+  }
+
+  fs.writeFileSync(LEARNED_RESPONSES_PATH, JSON.stringify(botState, null, 2), 'utf8');
+  res.json({ success: true, message: '✅ एक्शन रजिस्टर हो गया! 🕉️' });
+});
 
 app.get('/', (req, res) => {
   if (req.timedout) return res.status(504).send('Server timeout');
@@ -297,7 +388,7 @@ function stopBot(userId) {
     botState.sessions[userId].api = null;
   }
 
-  delete botState.sessions[userId];
+ тепер delete botState.sessions[userId];
   broadcast({ type: 'log', message: `Bot stopped for user ${userId}`, userId });
   broadcast({ type: 'status', userId, running: false });
 }
@@ -1286,97 +1377,23 @@ wss.on('connection', (ws) => {
         const userId = data.userId;
         const running = !!botState.sessions[userId] && botState.sessions[userId].running;
         const safeMode = botState.sessions[userId]?.safeMode || false;
-        ws.send(JSON.stringify({ type: 'status', userId, running, safeMode }));
-      } else if (data.type === 'uploadAbuse') {
-        try {
-          saveFile('abuse.txt', data.content);
-          ws.send(JSON.stringify({ type: 'log', message: 'Abuse messages updated successfully' }));
-        } catch (err) {
-          ws.send(JSON.stringify({ type: 'log', message: `Failed to update abuse messages: ${err.message}` }));
-        }
-      } else if (data.type === 'saveWelcome') {
-        try {
-          saveFile('welcome.txt', data.content);
-          botState.welcomeMessages = data.content.split('\n').map(line => line.trim()).filter(line => line.length > 0);
-          ws.send(JSON.stringify({ type: 'log', message: 'Welcome messages updated successfully' }));
-        } catch (err) {
-          ws.send(JSON.stringify({ type: 'log', message: `Failed to update welcome messages: ${err.message}` }));
-        }
-      } else if (data.type === 'saveSettings') {
-        botConfig.autoSpamAccept = data.autoSpamAccept;
-        botConfig.autoMessageAccept = data.autoMessageAccept;
-        botConfig.antiOut = data.antiOut;
-        botState.autoConvo = data.autoConvo;
-        ws.send(JSON.stringify({ type: 'log', message: 'Settings saved successfully' }));
         ws.send(JSON.stringify({
-          type: 'settings',
-          autoSpamAccept: botConfig.autoSpamAccept,
-          autoMessageAccept: botConfig.autoMessageAccept,
-          autoConvo: botState.autoConvo,
-          antiOut: botConfig.antiOut,
-          userId: data.userId
+          type: 'status',
+          userId,
+          running,
+          safeMode
         }));
+      } else {
+        ws.send(JSON.stringify({ type: 'log', message: `Unknown message type: ${data.type}` }));
       }
     } catch (err) {
-      console.error('WebSocket message processing error:', err.message);
+      console.error('WebSocket message handling error:', err.message);
       ws.send(JSON.stringify({ type: 'log', message: `Error processing message: ${err.message}` }));
     }
   });
 
   ws.on('close', () => {
     clearInterval(heartbeat);
-    console.log('WebSocket connection closed');
+    console.log('WebSocket client disconnected');
   });
 });
-
-
-module.exports = {
-  name: 'chat',
-  description: 'Toggle chat mode on or off (admin only)',
-  aliases: ['chaton', 'chatoff'],
-  execute: async (api, threadID, args, event, botState, isMaster) => {
-    console.log('Chat command - SenderID:', event.senderID, 'isMaster:', isMaster, 'AdminList:', botState.adminList, 'Args:', args);
-
-    if (!botState.adminList.includes(event.senderID) && !isMaster) {
-      api.sendMessage('🚫 ये कमांड सिर्फ किंग के खास एडमिन्स या मास्टर के लिए है! 🌟', threadID);
-      return;
-    }
-
-    const command = args[1] ? args[1].toLowerCase() : args[0].toLowerCase().replace(/^#/, '');
-    let chatState = botState.chatEnabled || { [threadID]: false };
-
-    if (command === 'on' || command === 'chaton') {
-      if (chatState[threadID]) {
-        api.sendMessage('🌟 AI पहले से चालू है, भाई! #ai या @ai से बात कर, जैसे: #ai हाय भाई, क्या हाल है? 😎', threadID);
-        return;
-      }
-      chatState[threadID] = true;
-      api.sendMessage('🔥 AI चालू! अब #ai या @ai से बात करो, जैसे: #ai भाई, क्या हाल है? 😎', threadID);
-    } else if (command === 'off' || command === 'chatoff') {
-      if (!chatState[threadID]) {
-        api.sendMessage('🌙 AI पहले से बंद है, भाई! सिर्फ कमांड्स चालू। 🌟', threadID);
-        return;
-      }
-      chatState[threadID] = false;
-      api.sendMessage('❌ AI बंद! अब सिर्फ किंग के कमांड्स काम करेंगे। 🌟', threadID);
-    } else {
-      api.sendMessage('❓ यूज करो: #chat on या #chat off (या #chaton, #chatoff)। किंग के नियम समझो! 😎', threadID);
-      return;
-    }
-
-    botState.chatEnabled = chatState;
-    console.log('Chat state updated:', botState.chatEnabled);
-
-    try {
-      const fs = require('fs');
-      const { LEARNED_RESPONSES_PATH } = require('../../config/constants');
-      botState.learnedResponses.chatEnabled = chatState;
-      botState.learnedResponses.adminList = botState.adminList;
-      fs.writeFileSync(LEARNED_RESPONSES_PATH, JSON.stringify(botState.learnedResponses, null, 2), 'utf8');
-      console.log('Chat state and adminList saved to learned_responses.json');
-    } catch (err) {
-      console.error('Error saving to learned_responses.json:', err.message);
-      api.sendMessage('⚠️ चैट स्टेट सेव करने में गड़बड़! किंग को बताओ! 🌟', threadID);
-    }
-  }
-};
