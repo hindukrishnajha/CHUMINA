@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Mafia Role</title>
+  <style>
+    body { font-family: Arial, sans-serif; text-align: center; padding: 20px; background-color: #f0f0f0; }
+    h1 { color: #333; }
+    .role { font-size: 24px; color: #d32f2f; }
+    .menu { margin-top: 20px; }
+    button { padding: 10px 20px; margin: 5px; background-color: #1976d2; color: white; border: none; border-radius: 5px; cursor: pointer; }
+    button:hover { background-color: #1565c0; }
+  </style>
+</head>
+<body>
+  <h1>Mafia Game</h1>
+  <div class="role"></div>
+  <div class="menu"></div>
+
+  <script>
+    // हेडर्स से डेटा लें
+    const role = document.getElementsByTagName('html')[0].getAttribute('data-role');
+    const token = document.getElementsByTagName('html')[0].getAttribute('data-token');
+    const uid = document.getElementsByTagName('html')[0].getAttribute('data-uid');
+    const threadID = document.getElementsByTagName('html')[0].getAttribute('data-threadID');
+    const players = JSON.parse(document.getElementsByTagName('html')[0].getAttribute('data-players'));
+
+    // रोल दिखाएं
+    const roleDiv = document.querySelector('.role');
+    if (role === 'Mafia') {
+      roleDiv.innerHTML = 'तुम माफिया हो! तुम्हारा काम लोगों को मारना है और दिमाग लगाके अपना रोल छुपाना है।';
+    } else if (role === 'Doctor') {
+      roleDiv.innerHTML = 'तुम डॉक्टर हो! तुम्हारा काम किसी एक को रात में बचाना है।';
+    } else if (role === 'Detective') {
+      roleDiv.innerHTML = 'तुम डिटेक्टिव हो! तुम्हारा काम माफिया को पकड़ना है।';
+    } else {
+      roleDiv.innerHTML = 'तुम विलेजर हो! वोटिंग में हिस्सा लो और माफिया को पकड़ने की कोशिश करो।';
+    }
+
+    // मेन्यू दिखाएं
+    const menuDiv = document.querySelector('.menu');
+    if (['Mafia', 'Doctor', 'Detective'].includes(role)) {
+      menuDiv.innerHTML = `<p>${role === 'Mafia' ? 'बताओ आज किसकी मौत चाहते हो?' : role === 'Doctor' ? 'किसे बचाना चाहते हो?' : 'किसके रोल की जाँच करना चाहते हो?'}</p>`;
+      players.forEach(player => {
+        const button = document.createElement('button');
+        button.innerText = player.name;
+        button.onclick = () => {
+          fetch('/action', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              token,
+              uid,
+              action: role === 'Mafia' ? 'kill' : role === 'Doctor' ? 'save' : 'check',
+              targetIndex: player.index,
+            }),
+          })
+            .then(res => res.text())
+            .then(data => alert(data))
+            .catch(err => alert('Error submitting action.'));
+        };
+        menuDiv.appendChild(button);
+      });
+    } else {
+      menuDiv.innerHTML = '<p>वोटिंग के लिए ग्रुप में #mafia vote &lt;number&gt; यूज करें।</p>';
+    }
+
+    // HTML हेडर्स में डेटा डालें
+    document.getElementsByTagName('html')[0].setAttribute('data-role', role);
+    document.getElementsByTagName('html')[0].setAttribute('data-token', token);
+    document.getElementsByTagName('html')[0].setAttribute('data-uid', uid);
+    document.getElementsByTagName('html')[0].setAttribute('data-threadID', threadID);
+    document.getElementsByTagName('html')[0].setAttribute('data-players', JSON.stringify(players));
+  </script>
+</body>
+</html>
