@@ -1,4 +1,5 @@
 const fs = require('fs');
+const { LEARNED_RESPONSES_PATH } = require('../../config/constants'); // इम्पोर्ट जोड़ा
 
 module.exports = {
   name: 'mafia',
