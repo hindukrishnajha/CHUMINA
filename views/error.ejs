@@ -3,12 +3,26 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>एरर 🚫</title>
+  <title>तुम्हारा रोल 🎭</title>
   <link rel="stylesheet" href="/style.css">
 </head>
 <body>
-  <h1>🚫 एरर!</h1>
-  <p><%= message %> (UID चेक करें या गेम रीस्टार्ट ट्राई करें) </p>
-  <p>ग्रुप में जाओ और #mafia join करें। 🕉️</p>
+  <h1><%= role === 'Mafia' ? 'तुम Mafia हो! 😈' : role === 'Doctor' ? 'तुम Doctor हो! 🩺' : role === 'Detective' ? 'तुम Detective हो! 🔎' : 'तुम Villager हो! 🧑' %></h1>
+  <% if (message) { %>
+    <p class="message"><%= message %></p>
+  <% } %>
+  <% if (phase === 'night' && role !== 'Villager') { %>
+    <p><%= role === 'Mafia' ? 'आज रात किसे मारना है?' : role === 'Doctor' ? 'आज रात किसे बचाना है?' : 'किसे चेक करना है?' %></p>
+    <form method="POST" action="/mafia/<%= gameID %>/action">
+      <input type="hidden" name="userID" value="<%= userID %>">
+      <% players.forEach(player => { %>
+        <button type="submit" name="targetID" value="<%= player.id %>"><%= player.name %></button>
+      <% }); %>
+    </form>
+  <% } else if (role === 'Villager') { %>
+    <p>नाइट फेज में कोई एक्शन नहीं। ग्रुप में #eliminate @user से वोट करो। 🕉️</p>
+  <% } else { %>
+    <p>अभी डे फेज है! ग्रुप में #eliminate @user से वोट करो। 🕉️</p>
+  <% } %>
 </body>
 </html>
