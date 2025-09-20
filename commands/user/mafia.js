@@ -149,7 +149,7 @@ module.exports = {
       });
     } else if (command === 'stop') {
       const gameID = threadID;
-      if (!botState.mafiaGames[gameID]) return api.sendMessage('🚫 कोई गेम चल नहीं रहा! 🕉️', threadID);
+      if (!botState.mafiaGames[gameID]) return api.sendMessage('🚫 कोई गेम चल नहीं चल रहा! 🕉️', threadID);
       delete botState.mafiaGames[gameID];
       try {
         fs.writeFileSync(LEARNED_RESPONSES_PATH, JSON.stringify(botState, null, 2), 'utf8');
@@ -380,4 +380,4 @@ function cleanupMafiaGames(botState) {
   } catch (err) {
     console.error(`[ERROR] Failed to save cleanup state: ${err.message}`);
   }
-      }
+          }
