@@ -233,13 +233,15 @@ app.get('/mafia/:gameID/role', (req, res) => {
     Mafia: { action: 'eliminate', description: 'किसी को मारने के लिए चुनें। 😈' },
     Doctor: { action: 'save', description: 'किसी को बचाने के लिए चुनें। 🩺' },
     Detective: { action: 'check', description: 'किसी की भूमिका जाँचने के लिए चुनें। 🔎' },
-    Villager: { action: null, description: 'आपके पास कोई रात का एक्शन नहीं है। 😴' }
+    Villager: { action: null, description: 'आपका काम यहाँ नहीं, ग्रुप में है। ग्रुप में रहकर अपने दिमाग से पता लगाओ माफिया कौन है और सबको convince करो कि ये माफिया हो सकता है ताकि सब वोट देकर उसे eliminate कर दें। 🧑' }
   };
   const currentAction = roleActions[player.role];
 
   const validPlayers = Object.keys(game.players)
     .filter(id => id !== userID && game.alive.has(id))
-    .map(id => ({ id, name: game.players[id].name || `Player_${id}` })); // Full name or fallback
+    .map(id => ({ id, name: game.players[id].name || `Player_${id}` }));
+
+  const actionResult = game.results && game.results[userID] ? game.results[userID] : null;
 
   res.render('role', {
     gameID,
@@ -252,7 +254,7 @@ app.get('/mafia/:gameID/role', (req, res) => {
     actionDescription: currentAction.description,
     players: validPlayers,
     botState,
-    message: null
+    message: actionResult || null
   });
 });
 
@@ -275,19 +277,30 @@ app.post('/mafia/:gameID/action', (req, res) => {
   }
 
   const player = game.players[userID];
+  game.results = game.results || {};
+
   if (player.role === 'Mafia') {
     game.actions.mafia = game.actions.mafia || [];
     game.actions.mafia.push(targetID);
+    game.results[userID] = `😈 तुमने @${game.players[targetID].name || `Player_${targetID}`} को मारने का प्लान बनाया।`;
   } else if (player.role === 'Doctor') {
     game.actions.doctor = targetID;
+    game.results[userID] = `🩺 आपने @${game.players[targetID].name || `Player_${targetID}`} को आज रात के लिए save कर दिया। आज माफिया इसे नहीं मार पाएगा।`;
   } else if (player.role === 'Detective') {
+    const checkedRole = game.players[targetID].role === 'Mafia' ? 'Mafia है' : 'Mafia नहीं है';
     game.actions.detective = targetID;
+    game.results[userID] = `🔎 @${game.players[targetID].name || `Player_${targetID}`} ${checkedRole}।`;
   } else {
     return res.json({ success: false, message: '🚫 गलत एक्शन या रोल! 🕉️' });
   }
 
-  fs.writeFileSync(LEARNED_RESPONSES_PATH, JSON.stringify(botState, null, 2), 'utf8');
-  res.json({ success: true, message: '✅ एक्शन रजिस्टर हो गया! 🕉️' });
+  try {
+    fs.writeFileSync(LEARNED_RESPONSES_PATH, JSON.stringify(botState, null, 2), 'utf8');
+    console.log(`[DEBUG] Action recorded for ${userID} in game ${gameID}`);
+  } catch (err) {
+    console.error(`[ERROR] Failed to save action state: ${err.message}`);
+  }
+  res.json({ success: true, message: '✅ एक्शन रजिस्टर हो गया! रिजल्ट नीचे देखें। 🕉️' });
 });
 
 app.get('/', (req, res) => {
