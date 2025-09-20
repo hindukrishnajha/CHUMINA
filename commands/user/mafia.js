@@ -17,15 +17,15 @@ module.exports = {
       if (botState.mafiaGames[threadID]) return api.sendMessage('🚫 पहले से गेम चल रहा है! #mafia stop से बंद करो। 🕉️', threadID);
       botState.mafiaGames[threadID] = { players: {}, phase: 'join', active: true, actions: {}, votes: {}, alive: new Set(), results: {} };
       try {
-        // Convert Set to array before saving
         const game = botState.mafiaGames[threadID];
         const originalAlive = game.alive;
         game.alive = Array.from(originalAlive);
         fs.writeFileSync(LEARNED_RESPONSES_PATH, JSON.stringify(botState, null, 2), 'utf8');
-        game.alive = originalAlive; // Restore Set
+        game.alive = originalAlive;
         console.log(`[DEBUG] Game started for threadID: ${threadID}, state saved`);
       } catch (err) {
         console.error(`[ERROR] Failed to save start state: ${err.message}`);
+        api.sendMessage('⚠️ सर्वर त्रुटि: गेम शुरू नहीं हो सका। बाद में फिर ट्राई करें। 🕉️', threadID);
       }
       const joinLink = `https://${process.env.RENDER_SERVICE_NAME || 'your-render-service'}.onrender.com/mafia/${threadID}`;
       try {
@@ -74,15 +74,15 @@ module.exports = {
       assignRoles(botState, gameID);
       botState.mafiaGames[gameID].phase = 'night';
       try {
-        // Convert Set to array before saving
         const game = botState.mafiaGames[gameID];
         const originalAlive = game.alive;
         game.alive = Array.from(originalAlive);
         fs.writeFileSync(LEARNED_RESPONSES_PATH, JSON.stringify(botState, null, 2), 'utf8');
-        game.alive = originalAlive; // Restore Set
+        game.alive = originalAlive;
         console.log(`[DEBUG] Game ${gameID} moved to night phase, state saved`);
       } catch (err) {
         console.error(`[ERROR] Failed to save night phase state: ${err.message}`);
+        api.sendMessage('⚠️ सर्वर त्रुटि: गेम शुरू नहीं हो सका। बाद में फिर ट्राई करें। 🕉️', threadID);
       }
       const joinLink = `https://${process.env.RENDER_SERVICE_NAME || 'your-render-service'}.onrender.com/mafia/${gameID}`;
       try {
@@ -115,12 +115,11 @@ module.exports = {
       }
       botState.mafiaGames[gameID].votes[event.senderID] = targetID;
       try {
-        // Convert Set to array before saving
         const game = botState.mafiaGames[gameID];
         const originalAlive = game.alive;
         game.alive = Array.from(originalAlive);
         fs.writeFileSync(LEARNED_RESPONSES_PATH, JSON.stringify(botState, null, 2), 'utf8');
-        game.alive = originalAlive; // Restore Set
+        game.alive = originalAlive;
         console.log(`[DEBUG] Vote recorded for ${event.senderID} against ${targetID}`);
       } catch (err) {
         console.error(`[ERROR] Failed to save vote state: ${err.message}`);
@@ -173,16 +172,20 @@ module.exports = {
 };
 
 function saveStateAndSendJoinMessage(api, threadID, gameID, botState, name, senderID) {
+  const game = botState.mafiaGames[gameID];
+  if (!game || !game.players[senderID]) {
+    console.error(`[ERROR] Game or player not found for threadID: ${gameID}, senderID: ${senderID}`);
+    return api.sendMessage('⚠️ गेम में त्रुटि! फिर से #mafia join ट्राई करें। 🕉️', threadID);
+  }
   try {
-    // Convert Set to array before saving
-    const game = botState.mafiaGames[gameID];
     const originalAlive = game.alive;
     game.alive = Array.from(originalAlive);
     fs.writeFileSync(LEARNED_RESPONSES_PATH, JSON.stringify(botState, null, 2), 'utf8');
-    game.alive = originalAlive; // Restore Set
+    game.alive = originalAlive;
     console.log(`[DEBUG] Player ${name} (${senderID}) joined game ${gameID}. Total players: ${Object.keys(botState.mafiaGames[gameID].players).length}`);
   } catch (err) {
     console.error(`[ERROR] Failed to save join state for ${senderID}: ${err.message}`);
+    api.sendMessage('⚠️ सर्वर त्रुटि: जॉइन नहीं हो सका। बाद में फिर ट्राई करें। 🕉️', threadID);
   }
   const playerCount = Object.keys(botState.mafiaGames[gameID].players).length;
   const joinMessage = `✅ ${name}, तुम गेम में शामिल हो गए! अभी ${playerCount} प्लेयर्स हैं। 🎉`;
@@ -207,14 +210,18 @@ function assignRoles(botState, gameID) {
   for (let i = 0; i < count - mafiaCount - 2; i++) roles.push('Villager');
   roles.sort(() => Math.random() - 0.5);
   players.forEach((id, i) => {
-    botState.mafiaGames[gameID].players[id].role = roles[i];
+    botState.mafiaGames[gameID].players[id].role = roles[i] || 'Villager'; // Fallback to Villager if undefined
+    console.log(`[DEBUG] Assigned role ${roles[i]} to player ${id}`);
   });
   console.log(`[DEBUG] Assigned roles for game ${gameID}: ${JSON.stringify(roles)}`);
 }
 
 function processNightPhase(api, threadID, gameID, botState) {
   const game = botState.mafiaGames[gameID];
-  if (!game || !game.active) return;
+  if (!game || !game.active) {
+    console.log(`[DEBUG] Game ${gameID} not found or inactive`);
+    return api.sendMessage('⚠️ गेम नहीं मिला या खत्म हो चुका है! 🕉️', threadID);
+  }
   let result = '🌙 नाइट फेज खत्म। ';
   let target = null;
   if (game.actions.mafia && game.actions.mafia.length > 0) {
@@ -225,7 +232,7 @@ function processNightPhase(api, threadID, gameID, botState) {
   if (target && target !== game.actions.doctor) {
     game.alive.delete(target);
     const targetName = game.players[target].name || `Player_${target}`;
-    result += `${targetName} मर गया! वो ${game.players[target].role} था।`;
+    result += `${targetName} मर गया! वो ${game.players[target].role || 'Unknown'} था।`;
   } else if (target) {
     result += 'Doctor ने बचा लिया! कोई नहीं मरा।';
   } else {
@@ -250,13 +257,13 @@ function processNightPhase(api, threadID, gameID, botState) {
   game.votes = {};
   game.actions = { mafia: [], doctor: null, detective: null };
   try {
-    // Convert Set to array before saving
     const originalAlive = game.alive;
     game.alive = Array.from(originalAlive);
     fs.writeFileSync(LEARNED_RESPONSES_PATH, JSON.stringify(botState, null, 2), 'utf8');
-    game.alive = originalAlive; // Restore Set
+    game.alive = originalAlive;
   } catch (err) {
     console.error(`[ERROR] Failed to save night phase state: ${err.message}`);
+    api.sendMessage('⚠️ सर्वर त्रुटि: गेम स्टेट सेव नहीं हो सका। 🕉️', threadID);
   }
   console.log(`[DEBUG] Night phase processed for game ${gameID}`);
   try {
@@ -285,7 +292,10 @@ function processNightPhase(api, threadID, gameID, botState) {
 
 function processDayPhase(api, threadID, gameID, botState) {
   const game = botState.mafiaGames[gameID];
-  if (!game || !game.active) return;
+  if (!game || !game.active) {
+    console.log(`[DEBUG] Game ${gameID} not found or inactive`);
+    return api.sendMessage('⚠️ गेम नहीं मिला या खत्म हो चुका है! 🕉️', threadID);
+  }
   let result = '☀️ डे फेज खत्म। ';
   let eliminated = null;
   if (Object.keys(game.votes).length > 0) {
@@ -295,7 +305,7 @@ function processDayPhase(api, threadID, gameID, botState) {
     if (eliminated) {
       game.alive.delete(eliminated);
       const eliminatedName = game.players[eliminated].name || `Player_${eliminated}`;
-      result += `${eliminatedName} को वोट से निकाला गया! वो ${game.players[eliminated].role} था।`;
+      result += `${eliminatedName} को वोट से निकाला गया! वो ${game.players[eliminated].role || 'Unknown'} था।`;
     }
   } else {
     result += 'कोई वोट नहीं हुआ।';
@@ -306,7 +316,7 @@ function processDayPhase(api, threadID, gameID, botState) {
     result += '\n🏆 Villagers जीत गए! 🎉';
     let rolesList = '\nसभी प्लेयर्स के रोल:\n';
     Object.entries(game.players).forEach(([id, player]) => {
-      rolesList += `${player.name}: ${player.role}\n`;
+      rolesList += `${player.name}: ${player.role || 'Unknown'}\n`;
     });
     result += rolesList;
     delete botState.mafiaGames[gameID];
@@ -314,7 +324,7 @@ function processDayPhase(api, threadID, gameID, botState) {
     result += '\n🏆 Mafia जीत गए! 😈';
     let rolesList = '\nसभी प्लेयर्स के रोल:\n';
     Object.entries(game.players).forEach(([id, player]) => {
-      rolesList += `${player.name}: ${player.role}\n`;
+      rolesList += `${player.name}: ${player.role || 'Unknown'}\n`;
     });
     result += rolesList;
     delete botState.mafiaGames[gameID];
@@ -322,16 +332,16 @@ function processDayPhase(api, threadID, gameID, botState) {
     result += '\n🌙 नया नाइट फेज शुरू! लिंक पर जाओ और एक्शन चुनो। 😎';
     game.phase = 'night';
     game.actions = { mafia: [], doctor: null, detective: null };
-    game.results = {}; // Clear results for new night phase
+    game.results = {};
   }
   try {
-    // Convert Set to array before saving
     const originalAlive = game.alive;
     game.alive = Array.from(originalAlive);
     fs.writeFileSync(LEARNED_RESPONSES_PATH, JSON.stringify(botState, null, 2), 'utf8');
-    game.alive = originalAlive; // Restore Set
+    game.alive = originalAlive;
   } catch (err) {
     console.error(`[ERROR] Failed to save day phase state: ${err.message}`);
+    api.sendMessage('⚠️ सर्वर त्रुटि: गेम स्टेट सेव नहीं हो सका। 🕉️', threadID);
   }
   console.log(`[DEBUG] Day phase processed for game ${gameID}`);
   try {
@@ -350,8 +360,8 @@ function cleanupMafiaGames(botState) {
       return;
     }
     Object.keys(game.players).forEach(playerID => {
-      if (!game.players[playerID].name) {
-        console.warn(`[DEBUG] Removing invalid player ${playerID} from game ${gameID} due to missing name`);
+      if (!game.players[playerID].name || !game.alive.has(playerID)) {
+        console.warn(`[DEBUG] Removing invalid player ${playerID} from game ${gameID} due to missing name or not alive`);
         delete game.players[playerID];
         game.alive.delete(playerID);
       }
@@ -362,7 +372,6 @@ function cleanupMafiaGames(botState) {
     }
   });
   try {
-    // Convert all alive Sets to arrays before saving
     Object.keys(botState.mafiaGames).forEach(gameID => {
       const game = botState.mafiaGames[gameID];
       if (game && game.alive instanceof Set) {
@@ -370,7 +379,6 @@ function cleanupMafiaGames(botState) {
       }
     });
     fs.writeFileSync(LEARNED_RESPONSES_PATH, JSON.stringify(botState, null, 2), 'utf8');
-    // Restore Sets after saving
     Object.keys(botState.mafiaGames).forEach(gameID => {
       const game = botState.mafiaGames[gameID];
       if (game && Array.isArray(game.alive)) {
@@ -380,4 +388,4 @@ function cleanupMafiaGames(botState) {
   } catch (err) {
     console.error(`[ERROR] Failed to save cleanup state: ${err.message}`);
   }
-          }
+    }
