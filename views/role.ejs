@@ -16,7 +16,11 @@
     <form method="POST" action="/mafia/<%= gameID %>/action">
       <input type="hidden" name="userID" value="<%= userID %>">
       <% players.forEach(playerID => { %>
-        <button type="submit" name="targetID" value="<%= playerID %>"><%= botState.mafiaGames[gameID].players[playerID].name %></button>
+        <% if (botState.mafiaGames[gameID].players[playerID] && botState.mafiaGames[gameID].players[playerID].name) { %>
+          <button type="submit" name="targetID" value="<%= playerID %>"><%= botState.mafiaGames[gameID].players[playerID].name %></button>
+        <% } else { %>
+          <button type="submit" name="targetID" value="<%= playerID %>">Unknown Player</button>
+        <% } %>
       <% }); %>
     </form>
   <% } else if (role === 'Villager') { %>
