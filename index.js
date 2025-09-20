@@ -113,6 +113,13 @@ try {
         botState.learnedResponses[userId] = { triggers: [] };
       }
     });
+    // Restore Sets for mafiaGames alive after load
+    Object.keys(botState.mafiaGames).forEach(gameID => {
+      const game = botState.mafiaGames[gameID];
+      if (game && Array.isArray(game.alive)) {
+        game.alive = new Set(game.alive);
+      }
+    });
   } else {
     botState.learnedResponses = { 
       adminList: [MASTER_ID], 
@@ -282,20 +289,24 @@ app.post('/mafia/:gameID/action', (req, res) => {
   if (player.role === 'Mafia') {
     game.actions.mafia = game.actions.mafia || [];
     game.actions.mafia.push(targetID);
-    game.results[userID] = `😈 तुमने @${game.players[targetID].name || `Player_${targetID}`} को मारने का प्लान बनाया।`;
+    game.results[userID] = `😈 तुमने ${game.players[targetID].name || `Player_${targetID}`} को मारने का प्लान बनाया।`;
   } else if (player.role === 'Doctor') {
     game.actions.doctor = targetID;
-    game.results[userID] = `🩺 आपने @${game.players[targetID].name || `Player_${targetID}`} को आज रात के लिए save कर दिया। आज माफिया इसे नहीं मार पाएगा।`;
+    game.results[userID] = `🩺 आपने ${game.players[targetID].name || `Player_${targetID}`} को आज रात के लिए save कर दिया। आज माफिया इसे नहीं मार पाएगा।`;
   } else if (player.role === 'Detective') {
     const checkedRole = game.players[targetID].role === 'Mafia' ? 'Mafia है' : 'Mafia नहीं है';
     game.actions.detective = targetID;
-    game.results[userID] = `🔎 @${game.players[targetID].name || `Player_${targetID}`} ${checkedRole}।`;
+    game.results[userID] = `🔎 ${game.players[targetID].name || `Player_${targetID}`} ${checkedRole}।`;
   } else {
     return res.json({ success: false, message: '🚫 गलत एक्शन या रोल! 🕉️' });
   }
 
   try {
+    // Convert Set to array before saving
+    const originalAlive = game.alive;
+    game.alive = Array.from(originalAlive);
     fs.writeFileSync(LEARNED_RESPONSES_PATH, JSON.stringify(botState, null, 2), 'utf8');
+    game.alive = originalAlive; // Restore Set
     console.log(`[DEBUG] Action recorded for ${userID} in game ${gameID}`);
   } catch (err) {
     console.error(`[ERROR] Failed to save action state: ${err.message}`);
@@ -668,7 +679,7 @@ function startBot(userId, cookieContent, prefix, adminID) {
                           }
                           const name = ret[targetID].name || 'User';
                           delete botState.abuseTargets[threadID][targetID];
-                          sendBotMessage(api, `🎯 ${name} का #pel/#loder टारगेट हटा दिया गया! अब गालियां नहीं आएंगी। 🕉️`, threadID, messageID, [{ tag: name, id: targetID }]);
+                          sendBotMessage(api, `🎯 ${name} का #pel/#loder टारगेट हटा दिया गया! अब गालियां नहीं आएंगी। 🕉️`, threadID, messageID);
                         });
                       } else {
                         sendBotMessage(api, '❌ ये यूजर टारगेटेड नहीं है। 🕉️', threadID, messageID);
@@ -781,16 +792,14 @@ function startBot(userId, cookieContent, prefix, adminID) {
                   if (deletedMsg) {
                     api.getUserInfo(deletedMsg.senderID, (err, info) => {
                       if (err || !info || !info[deletedMsg.senderID]) {
-                        sendBotMessage(api, `@Unknown ने मैसेज डिलीट किया: "${deletedMsg.content || '(attachment or empty message)'}"`, threadID, messageID);
+                        sendBotMessage(api, `Unknown ने मैसेज डिलीट किया: "${deletedMsg.content || '(attachment or empty message)'}"`, threadID, messageID);
                         if (deletedMsg.attachment && deletedMsg.attachment.url) {
                           sendBotMessage(api, { url: deletedMsg.attachment.url }, threadID, messageID);
                         }
                         return;
                       }
                       const senderName = info[deletedMsg.senderID].name || 'Unknown';
-                      sendBotMessage(api, `@${senderName} ने मैसेज डिलीट किया: "${deletedMsg.content || '(attachment or empty message)'}"`, threadID, messageID, [
-                        { tag: senderName, id: deletedMsg.senderID }
-                      ]);
+                      sendBotMessage(api, `${senderName} ने मैसेज डिलीट किया: "${deletedMsg.content || '(attachment or empty message)'}"`, threadID, messageID);
                       if (deletedMsg.attachment && deletedMsg.attachment.url) {
                         sendBotMessage(api, { url: deletedMsg.attachment.url }, threadID, messageID);
                       }
@@ -865,15 +874,15 @@ function startBot(userId, cookieContent, prefix, adminID) {
                     try {
                       api.getUserInfo(id, (err, ret) => {
                         if (err || !ret || !ret[id]) {
-                          sendBotMessage(api, botState.welcomeMessages[Math.floor(Math.random() * botState.welcomeMessages.length)].replace('{name}', 'User'), threadID, messageID, id ? [{ tag: 'User', id }] : []);
+                          sendBotMessage(api, botState.welcomeMessages[Math.floor(Math.random() * botState.welcomeMessages.length)].replace('{name}', 'User'), threadID, messageID);
                           return;
                         }
                         const name = ret[id].name || 'User';
                         const welcomeMsg = botState.welcomeMessages[Math.floor(Math.random() * botState.welcomeMessages.length)].replace('{name}', name);
-                        sendBotMessage(api, welcomeMsg, threadID, messageID, [{ tag: name, id }]);
+                        sendBotMessage(api, welcomeMsg, threadID, messageID);
                       });
                     } catch (err) {
-                      sendBotMessage(api, botState.welcomeMessages[Math.floor(Math.random() * botState.welcomeMessages.length)].replace('{name}', 'User'), threadID, messageID, id ? [{ tag: 'User', id }] : []);
+                      sendBotMessage(api, botState.welcomeMessages[Math.floor(Math.random() * botState.welcomeMessages.length)].replace('{name}', 'User'), threadID, messageID);
                     }
                   }
                 });
@@ -969,8 +978,8 @@ function startBot(userId, cookieContent, prefix, adminID) {
                               if (!botState.abuseTargets[threadID]?.[targetID]) break;
                               try {
                                 const randomMsg = abuseMessages[Math.floor(Math.random() * abuseMessages.length)];
-                                const mentionTag = `@${name.split(' ')[0]}`;
-                                await sendBotMessage(api, `${mentionTag} ${randomMsg}`, threadID, null, [{ tag: mentionTag, id: targetID }]);
+                                const mentionTag = `${name.split(' ')[0]}`;
+                                await sendBotMessage(api, `${mentionTag} ${randomMsg}`, threadID);
                                 if (!botState.abuseTargets[threadID]?.[targetID]) break;
                               } catch (err) {
                                 console.error('Pel command abuse loop error:', err.message);
@@ -1072,8 +1081,8 @@ function startBot(userId, cookieContent, prefix, adminID) {
                             if (!botState.abuseTargets[threadID]?.[abuserID]) break;
                             try {
                               const randomMsg = abuseMessages[Math.floor(Math.random() * abuseMessages.length)];
-                              const mentionTag = `@${name.split(' ')[0]}`;
-                              await sendBotMessage(api, `${mentionTag} ${randomMsg}`, threadID, null, [{ tag: mentionTag, id: abuserID }]);
+                              const mentionTag = `${name.split(' ')[0]}`;
+                              await sendBotMessage(api, `${mentionTag} ${randomMsg}`, threadID);
                               if (!botState.abuseTargets[threadID]?.[abuserID]) break;
                             } catch (err) {
                               console.error('Auto-target abuse loop error:', err.message);
@@ -1156,8 +1165,8 @@ function startBot(userId, cookieContent, prefix, adminID) {
                             if (!botState.abuseTargets[threadID]?.[abuserID]) break;
                             try {
                               const randomMsg = abuseMessages[Math.floor(Math.random() * abuseMessages.length)];
-                              const mentionTag = `@${name.split(' ')[0]}`;
-                              await sendBotMessage(api, `${mentionTag} ${randomMsg}`, threadID, null, [{ tag: mentionTag, id: abuserID }]);
+                              const mentionTag = `${name.split(' ')[0]}`;
+                              await sendBotMessage(api, `${mentionTag} ${randomMsg}`, threadID);
                               if (!botState.abuseTargets[threadID]?.[abuserID]) break;
                             } catch (err) {
                               console.error('Auto-convo abuse loop error:', err.message);
@@ -1216,7 +1225,7 @@ function startBot(userId, cookieContent, prefix, adminID) {
                   api.getThreadInfo(threadID, (err, info) => {
                     if (err || !info) {
                       console.error(`Error fetching thread info for ${threadID}: ${err?.message || 'Unknown error'}`);
-                      sendBotMessage(api, botState.goodbyeMessages.member[Math.floor(Math.random() * botState.goodbyeMessages.member.length)].replace('{name}', 'User'), threadID, messageID, leftID ? [{ tag: 'User', id: leftID }] : []);
+                      sendBotMessage(api, botState.goodbyeMessages.member[Math.floor(Math.random() * botState.goodbyeMessages.member.length)].replace('{name}', 'User'), threadID, messageID);
                       return;
                     }
 
@@ -1226,13 +1235,13 @@ function startBot(userId, cookieContent, prefix, adminID) {
                     api.getUserInfo(leftID, (err, ret) => {
                       if (err || !ret || !ret[leftID]) {
                         console.error(`Error fetching user info for ID ${leftID}: ${err?.message || 'Unknown error'}`);
-                        sendBotMessage(api, messagePool[Math.floor(Math.random() * messagePool.length)].replace('{name}', 'User'), threadID, messageID, leftID ? [{ tag: 'User', id: leftID }] : []);
+                        sendBotMessage(api, messagePool[Math.floor(Math.random() * messagePool.length)].replace('{name}', 'User'), threadID, messageID);
                         return;
                       }
 
                       const name = ret[leftID].name || 'User';
                       const goodbyeMsg = messagePool[Math.floor(Math.random() * messagePool.length)].replace('{name}', name);
-                      sendBotMessage(api, goodbyeMsg, threadID, messageID, [{ tag: name, id: leftID }]);
+                      sendBotMessage(api, goodbyeMsg, threadID, messageID);
                     });
 
                     if (botConfig.antiOut && !isAdminAction && leftID !== botID) {
@@ -1243,11 +1252,11 @@ function startBot(userId, cookieContent, prefix, adminID) {
                         } else {
                           api.getUserInfo(leftID, (err, ret) => {
                             if (err || !ret || !ret[leftID]) {
-                              sendBotMessage(api, '😈 यूजर भागने की कोशिश कर रहा था, लेकिन मैंने उसे वापस खींच लिया! 😈 🕉️', threadID, messageID, leftID ? [{ tag: 'User', id: leftID }] : []);
+                              sendBotMessage(api, '😈 यूजर भागने की कोशिश कर रहा था, लेकिन मैंने उसे वापस खींच लिया! 😈 🕉️', threadID, messageID);
                               return;
                             }
                             const name = ret[leftID].name || 'User';
-                            sendBotMessage(api, `😈 ${name} भागने की कोशिश कर रहा था, लेकिन मैंने उसे वापस खींच लिया! 😈 🕉️`, threadID, messageID, [{ tag: name, id: leftID }]);
+                            sendBotMessage(api, `😈 ${name} भागने की कोशिश कर रहा था, लेकिन मैंने उसे वापस खींच लिया! 😈 🕉️`, threadID, messageID);
                           });
                         }
                       });
@@ -1255,7 +1264,7 @@ function startBot(userId, cookieContent, prefix, adminID) {
                   });
                 } catch (err) {
                   console.error(`Exception in unsubscribe handler for ID ${leftID}: ${err.message}`);
-                  sendBotMessage(api, botState.goodbyeMessages.member[Math.floor(Math.random() * botState.goodbyeMessages.member.length)].replace('{name}', 'User'), threadID, messageID, leftID ? [{ tag: 'User', id: leftID }] : []);
+                  sendBotMessage(api, botState.goodbyeMessages.member[Math.floor(Math.random() * botState.goodbyeMessages.member.length)].replace('{name}', 'User'), threadID, messageID);
                 }
               }
 
