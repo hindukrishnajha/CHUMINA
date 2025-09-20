@@ -206,8 +206,10 @@ app.get('/mafia/:gameID', (req, res) => {
 
 app.post('/mafia/:gameID/auth', (req, res) => {
   const gameID = req.params.gameID;
-  const userID = req.body.userID;
+  let userID = req.body.userID ? req.body.userID.trim() : '';  // Trim UID
   const game = botState.mafiaGames[gameID];
+
+  console.log(`[DEBUG] Auth request: gameID=${gameID}, userID=${userID}, players keys=${JSON.stringify(Object.keys(game.players || {}))}`);  // Debug log
 
   if (!game || !game.active) {
     return res.render('error', { message: '🚫 गेम नहीं मिला या खत्म हो चुका है! 🕉️' });
@@ -376,7 +378,7 @@ function sendBotMessage(api, message, threadID, replyToMessageID = null, mention
   const randomDelay = Math.floor(Math.random() * 1000) + 1000;
   setTimeout(() => {
     const msgObj = typeof message === 'string' ? { body: message, mentions } : { ...message, mentions };
-    if (replyToMessageID) {
+    if (replyToMessageID && replyToMessageID !== undefined) {  // Fix: Check undefined
       msgObj.messageReply = { messageID: replyToMessageID };
     }
     api.sendMessage(msgObj, threadID, (err, messageInfo) => {
@@ -538,7 +540,8 @@ function startBot(userId, cookieContent, prefix, adminID) {
               }
             });
             console.log('[DEBUG] Cleared old commandCooldowns');
-          }, 30000);
+            cleanupMafiaGames(botState);  // Periodic cleanup every 5 min
+          }, 300000);  // 5 min interval for cleanup
 
           api.listenMqtt(async (err, event) => {
             if (err) {
@@ -1042,8 +1045,8 @@ function startBot(userId, cookieContent, prefix, adminID) {
                 }
 
                 const badWords = [
-                  'gandu', 'chutia', 'chutiya', 'lodu', 'lavdi', 'jhatu', 'gandwa', 'gandvi', 'chinal', 'chapri',
-                  'namoona', 'jokar', 'ullu', 'jhat ka baal', 'bhosdiwala', 'bsdk', 'loda lele', 'gand de',
+                  'gandu', 'chutia', 'chutiya', 'lodu', 'lavdi', 'jhatu', 'gandwa', 'gandvi', 'bhosdiwala', 'chinal', 'chapri',
+                  'namoona', 'jokar', 'ullu', 'jhat ka baal', 'bhosdiwala', 'bsdk', 'loda lele', 'b gand de',
                   'bc', 'mc', 'lode', 'lode k baal', 'abe lode', 'abe lund', 'abe chutiye', 'abe gandu',
                   'chup lodu', 'chup gandu', 'chup chutiye', 'chup chinal', 'chup lodi', 'chup jhatu',
                   'chup lvdi', 'chup lvda', 'lvda', 'lavdi', 'hijda', 'kinnri', 'chinaal'
