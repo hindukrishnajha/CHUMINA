@@ -17,7 +17,12 @@ module.exports = {
       if (botState.mafiaGames[threadID]) return api.sendMessage('🚫 पहले से गेम चल रहा है! #mafia stop से बंद करो। 🕉️', threadID);
       botState.mafiaGames[threadID] = { players: {}, phase: 'join', active: true, actions: {}, votes: {}, alive: new Set(), results: {} };
       try {
+        // Convert Set to array before saving
+        const game = botState.mafiaGames[threadID];
+        const originalAlive = game.alive;
+        game.alive = Array.from(originalAlive);
         fs.writeFileSync(LEARNED_RESPONSES_PATH, JSON.stringify(botState, null, 2), 'utf8');
+        game.alive = originalAlive; // Restore Set
         console.log(`[DEBUG] Game started for threadID: ${threadID}, state saved`);
       } catch (err) {
         console.error(`[ERROR] Failed to save start state: ${err.message}`);
@@ -69,7 +74,12 @@ module.exports = {
       assignRoles(botState, gameID);
       botState.mafiaGames[gameID].phase = 'night';
       try {
+        // Convert Set to array before saving
+        const game = botState.mafiaGames[gameID];
+        const originalAlive = game.alive;
+        game.alive = Array.from(originalAlive);
         fs.writeFileSync(LEARNED_RESPONSES_PATH, JSON.stringify(botState, null, 2), 'utf8');
+        game.alive = originalAlive; // Restore Set
         console.log(`[DEBUG] Game ${gameID} moved to night phase, state saved`);
       } catch (err) {
         console.error(`[ERROR] Failed to save night phase state: ${err.message}`);
@@ -105,7 +115,12 @@ module.exports = {
       }
       botState.mafiaGames[gameID].votes[event.senderID] = targetID;
       try {
+        // Convert Set to array before saving
+        const game = botState.mafiaGames[gameID];
+        const originalAlive = game.alive;
+        game.alive = Array.from(originalAlive);
         fs.writeFileSync(LEARNED_RESPONSES_PATH, JSON.stringify(botState, null, 2), 'utf8');
+        game.alive = originalAlive; // Restore Set
         console.log(`[DEBUG] Vote recorded for ${event.senderID} against ${targetID}`);
       } catch (err) {
         console.error(`[ERROR] Failed to save vote state: ${err.message}`);
@@ -124,15 +139,11 @@ module.exports = {
         } else {
           const senderName = ret[event.senderID].name || `Player_${event.senderID}`;
           const targetName = ret[targetID].name || `Player_${targetID}`;
-          const voteMessage = `✅ @${senderName}, तुमने @${targetName} को वोट किया! 🎯`;
+          const voteMessage = `✅ ${senderName}, तुमने ${targetName} को वोट किया! 🎯`;
           try {
-            api.sendMessage(voteMessage, threadID, null, [
-              { tag: senderName, id: event.senderID.toString() },
-              { tag: targetName, id: targetID.toString() }
-            ]);
+            api.sendMessage(voteMessage, threadID);
           } catch (err) {
-            console.error(`[ERROR] Failed to send eliminate message with mentions: ${err.message}`);
-            api.sendMessage(voteMessage.replace(/@[^,]+/g, ''), threadID);
+            console.error(`[ERROR] Failed to send eliminate message: ${err.message}`);
           }
         }
       });
@@ -163,21 +174,25 @@ module.exports = {
 
 function saveStateAndSendJoinMessage(api, threadID, gameID, botState, name, senderID) {
   try {
+    // Convert Set to array before saving
+    const game = botState.mafiaGames[gameID];
+    const originalAlive = game.alive;
+    game.alive = Array.from(originalAlive);
     fs.writeFileSync(LEARNED_RESPONSES_PATH, JSON.stringify(botState, null, 2), 'utf8');
+    game.alive = originalAlive; // Restore Set
     console.log(`[DEBUG] Player ${name} (${senderID}) joined game ${gameID}. Total players: ${Object.keys(botState.mafiaGames[gameID].players).length}`);
   } catch (err) {
     console.error(`[ERROR] Failed to save join state for ${senderID}: ${err.message}`);
   }
   const playerCount = Object.keys(botState.mafiaGames[gameID].players).length;
-  const joinMessage = `✅ @${name}, तुम गेम में शामिल हो गए! अभी ${playerCount} प्लेयर्स हैं। 🎉`;
+  const joinMessage = `✅ ${name}, तुम गेम में शामिल हो गए! अभी ${playerCount} प्लेयर्स हैं। 🎉`;
   try {
-    api.sendMessage(joinMessage, threadID, null, [{ tag: name, id: senderID.toString() }]);
+    api.sendMessage(joinMessage, threadID);
     if (playerCount >= 4) {
       api.sendMessage('🔔 4+ प्लेयर्स जॉइन हो गए! मास्टर, #mafia begin से शुरू करो। 😎', threadID);
     }
   } catch (err) {
     console.error(`[ERROR] Failed to send join message for ${senderID}: ${err.message}`);
-    api.sendMessage(joinMessage.replace(/@[^,]+/, name), threadID);
   }
 }
 
@@ -210,7 +225,7 @@ function processNightPhase(api, threadID, gameID, botState) {
   if (target && target !== game.actions.doctor) {
     game.alive.delete(target);
     const targetName = game.players[target].name || `Player_${target}`;
-    result += `@${targetName} मर गया! वो ${game.players[target].role} था।`;
+    result += `${targetName} मर गया! वो ${game.players[target].role} था।`;
   } else if (target) {
     result += 'Doctor ने बचा लिया! कोई नहीं मरा।';
   } else {
@@ -221,24 +236,25 @@ function processNightPhase(api, threadID, gameID, botState) {
     const detectiveID = Object.keys(game.players).find(id => game.players[id].role === 'Detective');
     const checkedName = game.players[game.actions.detective].name || `Player_${game.actions.detective}`;
     game.results = game.results || {};
-    game.results[detectiveID] = `🔎 @${checkedName} ${checkedRole}`;
+    game.results[detectiveID] = `🔎 ${checkedName} ${checkedRole}`;
     try {
       api.sendMessage(
-        `🔎 @${checkedName} ${checkedRole}।`,
-        detectiveID,
-        null,
-        [{ tag: checkedName, id: game.actions.detective.toString() }]
+        `🔎 ${checkedName} ${checkedRole}।`,
+        detectiveID
       );
     } catch (err) {
       console.error(`[ERROR] Failed to send detective message: ${err.message}`);
-      api.sendMessage(`🔎 ${checkedName} ${checkedRole}।`, detectiveID);
     }
   }
   game.phase = 'day';
   game.votes = {};
   game.actions = { mafia: [], doctor: null, detective: null };
   try {
+    // Convert Set to array before saving
+    const originalAlive = game.alive;
+    game.alive = Array.from(originalAlive);
     fs.writeFileSync(LEARNED_RESPONSES_PATH, JSON.stringify(botState, null, 2), 'utf8');
+    game.alive = originalAlive; // Restore Set
   } catch (err) {
     console.error(`[ERROR] Failed to save night phase state: ${err.message}`);
   }
@@ -255,14 +271,11 @@ function processNightPhase(api, threadID, gameID, botState) {
         const missingNames = missing.map(id => game.players[id].name || `Player_${id}`).join(', ');
         try {
           api.sendMessage(
-            `🔔 @${missingNames}, 20 सेकंड में वोट करो, वरना काउंट नहीं होगा! 🎯`,
-            threadID,
-            null,
-            missing.map(id => ({ tag: game.players[id].name || `Player_${id}`, id: id.toString() }))
+            `🔔 ${missingNames}, 20 सेकंड में वोट करो, वरना काउंट नहीं होगा! 🎯`,
+            threadID
           );
         } catch (err) {
           console.error(`[ERROR] Failed to send missing votes message: ${err.message}`);
-          api.sendMessage(`🔔 ${missingNames}, 20 सेकंड में वोट करो, वरना काउंट नहीं होगा! 🎯`, threadID);
         }
       }
       setTimeout(() => processDayPhase(api, threadID, gameID, botState), 20000);
@@ -282,7 +295,7 @@ function processDayPhase(api, threadID, gameID, botState) {
     if (eliminated) {
       game.alive.delete(eliminated);
       const eliminatedName = game.players[eliminated].name || `Player_${eliminated}`;
-      result += `@${eliminatedName} को वोट से निकाला गया! वो ${game.players[eliminated].role} था।`;
+      result += `${eliminatedName} को वोट से निकाला गया! वो ${game.players[eliminated].role} था।`;
     }
   } else {
     result += 'कोई वोट नहीं हुआ।';
@@ -291,9 +304,19 @@ function processDayPhase(api, threadID, gameID, botState) {
   const villagerCount = game.alive.size - mafiaCount;
   if (mafiaCount === 0) {
     result += '\n🏆 Villagers जीत गए! 🎉';
+    let rolesList = '\nसभी प्लेयर्स के रोल:\n';
+    Object.entries(game.players).forEach(([id, player]) => {
+      rolesList += `${player.name}: ${player.role}\n`;
+    });
+    result += rolesList;
     delete botState.mafiaGames[gameID];
   } else if (mafiaCount >= villagerCount) {
     result += '\n🏆 Mafia जीत गए! 😈';
+    let rolesList = '\nसभी प्लेयर्स के रोल:\n';
+    Object.entries(game.players).forEach(([id, player]) => {
+      rolesList += `${player.name}: ${player.role}\n`;
+    });
+    result += rolesList;
     delete botState.mafiaGames[gameID];
   } else {
     result += '\n🌙 नया नाइट फेज शुरू! लिंक पर जाओ और एक्शन चुनो। 😎';
@@ -302,7 +325,11 @@ function processDayPhase(api, threadID, gameID, botState) {
     game.results = {}; // Clear results for new night phase
   }
   try {
+    // Convert Set to array before saving
+    const originalAlive = game.alive;
+    game.alive = Array.from(originalAlive);
     fs.writeFileSync(LEARNED_RESPONSES_PATH, JSON.stringify(botState, null, 2), 'utf8');
+    game.alive = originalAlive; // Restore Set
   } catch (err) {
     console.error(`[ERROR] Failed to save day phase state: ${err.message}`);
   }
@@ -335,8 +362,22 @@ function cleanupMafiaGames(botState) {
     }
   });
   try {
+    // Convert all alive Sets to arrays before saving
+    Object.keys(botState.mafiaGames).forEach(gameID => {
+      const game = botState.mafiaGames[gameID];
+      if (game && game.alive instanceof Set) {
+        game.alive = Array.from(game.alive);
+      }
+    });
     fs.writeFileSync(LEARNED_RESPONSES_PATH, JSON.stringify(botState, null, 2), 'utf8');
+    // Restore Sets after saving
+    Object.keys(botState.mafiaGames).forEach(gameID => {
+      const game = botState.mafiaGames[gameID];
+      if (game && Array.isArray(game.alive)) {
+        game.alive = new Set(game.alive);
+      }
+    });
   } catch (err) {
     console.error(`[ERROR] Failed to save cleanup state: ${err.message}`);
   }
-        }
+      }
