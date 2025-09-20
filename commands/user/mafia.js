@@ -342,6 +342,25 @@ function processDayPhase(api, threadID, gameID, botState) {
     game.phase = 'night';
     game.actions = { mafia: [], doctor: null, detective: null };
     game.results = {};
+    const joinLink = `https://${process.env.RENDER_SERVICE_NAME || 'your-render-service'}.onrender.com/mafia/${gameID}`;
+    try {
+      api.sendMessage(
+        `🌙 नया नाइट फेज शुरू! इस लिंक पर जाकर 3 मिनट में एक्शन चुनो: ${joinLink} 😈`,
+        threadID
+      );
+    } catch (err) {
+      console.error(`[ERROR] Failed to send new night phase message: ${err.message}`);
+    }
+    setTimeout(() => {
+      if (botState.mafiaGames[gameID]?.active) {
+        try {
+          api.sendMessage('🔔 कुछ यूजर्स बाकी हैं, 1 मिनट में लिंक पर जाकर एक्शन चुनो!', threadID);
+        } catch (err) {
+          console.error(`[ERROR] Failed to send reminder message: ${err.message}`);
+        }
+        setTimeout(() => processNightPhase(api, threadID, gameID, botState), 60000);
+      }
+    }, 120000);
   }
   try {
     const originalAlive = game.alive;
@@ -398,4 +417,4 @@ function cleanupMafiaGames(botState) {
   } catch (err) {
     console.error(`[ERROR] Failed to save cleanup state: ${err.message}`);
   }
-                      }
+        }
