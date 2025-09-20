@@ -15,14 +15,14 @@
     <p><%= role === 'Mafia' ? 'आज रात किसे मारना है?' : role === 'Doctor' ? 'आज रात किसे बचाना है?' : 'किसे चेक करना है?' %></p>
     <form method="POST" action="/mafia/<%= gameID %>/action">
       <input type="hidden" name="userID" value="<%= userID %>">
-      <% players.forEach(playerID => { %>
-        <button type="submit" name="targetID" value="<%= playerID %>"><%= botState.mafiaGames[gameID].players[playerID].name || 'Unknown' %></button>
+      <% players.forEach(player => { %>
+        <button type="submit" name="targetID" value="<%= player.id %>"><%= player.name || 'Unknown' %></button>
       <% }); %>
     </form>
   <% } else if (role === 'Villager') { %>
-    <p>नाइट फेज में कोई एक्शन नहीं। ग्रुप में #eliminate @user से वोट करो। 🕉️</p>
+    <p>नाइट फेज में कोई एक्शन नहीं। ग्रुप में #mafia eliminate @user से वोट करो। 🕉️</p>
   <% } else { %>
-    <p>अभी डे फेज है! ग्रुप में #eliminate @user से वोट करो। 🕉️</p>
+    <p>अभी डे फेज है! ग्रुप में #mafia eliminate @user से वोट करो। 🕉️</p>
   <% } %>
 </body>
 </html>
