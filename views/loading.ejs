@@ -18,7 +18,9 @@
       const input = document.createElement('input');
       input.type = 'hidden';
       input.name = 'userID';
-      input.value = prompt('अपना UID डालें (ग्रुप में #uid से लें):');
+      let uid = prompt('अपना UID डालें (ग्रुप में #uid से लें):');
+      uid = uid ? uid.trim() : '';  // Trim to remove spaces
+      input.value = uid;
       form.appendChild(input);
       document.body.appendChild(form);
       form.submit();
