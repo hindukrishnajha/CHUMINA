@@ -22,8 +22,12 @@ module.exports = {
       } catch (err) {
         console.error(`[ERROR] Failed to save start state: ${err.message}`);
       }
+      const joinLink = `https://${process.env.RENDER_SERVICE_NAME}.onrender.com/mafia/${threadID}`;
       try {
-        api.sendMessage('🕹️ माफिया गेम शुरू हो गया! जो-जो हिस्सा लेना चाहते हैं, #mafia join लिखो। कम से कम 4 प्लेयर्स होने पर गेम शुरू होगा। 😎', threadID);
+        api.sendMessage(
+          `🕹️ माफिया गेम शुरू हो गया! जो-जो हिस्सा लेना चाहते हैं, #mafia join लिखो। कम से कम 4 प्लेयर्स होने पर गेम शुरू होगा। 😎\nजॉइन लिंक: ${joinLink}`,
+          threadID
+        );
       } catch (err) {
         console.error(`[ERROR] Failed to send start message: ${err.message}`);
       }
@@ -34,7 +38,7 @@ module.exports = {
         return api.sendMessage('🚫 कोई गेम शुरू नहीं हुआ! #mafia start करो। 🕉️', threadID);
       }
       api.getUserInfo(event.senderID, (err, ret) => {
-        if (err) {
+        if (err || !ret || !ret[event.senderID]) {
           console.error(`[ERROR] Failed to fetch user info for ${event.senderID}: ${err.message}`);
           return api.sendMessage('⚠️ यूजर जानकारी लेने में असफल। 🕉️', threadID);
         }
@@ -79,9 +83,10 @@ module.exports = {
       } catch (err) {
         console.error(`[ERROR] Failed to save night phase state: ${err.message}`);
       }
+      const joinLink = `https://${process.env.RENDER_SERVICE_NAME}.onrender.com/mafia/${gameID}`;
       try {
         api.sendMessage(
-          '🕹️ गेम शुरू हो गया! सब लोग इस लिंक पर जाकर अपना रोल देख लो: https://shelendr-hinduu-kaa-gulaam-raam-kishor.onrender.com/mafia/' + gameID + '। 5 सेकंड वेट करो, बॉट तुम्हारा UID चेक करके रोल दिखाएगा। 🌙 नाइट फेज शुरू, 3 मिनट में एक्शन चुनो! 😈',
+          `🕹️ गेम शुरू हो गया! सब लोग इस लिंक पर जाकर अपना रोल देख लो: ${joinLink}\n5 सेकंड वेट करो, बॉट तुम्हारा UID चेक करके रोल दिखाएगा। 🌙 नाइट फेज शुरू, 3 मिनट में एक्शन चुनो! 😈`,
           threadID
         );
       } catch (err) {
@@ -114,7 +119,10 @@ module.exports = {
         console.error(`[ERROR] Failed to save vote state: ${err.message}`);
       }
       api.getUserInfo([event.senderID, targetID], (err, ret) => {
-        if (err) return api.sendMessage('⚠️ नाम लेने में असफल। 🕉️', threadID);
+        if (err || !ret || !ret[event.senderID] || !ret[targetID]) {
+          console.error(`[ERROR] Failed to fetch user info for sender ${event.senderID} or target ${targetID}: ${err.message}`);
+          return api.sendMessage('⚠️ नाम लेने में असफल। 🕉️', threadID);
+        }
         const senderName = ret[event.senderID].name || `Player_${event.senderID}`;
         const targetName = ret[targetID].name || `Player_${targetID}`;
         const voteMessage = `✅ @${senderName}, तुमने @${targetName} को वोट किया! 🎯`;
@@ -308,4 +316,4 @@ function cleanupMafiaGames(botState) {
   } catch (err) {
     console.error(`[ERROR] Failed to save cleanup state: ${err.message}`);
   }
-          }
+  }
