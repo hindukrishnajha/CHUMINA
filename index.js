@@ -237,20 +237,22 @@ app.get('/mafia/:gameID/role', (req, res) => {
   };
   const currentAction = roleActions[player.role];
 
+  const validPlayers = Object.keys(game.players)
+    .filter(id => id !== userID && game.alive.has(id))
+    .map(id => ({ id, name: game.players[id].name || `Player_${id}` })); // Full name or fallback
+
   res.render('role', {
     gameID,
     userID,
     role: player.role,
-    name: player.name,
+    name: player.name || `Player_${userID}`,
     isAlive,
     phase: game.phase,
     action: currentAction.action,
     actionDescription: currentAction.description,
-    players: Object.keys(game.players)
-      .filter(id => id !== userID && game.alive.has(id))
-      .map(id => ({ id, name: game.players[id].name })),
+    players: validPlayers,
     botState,
-    message: null // कोई मैसेज अगर हो, तो यहाँ पास करें
+    message: null
   });
 });
 
