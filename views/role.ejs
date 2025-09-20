@@ -16,7 +16,7 @@
     <form method="POST" action="/mafia/<%= gameID %>/action">
       <input type="hidden" name="userID" value="<%= userID %>">
       <% players.forEach((player, index) => { %>
-        <button type="submit" name="targetID" value="<%= player.id %>"><%= player.name || 'Player_' + (index + 1) %></button>
+        <button type="submit" name="targetID" value="<%= player.id %>"><%= player.name || 'Player_' + player.id %></button>
       <% }); %>
     </form>
   <% } else if (role === 'Villager') { %>
