@@ -22,12 +22,8 @@ module.exports = {
       } catch (err) {
         console.error(`[ERROR] Failed to save start state: ${err.message}`);
       }
-      const joinLink = `https://${process.env.RENDER_SERVICE_NAME}.onrender.com/mafia/${threadID}`;
       try {
-        api.sendMessage(
-          `🕹️ माफिया गेम शुरू हो गया! जो-जो हिस्सा लेना चाहते हैं, #mafia join लिखो। कम से कम 4 प्लेयर्स होने पर गेम शुरू होगा। 😎\nजॉइन लिंक: ${joinLink}`,
-          threadID
-        );
+        api.sendMessage('🕹️ माफिया गेम शुरू हो गया! जो-जो हिस्सा लेना चाहते हैं, #mafia join लिखो। कम से कम 4 प्लेयर्स होने पर गेम शुरू होगा। 😎', threadID);
       } catch (err) {
         console.error(`[ERROR] Failed to send start message: ${err.message}`);
       }
@@ -38,15 +34,15 @@ module.exports = {
         return api.sendMessage('🚫 कोई गेम शुरू नहीं हुआ! #mafia start करो। 🕉️', threadID);
       }
       api.getUserInfo(event.senderID, (err, ret) => {
-        if (err || !ret || !ret[event.senderID]) {
+        if (err) {
           console.error(`[ERROR] Failed to fetch user info for ${event.senderID}: ${err.message}`);
           return api.sendMessage('⚠️ यूजर जानकारी लेने में असफल। 🕉️', threadID);
         }
-        const name = ret[event.senderID].name || `Player_${event.senderID}`; // Fallback name
+        const name = ret[event.senderID].name || `Player_${event.senderID}`;
         if (botState.mafiaGames[gameID].players[event.senderID]) {
           return api.sendMessage('🚫 तुम पहले से जॉइन हो चुके हो! 🕉️', threadID);
         }
-        botState.mafiaGames[gameID].players[event.senderID] = { name: name, role: null }; // Full name save
+        botState.mafiaGames[gameID].players[event.senderID] = { name: name, role: null };
         botState.mafiaGames[gameID].alive.add(event.senderID);
         try {
           fs.writeFileSync(LEARNED_RESPONSES_PATH, JSON.stringify(botState, null, 2), 'utf8');
@@ -83,10 +79,9 @@ module.exports = {
       } catch (err) {
         console.error(`[ERROR] Failed to save night phase state: ${err.message}`);
       }
-      const joinLink = `https://${process.env.RENDER_SERVICE_NAME}.onrender.com/mafia/${gameID}`;
       try {
         api.sendMessage(
-          `🕹️ गेम शुरू हो गया! सब लोग इस लिंक पर जाकर अपना रोल देख लो: ${joinLink}\n5 सेकंड वेट करो, बॉट तुम्हारा UID चेक करके रोल दिखाएगा। 🌙 नाइट फेज शुरू, 3 मिनट में एक्शन चुनो! 😈`,
+          '🕹️ गेम शुरू हो गया! सब लोग इस लिंक पर जाकर अपना रोल देख लो: https://shelendr-hinduu-kaa-gulaam-raam-kishor.onrender.com/mafia/' + gameID + '। 5 सेकंड वेट करो, बॉट तुम्हारा UID चेक करके रोल दिखाएगा। 🌙 नाइट फेज शुरू, 3 मिनट में एक्शन चुनो! 😈',
           threadID
         );
       } catch (err) {
@@ -316,4 +311,4 @@ function cleanupMafiaGames(botState) {
   } catch (err) {
     console.error(`[ERROR] Failed to save cleanup state: ${err.message}`);
   }
-  }
+    }
