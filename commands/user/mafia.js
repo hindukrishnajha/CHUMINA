@@ -35,33 +35,37 @@ module.exports = {
           return api.sendMessage('⚠️ यूजर जानकारी लेने में असफल। 🕉️', threadID);
         }
         const name = ret[event.senderID].name || 'Player';
+        const sanitizedName = name.replace(/[^a-zA-Z0-9\s]/g, '').slice(0, 50); // Sanitize name
         if (botState.mafiaGames[gameID].players[event.senderID]) {
           return api.sendMessage('🚫 तुम पहले से जॉइन हो चुके हो! 🕉️', threadID);
         }
-        botState.mafiaGames[gameID].players[event.senderID] = { name, role: null };
+        botState.mafiaGames[gameID].players[event.senderID] = { name: sanitizedName, role: null };
         botState.mafiaGames[gameID].alive.add(event.senderID);
         fs.writeFileSync(LEARNED_RESPONSES_PATH, JSON.stringify(botState, null, 2), 'utf8');
-        console.log(`[DEBUG] Player ${name} (${event.senderID}) joined game ${gameID}`);
+        console.log(`[DEBUG] Player ${sanitizedName} (${event.senderID}) joined game ${gameID}. Total players: ${Object.keys(botState.mafiaGames[gameID].players).length}`);
         try {
           api.sendMessage(
-            `✅ @${name}, तुम गेम में शामिल हो गए! अभी ${Object.keys(botState.mafiaGames[gameID].players).length} प्लेयर्स हैं। 🎉`,
+            `✅ @${sanitizedName}, तुम गेम में शामिल हो गए! अभी ${Object.keys(botState.mafiaGames[gameID].players).length} प्लेयर्स हैं। 🎉`,
             threadID,
             null,
-            [{ tag: String(name), id: String(event.senderID) }]
+            [{ tag: `${sanitizedName}`, id: `${event.senderID}` }]
           );
           if (Object.keys(botState.mafiaGames[gameID].players).length >= 4) {
             api.sendMessage('🔔 4+ प्लेयर्स जॉइन हो गए! मास्टर, #mafia begin से शुरू करो। 😎', threadID);
           }
         } catch (err) {
           console.error(`[ERROR] Failed to send join message for ${event.senderID}: ${err.message}`);
-          api.sendMessage(`✅ ${name}, तुम गेम में शामिल हो गए! अभी ${Object.keys(botState.mafiaGames[gameID].players).length} प्लेयर्स हैं। 🎉`, threadID);
+          api.sendMessage(`✅ ${sanitizedName}, तुम गेम में शामिल हो गए! अभी ${Object.keys(botState.mafiaGames[gameID].players).length} प्लेयर्स हैं। 🎉`, threadID);
         }
       });
     } else if (command === 'begin') {
       if (!isMaster) return api.sendMessage('🚫 सिर्फ मास्टर गेम शुरू कर सकता है! 🕉️', threadID);
       const gameID = threadID;
-      if (!botState.mafiaGames[gameID] || Object.keys(botState.mafiaGames[gameID].players).length < 4) {
-        return api.sendMessage('⚠️ कम से कम 4 प्लेयर्स चाहिए! 🕉️', threadID);
+      const players = botState.mafiaGames[gameID]?.players || {};
+      const playerCount = Object.keys(players).filter(id => players[id] && players[id].name).length;
+      console.log(`[DEBUG] Begin command for game ${gameID}. Player count: ${playerCount}, Players: ${JSON.stringify(players)}`);
+      if (!botState.mafiaGames[gameID] || playerCount < 4) {
+        return api.sendMessage(`⚠️ कम से कम 4 प्लेयर्स चाहिए! अभी ${playerCount} प्लेयर्स हैं। 🕉️`, threadID);
       }
       assignRoles(botState, gameID);
       botState.mafiaGames[gameID].phase = 'night';
@@ -77,7 +81,11 @@ module.exports = {
       }
       setTimeout(() => {
         if (botState.mafiaGames[gameID]?.active) {
-          api.sendMessage('🔔 कुछ यूजर्स बाकी हैं, 1 मिनट में लिंक पर जाकर एक्शन चुनो!', threadID);
+          try {
+            api.sendMessage('🔔 कुछ यूजर्स बाकी हैं, 1 मिनट में लिंक पर जाकर एक्शन चुनो!', threadID);
+          } catch (err) {
+            console.error(`[ERROR] Failed to send reminder message: ${err.message}`);
+          }
         }
         setTimeout(() => processNightPhase(api, threadID, gameID, botState), 60000);
       }, 120000);
@@ -97,16 +105,18 @@ module.exports = {
         if (err) return api.sendMessage('⚠️ नाम लेने में असफल। 🕉️', threadID);
         const senderName = ret[event.senderID].name || 'Player';
         const targetName = ret[targetID].name || 'Player';
+        const sanitizedSenderName = senderName.replace(/[^a-zA-Z0-9\s]/g, '').slice(0, 50);
+        const sanitizedTargetName = targetName.replace(/[^a-zA-Z0-9\s]/g, '').slice(0, 50);
         try {
           api.sendMessage(
-            `✅ @${senderName}, तुमने @${targetName} को वोट किया! 🎯`,
+            `✅ @${sanitizedSenderName}, तुमने @${sanitizedTargetName} को वोट किया! 🎯`,
             threadID,
             null,
-            [{ tag: String(senderName), id: String(event.senderID) }, { tag: String(targetName), id: String(targetID) }]
+            [{ tag: `${sanitizedSenderName}`, id: `${event.senderID}` }, { tag: `${sanitizedTargetName}`, id: `${targetID}` }]
           );
         } catch (err) {
           console.error(`[ERROR] Failed to send eliminate message: ${err.message}`);
-          api.sendMessage(`✅ ${senderName}, तुमने ${targetName} को वोट किया! 🎯`, threadID);
+          api.sendMessage(`✅ ${sanitizedSenderName}, तुमने ${sanitizedTargetName} को वोट किया! 🎯`, threadID);
         }
       });
     } else if (command === 'stop') {
@@ -115,15 +125,23 @@ module.exports = {
       delete botState.mafiaGames[gameID];
       fs.writeFileSync(LEARNED_RESPONSES_PATH, JSON.stringify(botState, null, 2), 'utf8');
       console.log(`[DEBUG] Game stopped for threadID: ${threadID}`);
-      api.sendMessage('🛑 माफिया गेम बंद कर दिया गया! 🕉️', threadID);
+      try {
+        api.sendMessage('🛑 माफिया गेम बंद कर दिया गया! 🕉️', threadID);
+      } catch (err) {
+        console.error(`[ERROR] Failed to send stop message: ${err.message}`);
+      }
     } else {
-      api.sendMessage('❌ यूज: #mafia start, #mafia join, #mafia begin, #mafia eliminate @user, #mafia stop 🕉️', threadID);
+      try {
+        api.sendMessage('❌ यूज: #mafia start, #mafia join, #mafia begin, #mafia eliminate @user, #mafia stop 🕉️', threadID);
+      } catch (err) {
+        console.error(`[ERROR] Failed to send usage message: ${err.message}`);
+      }
     }
   }
 };
 
 function assignRoles(botState, gameID) {
-  const players = Object.keys(botState.mafiaGames[gameID].players);
+  const players = Object.keys(botState.mafiaGames[gameID].players).filter(id => botState.mafiaGames[gameID].players[id].name);
   const count = players.length;
   const mafiaCount = (count >= 8 && count <= 12) ? 2 : (count >= 4 && count <= 7) ? 1 : 0;
   const roles = [];
@@ -166,7 +184,7 @@ function processNightPhase(api, threadID, gameID, botState) {
         `🔎 @${checkedName} ${checkedRole}। ग्रुप में रिजल्ट देखो।`,
         detectiveID,
         null,
-        [{ tag: String(checkedName), id: String(game.actions.detective) }]
+        [{ tag: `${checkedName}`, id: `${game.actions.detective}` }]
       );
     } catch (err) {
       console.error(`[ERROR] Failed to send detective message: ${err.message}`);
@@ -249,8 +267,8 @@ function cleanupMafiaGames(botState) {
       return;
     }
     Object.keys(game.players).forEach(playerID => {
-      if (!game.players[playerID].name || !game.players[playerID].role) {
-        console.warn(`[DEBUG] Removing invalid player ${playerID} from game ${gameID}`);
+      if (!game.players[playerID].name) {
+        console.warn(`[DEBUG] Removing invalid player ${playerID} from game ${gameID} due to missing name`);
         delete game.players[playerID];
         game.alive.delete(playerID);
       }
@@ -261,4 +279,4 @@ function cleanupMafiaGames(botState) {
     }
   });
   fs.writeFileSync(LEARNED_RESPONSES_PATH, JSON.stringify(botState, null, 2), 'utf8');
-            }
+}
