@@ -15,7 +15,7 @@ module.exports = {
     if (command === 'start') {
       if (!isMaster) return api.sendMessage('🚫 सिर्फ मास्टर गेम शुरू कर सकता है! अपनी UID adminList में डालें। 🕉️', threadID);
       if (botState.mafiaGames[threadID]) return api.sendMessage('🚫 पहले से गेम चल रहा है! #mafia stop से बंद करो। 🕉️', threadID);
-      botState.mafiaGames[threadID] = { players: {}, phase: 'join', active: true, actions: {}, votes: {}, alive: new Set(), results: {} };
+      botState.mafiaGames[threadID] = { players: {}, phase: 'join', active: true, actions: {}, votes: {}, alive: new Set(), results: {}, startTime: Date.now() };  // Added startTime for cleanup
       try {
         const game = botState.mafiaGames[threadID];
         const originalAlive = game.alive;
@@ -78,6 +78,9 @@ module.exports = {
         const originalAlive = game.alive;
         game.alive = Array.from(originalAlive);
         fs.writeFileSync(LEARNED_RESPONSES_PATH, JSON.stringify(botState, null, 2), 'utf8');
+        if (!fs.existsSync(LEARNED_RESPONSES_PATH)) {  // Check if saved
+          console.error('[ERROR] State file not found after save!');
+        }
         game.alive = originalAlive;
         console.log(`[DEBUG] Game ${gameID} moved to night phase, state saved`);
       } catch (err) {
@@ -180,9 +183,15 @@ function saveStateAndSendJoinMessage(api, threadID, gameID, botState, name, send
   try {
     const originalAlive = game.alive;
     game.alive = Array.from(originalAlive);
+    const backupPath = LEARNED_RESPONSES_PATH + '.backup';
+    fs.writeFileSync(backupPath, JSON.stringify(botState, null, 2), 'utf8');  // Backup first
     fs.writeFileSync(LEARNED_RESPONSES_PATH, JSON.stringify(botState, null, 2), 'utf8');
+    if (!fs.existsSync(LEARNED_RESPONSES_PATH)) {
+      console.error('[ERROR] State file not found after save! Using backup.');
+      fs.copyFileSync(backupPath, LEARNED_RESPONSES_PATH);
+    }
     game.alive = originalAlive;
-    console.log(`[DEBUG] Player ${name} (${senderID}) joined game ${gameID}. Total players: ${Object.keys(botState.mafiaGames[gameID].players).length}`);
+    console.log(`[DEBUG] Player ${name} (${senderID}) joined game ${gameID}. Total players: ${Object.keys(botState.mafiaGames[gameID].players).length}, players keys: ${JSON.stringify(Object.keys(game.players))}`);
   } catch (err) {
     console.error(`[ERROR] Failed to save join state for ${senderID}: ${err.message}`);
     api.sendMessage('⚠️ सर्वर त्रुटि: जॉइन नहीं हो सका। बाद में फिर ट्राई करें। 🕉️', threadID);
@@ -352,11 +361,12 @@ function processDayPhase(api, threadID, gameID, botState) {
 }
 
 function cleanupMafiaGames(botState) {
+  const now = Date.now();
   Object.keys(botState.mafiaGames).forEach(gameID => {
     const game = botState.mafiaGames[gameID];
-    if (!game || !game.active || (game.phase !== 'join' && Object.keys(game.players).length === 0)) {
+    if (!game || !game.active || (game.phase !== 'join' && Object.keys(game.players).length === 0) || (game.startTime && now - game.startTime > 3600000)) {  // Delete if >1 hour old
       delete botState.mafiaGames[gameID];
-      console.log(`[DEBUG] Removed inactive or empty game: ${gameID}`);
+      console.log(`[DEBUG] Removed inactive or empty or old game: ${gameID}`);
       return;
     }
     Object.keys(game.players).forEach(playerID => {
@@ -388,4 +398,4 @@ function cleanupMafiaGames(botState) {
   } catch (err) {
     console.error(`[ERROR] Failed to save cleanup state: ${err.message}`);
   }
-    }
+                      }
