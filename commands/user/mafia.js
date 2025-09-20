@@ -1,5 +1,5 @@
 const fs = require('fs');
-const { LEARNED_RESPONSES_PATH } = require('../../config/constants'); // इम्पोर्ट जोड़ा
+const { LEARNED_RESPONSES_PATH } = require('../../config/constants');
 
 module.exports = {
   name: 'mafia',
@@ -9,20 +9,27 @@ module.exports = {
     const command = args[0] ? args[0].toLowerCase() : '';
     botState.mafiaGames = botState.mafiaGames || {};
 
-    // Cleanup invalid games on command
+    // Cleanup invalid games on command, but preserve join phase
     cleanupMafiaGames(botState);
 
     if (command === 'start') {
-      if (!isMaster) return api.sendMessage('🚫 सिर्फ मास्टर गेम शुरू कर सकता है! 🕉️', threadID);
+      if (!isMaster) return api.sendMessage('🚫 सिर्फ मास्टर गेम शुरू कर सकता है! अपनी UID adminList में डालें। 🕉️', threadID);
       if (botState.mafiaGames[threadID]) return api.sendMessage('🚫 पहले से गेम चल रहा है! #mafia stop से बंद करो। 🕉️', threadID);
       botState.mafiaGames[threadID] = { players: {}, phase: 'join', active: true, actions: {}, votes: {}, alive: new Set() };
       fs.writeFileSync(LEARNED_RESPONSES_PATH, JSON.stringify(botState, null, 2), 'utf8');
+      console.log(`[DEBUG] Game started for threadID: ${threadID}`);
       api.sendMessage('🕹️ माफिया गेम शुरू हो गया! जो-जो हिस्सा लेना चाहते हैं, #mafia join लिखो। कम से कम 4 प्लेयर्स होने पर गेम शुरू होगा। 😎', threadID);
     } else if (command === 'join') {
-      const gameID = threadID; // Use threadID as gameID for group-specific
-      if (!botState.mafiaGames[gameID] || botState.mafiaGames[gameID].phase !== 'join') return api.sendMessage('🚫 कोई गेम शुरू नहीं हुआ! #mafia start करो। 🕉️', threadID);
+      const gameID = threadID;
+      if (!botState.mafiaGames[gameID] || botState.mafiaGames[gameID].phase !== 'join') {
+        console.log(`[DEBUG] No joinable game for threadID: ${threadID}`);
+        return api.sendMessage('🚫 कोई गेम शुरू नहीं हुआ! #mafia start करो। 🕉️', threadID);
+      }
       api.getUserInfo(event.senderID, (err, ret) => {
-        if (err) return api.sendMessage('⚠️ यूजर जानकारी लेने में असफल। 🕉️', threadID);
+        if (err) {
+          console.error(`[ERROR] Failed to fetch user info for ${event.senderID}: ${err.message}`);
+          return api.sendMessage('⚠️ यूजर जानकारी लेने में असफल। 🕉️', threadID);
+        }
         const name = ret[event.senderID].name || 'Player';
         if (botState.mafiaGames[gameID].players[event.senderID]) {
           return api.sendMessage('🚫 तुम पहले से जॉइन हो चुके हो! 🕉️', threadID);
@@ -30,6 +37,7 @@ module.exports = {
         botState.mafiaGames[gameID].players[event.senderID] = { name, role: null };
         botState.mafiaGames[gameID].alive.add(event.senderID);
         fs.writeFileSync(LEARNED_RESPONSES_PATH, JSON.stringify(botState, null, 2), 'utf8');
+        console.log(`[DEBUG] Player ${name} (${event.senderID}) joined game ${gameID}`);
         api.sendMessage(`✅ @${name}, तुम गेम में शामिल हो गए! अभी ${Object.keys(botState.mafiaGames[gameID].players).length} प्लेयर्स हैं। 🎉`, threadID, null, [{ tag: name, id: event.senderID }]);
         if (Object.keys(botState.mafiaGames[gameID].players).length >= 4) {
           api.sendMessage('🔔 4+ प्लेयर्स जॉइन हो गए! मास्टर, #mafia begin से शुरू करो। 😎', threadID);
@@ -44,6 +52,7 @@ module.exports = {
       assignRoles(botState, gameID);
       botState.mafiaGames[gameID].phase = 'night';
       fs.writeFileSync(LEARNED_RESPONSES_PATH, JSON.stringify(botState, null, 2), 'utf8');
+      console.log(`[DEBUG] Game ${gameID} moved to night phase`);
       api.sendMessage('🕹️ गेम शुरू हो गया! सब लोग इस लिंक पर जाकर अपना रोल देख लो: https://shelendr-hinduu-kaa-gulaam-raam-kishor.onrender.com/mafia/' + gameID + '। 5 सेकंड वेट करो, बॉट तुम्हारा UID चेक करके रोल दिखाएगा। 🌙 नाइट फेज शुरू, 3 मिनट में एक्शन चुनो! 😈', threadID);
       setTimeout(() => {
         if (botState.mafiaGames[gameID]?.active) {
@@ -74,6 +83,7 @@ module.exports = {
       if (!botState.mafiaGames[gameID]) return api.sendMessage('🚫 कोई गेम चल नहीं रहा! 🕉️', threadID);
       delete botState.mafiaGames[gameID];
       fs.writeFileSync(LEARNED_RESPONSES_PATH, JSON.stringify(botState, null, 2), 'utf8');
+      console.log(`[DEBUG] Game stopped for threadID: ${threadID}`);
       api.sendMessage('🛑 माफिया गेम बंद कर दिया गया! 🕉️', threadID);
     } else {
       api.sendMessage('❌ यूज: #mafia start, #mafia join, #mafia begin, #mafia eliminate @user, #mafia stop 🕉️', threadID);
@@ -90,12 +100,11 @@ function assignRoles(botState, gameID) {
   roles.push('Doctor');
   roles.push('Detective');
   for (let i = 0; i < count - mafiaCount - 2; i++) roles.push('Villager');
-  // Better shuffle
   roles.sort(() => Math.random() - 0.5);
   players.forEach((id, i) => {
     botState.mafiaGames[gameID].players[id].role = roles[i];
   });
-  console.log('[DEBUG] Assigned roles for game ' + gameID + ': ' + JSON.stringify(roles));
+  console.log(`[DEBUG] Assigned roles for game ${gameID}: ${JSON.stringify(roles)}`);
 }
 
 function processNightPhase(api, threadID, gameID, botState) {
@@ -127,6 +136,7 @@ function processNightPhase(api, threadID, gameID, botState) {
   game.votes = {};
   game.actions = { mafia: [], doctor: null, detective: null };
   fs.writeFileSync(LEARNED_RESPONSES_PATH, JSON.stringify(botState, null, 2), 'utf8');
+  console.log(`[DEBUG] Night phase processed for game ${gameID}`);
   api.sendMessage(result + '\n☀️ डे फेज शुरू! #mafia eliminate @user से वोट करो (3 मिनट)। 😎', threadID);
   setTimeout(() => {
     if (game.active) {
@@ -170,15 +180,17 @@ function processDayPhase(api, threadID, gameID, botState) {
     game.actions = { mafia: [], doctor: null, detective: null };
   }
   fs.writeFileSync(LEARNED_RESPONSES_PATH, JSON.stringify(botState, null, 2), 'utf8');
+  console.log(`[DEBUG] Day phase processed for game ${gameID}`);
   api.sendMessage(result, threadID);
 }
 
 function cleanupMafiaGames(botState) {
   Object.keys(botState.mafiaGames).forEach(gameID => {
     const game = botState.mafiaGames[gameID];
-    if (!game.active) {
+    // Don't delete games in join phase with no players yet
+    if (!game.active || (game.phase !== 'join' && Object.keys(game.players).length === 0)) {
       delete botState.mafiaGames[gameID];
-      console.log(`[DEBUG] Removed inactive game: ${gameID}`);
+      console.log(`[DEBUG] Removed inactive or empty game: ${gameID}`);
       return;
     }
     Object.keys(game.players).forEach(playerID => {
@@ -188,10 +200,10 @@ function cleanupMafiaGames(botState) {
         game.alive.delete(playerID);
       }
     });
-    if (Object.keys(game.players).length === 0) {
+    if (game.phase !== 'join' && Object.keys(game.players).length === 0) {
       delete botState.mafiaGames[gameID];
-      console.log(`[DEBUG] Removed empty game: ${gameID}`);
+      console.log(`[DEBUG] Removed empty game after player cleanup: ${gameID}`);
     }
   });
   fs.writeFileSync(LEARNED_RESPONSES_PATH, JSON.stringify(botState, null, 2), 'utf8');
-    }
+        }
