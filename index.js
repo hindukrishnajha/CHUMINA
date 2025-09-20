@@ -117,11 +117,7 @@ try {
     Object.keys(botState.mafiaGames).forEach(gameID => {
       const game = botState.mafiaGames[gameID];
       if (game && Array.isArray(game.alive)) {
-        console.log(`[DEBUG] Restoring alive Set for gameID: ${gameID}, alive: ${game.alive}`);
         game.alive = new Set(game.alive);
-      } else if (game && !game.alive) {
-        console.warn(`[WARN] No alive data for gameID: ${gameID}, initializing empty Set`);
-        game.alive = new Set();
       }
     });
   } else {
@@ -138,10 +134,7 @@ try {
       lastNicknameChange: {},
       mafiaGames: {}
     };
-    fs.writeFileSync(LEARNED_RESPONSES_PATH, JSON.stringify(botState.learnedResponses, (key, value) => {
-      if (value instanceof Set) return Array.from(value);
-      return value;
-    }, 2), 'utf8');
+    fs.writeFileSync(LEARNED_RESPONSES_PATH, JSON.stringify(botState.learnedResponses, null, 2), 'utf8');
     botState.adminList = [MASTER_ID];
     botState.chatEnabled = {};
     botState.deleteNotifyEnabled = {};
@@ -181,10 +174,7 @@ try {
   botState.nicknameQueues = {};
   botState.lastNicknameChange = {};
   botState.mafiaGames = {};
-  fs.writeFileSync(LEARNED_RESPONSES_PATH, JSON.stringify(botState.learnedResponses, (key, value) => {
-    if (value instanceof Set) return Array.from(value);
-    return value;
-  }, 2), 'utf8');
+  fs.writeFileSync(LEARNED_RESPONSES_PATH, JSON.stringify(botState.learnedResponses, null, 2), 'utf8');
 }
 
 botState.autoConvo = false;
@@ -208,103 +198,49 @@ app.get('/mafia/:gameID', (req, res) => {
   const game = botState.mafiaGames[gameID];
   
   if (!game || !game.active) {
-    console.error(`[ERROR] Game not found or inactive for gameID: ${gameID}`);
-    return res.render('error', { message: '🚫 गेम नहीं मिला या खत्म हो चुका है! #mafia start से नया गेम शुरू करो। 🕉️' });
+    return res.render('error', { message: '🚫 गेम नहीं मिला या खत्म हो चुका है! 🕉️' });
   }
 
-  console.log(`[DEBUG] Loading page for gameID: ${gameID}, players: ${JSON.stringify(Object.keys(game.players))}`);
   res.render('loading', { gameID });
 });
 
 app.post('/mafia/:gameID/auth', (req, res) => {
   const gameID = req.params.gameID;
-  const userID = String(req.body.userID || '').trim(); // Ensure UID is string and trimmed
+  const userID = req.body.userID;
   const game = botState.mafiaGames[gameID];
 
   if (!game || !game.active) {
-    console.error(`[ERROR] Game not found or inactive for gameID: ${gameID}`);
-    return res.render('error', { message: '🚫 गेम नहीं मिला या खत्म हो चुका है! #mafia start से नया गेम शुरू करो। 🕉️' });
+    return res.render('error', { message: '🚫 गेम नहीं मिला या खत्म हो चुका है! 🕉️' });
   }
 
   if (!userID || !game.players[userID]) {
-    console.error(`[ERROR] Invalid UID or user not in game: ${userID}, gameID: ${gameID}, players: ${JSON.stringify(Object.keys(game.players))}`);
-    return res.render('error', { message: '🚫 गलत UID या यूजर गेम में नहीं है! अपनी सही UID डालें। 🕉️' });
+    return res.render('error', { message: '🚫 गलत UID या यूजर गेम में नहीं है! 🕉️' });
   }
 
-  console.log(`[DEBUG] Auth successful for userID: ${userID}, redirecting to role page`);
   res.redirect(`/mafia/${gameID}/role?uid=${userID}`);
 });
 
 app.get('/mafia/:gameID/role', (req, res) => {
   const gameID = req.params.gameID;
-  let userID = String(req.query.uid || '').trim(); // Ensure UID is string and trimmed
+  const userID = req.query.uid;
   const game = botState.mafiaGames[gameID];
 
-  // Log incoming request
-  console.log(`[DEBUG] Role request for gameID: ${gameID}, userID: ${userID}`);
-
-  // Check if game exists and is active
   if (!game || !game.active) {
-    console.error(`[ERROR] Game not found or inactive for gameID: ${gameID}`);
-    return res.render('error', { message: '🚫 गेम नहीं मिला या खत्म हो चुका है! #mafia start से नया गेम शुरू करो। 🕉️' });
+    return res.render('error', { message: '🚫 गेम नहीं मिला या खत्म हो चुका है! 🕉️' });
   }
 
-  // Validate userID
-  if (!userID) {
-    console.error(`[ERROR] No UID provided for gameID: ${gameID}`);
-    return res.render('error', { message: '🚫 UID डालें! अपनी सही UID डालें। 🕉️' });
+  if (!userID || !game.players[userID]) {
+    return res.render('error', { message: '🚫 गलत UID या यूजर गेम में नहीं है! 🕉️' });
   }
 
-  // Ensure players object exists
-  if (!game.players || typeof game.players !== 'object') {
-    console.error(`[ERROR] Invalid players object for gameID: ${gameID}`);
-    return res.render('error', { message: '🚫 इंटरनल एरर: गेम डेटा करप्ट है। #mafia start से नया गेम शुरू करो। 🕉️' });
-  }
-
-  // Check if user is in the game
-  if (!game.players[userID]) {
-    console.error(`[ERROR] User not in game: ${userID}, gameID: ${gameID}, players: ${JSON.stringify(Object.keys(game.players))}`);
-    return res.render('error', { message: '🚫 गलत UID या यूजर गेम में नहीं है! अपनी सही UID डालें। 🕉️' });
-  }
-
-  // Ensure alive is a Set
-  if (!(game.alive instanceof Set)) {
-    console.warn(`[WARN] game.alive is not a Set for gameID: ${gameID}, current value: ${JSON.stringify(game.alive)}`);
-    game.alive = new Set(Array.isArray(game.alive) ? game.alive : Object.keys(game.players));
-    try {
-      const originalAlive = game.alive;
-      botState.learnedResponses.mafiaGames[gameID].alive = Array.from(game.alive);
-      fs.writeFileSync(LEARNED_RESPONSES_PATH, JSON.stringify(botState.learnedResponses, (key, value) => {
-        if (value instanceof Set) return Array.from(value);
-        return value;
-      }, 2), 'utf8');
-      game.alive = originalAlive;
-      console.log(`[DEBUG] Fixed and saved game.alive for gameID: ${gameID}, new alive: ${JSON.stringify(Array.from(game.alive))}`);
-    } catch (err) {
-      console.error(`[ERROR] Failed to save fixed game state: ${err.message}`);
-      return res.render('error', { message: '🚫 इंटरनल एरर: गेम स्टेट सेव करने में गलती। बाद में ट्राई करें। 🕉️' });
-    }
-  }
-
-  const isAlive = game.alive.has(userID);
   const player = game.players[userID];
-
-  // Log player details
-  console.log(`[DEBUG] Displaying role for userID: ${userID}, role: ${player.role}, isAlive: ${isAlive}, gameID: ${gameID}`);
-
+  const isAlive = game.alive.has(userID);
   const roleActions = {
     Mafia: { action: 'eliminate', description: 'किसी को मारने के लिए चुनें। 😈' },
     Doctor: { action: 'save', description: 'किसी को बचाने के लिए चुनें। 🩺' },
     Detective: { action: 'check', description: 'किसी की भूमिका जाँचने के लिए चुनें। 🔎' },
     Villager: { action: null, description: 'आपका काम यहाँ नहीं, ग्रुप में है। ग्रुप में रहकर अपने दिमाग से पता लगाओ माफिया कौन है और सबको convince करो कि ये माफिया हो सकता है ताकि सब वोट देकर उसे eliminate कर दें। 🧑' }
   };
-
-  // Validate player role
-  if (!player.role || !roleActions[player.role]) {
-    console.error(`[ERROR] Invalid role for userID: ${userID}, role: ${player.role}`);
-    return res.render('error', { message: '🚫 इंटरनल एरर: यूजर का रोल गलत है। #mafia start से नया गेम शुरू करो। 🕉️' });
-  }
-
   const currentAction = roleActions[player.role];
 
   const validPlayers = Object.keys(game.players)
@@ -313,50 +249,36 @@ app.get('/mafia/:gameID/role', (req, res) => {
 
   const actionResult = game.results && game.results[userID] ? game.results[userID] : null;
 
-  try {
-    res.render('role', {
-      gameID,
-      userID,
-      role: player.role,
-      name: player.name || `Player_${userID}`,
-      isAlive,
-      phase: game.phase || 'unknown',
-      action: currentAction.action,
-      actionDescription: currentAction.description,
-      players: validPlayers,
-      botState,
-      message: actionResult || null
-    });
-    console.log(`[DEBUG] Successfully rendered role page for userID: ${userID}, gameID: ${gameID}`);
-  } catch (err) {
-    console.error(`[ERROR] Failed to render role page for userID: ${userID}, gameID: ${gameID}, error: ${err.message}`);
-    return res.render('error', { message: '🚫 इंटरनल एरर: रोल पेज रेंडर करने में गलती। बाद में ट्राई करें। 🕉️' });
-  }
+  res.render('role', {
+    gameID,
+    userID,
+    role: player.role,
+    name: player.name || `Player_${userID}`,
+    isAlive,
+    phase: game.phase,
+    action: currentAction.action,
+    actionDescription: currentAction.description,
+    players: validPlayers,
+    botState,
+    message: actionResult || null
+  });
 });
 
 app.post('/mafia/:gameID/action', (req, res) => {
   const gameID = req.params.gameID;
-  const userID = String(req.body.userID || '').trim(); // Ensure UID is string
-  const targetID = String(req.body.targetID || '').trim(); // Ensure targetID is string
+  const userID = req.body.userID;
+  const targetID = req.body.targetID;
   const game = botState.mafiaGames[gameID];
 
   if (!game || !game.active) {
-    console.error(`[ERROR] Game not found or inactive for gameID: ${gameID}`);
     return res.json({ success: false, message: '🚫 गेम नहीं मिला या खत्म हो चुका है! 🕉️' });
   }
 
   if (!userID || !game.players[userID] || !game.alive.has(userID)) {
-    console.error(`[ERROR] Invalid userID or user not alive: ${userID}, gameID: ${gameID}`);
     return res.json({ success: false, message: '🚫 यूजर गेम में नहीं है या मर चुका है! 🕉️' });
   }
 
-  if (!targetID || !game.players[targetID]) {
-    console.error(`[ERROR] Invalid targetID: ${targetID}, gameID: ${gameID}`);
-    return res.json({ success: false, message: '🚫 गलत टारगेट यूजर! 🕉️' });
-  }
-
   if (game.phase !== 'night') {
-    console.error(`[ERROR] Not night phase for gameID: ${gameID}, current phase: ${game.phase}`);
     return res.json({ success: false, message: '🚫 अभी नाइट फेज नहीं है! 🕉️' });
   }
 
@@ -375,22 +297,14 @@ app.post('/mafia/:gameID/action', (req, res) => {
     game.actions.detective = targetID;
     game.results[userID] = `🔎 ${game.players[targetID].name || `Player_${targetID}`} ${checkedRole}।`;
   } else {
-    console.error(`[ERROR] Invalid role for action: ${player.role}, userID: ${userID}`);
     return res.json({ success: false, message: '🚫 गलत एक्शन या रोल! 🕉️' });
   }
 
   try {
-    const originalAlive = game.alive;
-    botState.learnedResponses.mafiaGames[gameID].alive = Array.from(game.alive);
-    fs.writeFileSync(LEARNED_RESPONSES_PATH, JSON.stringify(botState.learnedResponses, (key, value) => {
-      if (value instanceof Set) return Array.from(value);
-      return value;
-    }, 2), 'utf8');
-    game.alive = originalAlive;
-    console.log(`[DEBUG] Action recorded and state saved for userID: ${userID}, targetID: ${targetID}, gameID: ${gameID}`);
+    fs.writeFileSync(LEARNED_RESPONSES_PATH, JSON.stringify(botState, null, 2), 'utf8');
+    console.log(`[DEBUG] Action recorded for ${userID} in game ${gameID}`);
   } catch (err) {
     console.error(`[ERROR] Failed to save action state: ${err.message}`);
-    return res.json({ success: false, message: '🚫 इंटरनल एरर: एक्शन सेव करने में गलती। 🕉️' });
   }
   res.json({ success: true, message: '✅ एक्शन रजिस्टर हो गया! रिजल्ट नीचे देखें। 🕉️' });
 });
@@ -496,10 +410,7 @@ function stopBot(userId) {
   if (botState.learnedResponses[userId]) {
     delete botState.learnedResponses[userId];
     try {
-      fs.writeFileSync(LEARNED_RESPONSES_PATH, JSON.stringify(botState.learnedResponses, (key, value) => {
-        if (value instanceof Set) return Array.from(value);
-        return value;
-      }, 2), 'utf8');
+      fs.writeFileSync(LEARNED_RESPONSES_PATH, JSON.stringify(botState.learnedResponses, null, 2), 'utf8');
       console.log(`Deleted learned responses for user ${userId}`);
     } catch (err) {
       console.error(`Error saving learned_responses.json after deleting user ${userId} responses: ${err.message}`);
@@ -515,7 +426,7 @@ function stopBot(userId) {
     botState.sessions[userId].api = null;
   }
 
-  delete botState.sessions[userId];
+ delete botState.sessions[userId];
   broadcast({ type: 'log', message: `Bot stopped for user ${userId}`, userId });
   broadcast({ type: 'status', userId, running: false });
 }
@@ -539,10 +450,7 @@ function startBot(userId, cookieContent, prefix, adminID) {
 
   if (!botState.learnedResponses[userId]) {
     botState.learnedResponses[userId] = { triggers: [] };
-    fs.writeFileSync(LEARNED_RESPONSES_PATH, JSON.stringify(botState.learnedResponses, (key, value) => {
-      if (value instanceof Set) return Array.from(value);
-      return value;
-    }, 2), 'utf8');
+    fs.writeFileSync(LEARNED_RESPONSES_PATH, JSON.stringify(botState.learnedResponses, null, 2), 'utf8');
   }
 
   const tryLogin = (attempt = 1, maxAttempts = 1) => {
@@ -705,18 +613,12 @@ function startBot(userId, cookieContent, prefix, adminID) {
                   if (action === 'on') {
                     botState.deleteNotifyEnabled[threadID] = true;
                     botState.learnedResponses.deleteNotifyEnabled = botState.deleteNotifyEnabled;
-                    fs.writeFileSync(LEARNED_RESPONSES_PATH, JSON.stringify(botState.learnedResponses, (key, value) => {
-                      if (value instanceof Set) return Array.from(value);
-                      return value;
-                    }, 2), 'utf8');
+                    fs.writeFileSync(LEARNED_RESPONSES_PATH, JSON.stringify(botState.learnedResponses, null, 2), 'utf8');
                     sendBotMessage(api, '✅ डिलीट नोटिफिकेशन चालू कर दिया गया।', threadID, messageID);
                   } else if (action === 'off') {
                     botState.deleteNotifyEnabled[threadID] = false;
                     botState.learnedResponses.deleteNotifyEnabled = botState.deleteNotifyEnabled;
-                    fs.writeFileSync(LEARNED_RESPONSES_PATH, JSON.stringify(botState.learnedResponses, (key, value) => {
-                      if (value instanceof Set) return Array.from(value);
-                      return value;
-                    }, 2), 'utf8');
+                    fs.writeFileSync(LEARNED_RESPONSES_PATH, JSON.stringify(botState.learnedResponses, null, 2), 'utf8');
                     sendBotMessage(api, '✅ डिलीट नोटिफिकेशन बंद कर दिया गया।', threadID, messageID);
                   } else {
                     sendBotMessage(api, '❌ यूज: #delete on या #delete off', threadID, messageID);
@@ -729,18 +631,12 @@ function startBot(userId, cookieContent, prefix, adminID) {
                   if (action === 'on') {
                     botState.chatEnabled[threadID] = true;
                     botState.learnedResponses.chatEnabled = botState.chatEnabled;
-                    fs.writeFileSync(LEARNED_RESPONSES_PATH, JSON.stringify(botState.learnedResponses, (key, value) => {
-                      if (value instanceof Set) return Array.from(value);
-                      return value;
-                    }, 2), 'utf8');
+                    fs.writeFileSync(LEARNED_RESPONSES_PATH, JSON.stringify(botState.learnedResponses, null, 2), 'utf8');
                     sendBotMessage(api, '✅ AI चैट चालू कर दिया गया।', threadID, messageID);
                   } else if (action === 'off') {
                     botState.chatEnabled[threadID] = false;
                     botState.learnedResponses.chatEnabled = botState.chatEnabled;
-                    fs.writeFileSync(LEARNED_RESPONSES_PATH, JSON.stringify(botState.learnedResponses, (key, value) => {
-                      if (value instanceof Set) return Array.from(value);
-                      return value;
-                    }, 2), 'utf8');
+                    fs.writeFileSync(LEARNED_RESPONSES_PATH, JSON.stringify(botState.learnedResponses, null, 2), 'utf8');
                     sendBotMessage(api, '✅ AI चैट बंद कर दिया गया।', threadID, messageID);
                   } else {
                     sendBotMessage(api, '❌ यूज: #chat on या #chat off', threadID, messageID);
@@ -753,18 +649,12 @@ function startBot(userId, cookieContent, prefix, adminID) {
                   if (action === 'on') {
                     botState.roastEnabled[threadID] = true;
                     botState.learnedResponses.roastEnabled = botState.roastEnabled;
-                    fs.writeFileSync(LEARNED_RESPONSES_PATH, JSON.stringify(botState.learnedResponses, (key, value) => {
-                      if (value instanceof Set) return Array.from(value);
-                      return value;
-                    }, 2), 'utf8');
+                    fs.writeFileSync(LEARNED_RESPONSES_PATH, JSON.stringify(botState.learnedResponses, null, 2), 'utf8');
                     sendBotMessage(api, '✅ रोस्ट चालू कर दिया गया।', threadID, messageID);
                   } else if (action === 'off') {
                     botState.roastEnabled[threadID] = false;
                     botState.learnedResponses.roastEnabled = botState.roastEnabled;
-                    fs.writeFileSync(LEARNED_RESPONSES_PATH, JSON.stringify(botState.learnedResponses, (key, value) => {
-                      if (value instanceof Set) return Array.from(value);
-                      return value;
-                    }, 2), 'utf8');
+                    fs.writeFileSync(LEARNED_RESPONSES_PATH, JSON.stringify(botState.learnedResponses, null, 2), 'utf8');
                     sendBotMessage(api, '✅ रोस्ट बंद कर दिया गया।', threadID, messageID);
                   } else {
                     sendBotMessage(api, '❌ यूज: #roast on या #roast off', threadID, messageID);
@@ -859,10 +749,7 @@ function startBot(userId, cookieContent, prefix, adminID) {
                             });
                             sendBotMessage(api, `✅ नया रिस्पॉन्स सीखा गया!\nट्रिगर: ${trigger}\nरिस्पॉन्स: ${response} 🕉️`, threadID, messageID);
                           }
-                          fs.writeFileSync(LEARNED_RESPONSES_PATH, JSON.stringify(botState.learnedResponses, (key, value) => {
-                            if (value instanceof Set) return Array.from(value);
-                            return value;
-                          }, 2), 'utf8');
+                          fs.writeFileSync(LEARNED_RESPONSES_PATH, JSON.stringify(botState.learnedResponses, null, 2), 'utf8');
                         } else {
                           sendBotMessage(api, '❌ ट्रिगर को ( ) में डालें, जैसे: #learn (trigger) {response} 🕉️', threadID, messageID);
                         }
@@ -1444,7 +1331,7 @@ try {
 }
 
 const keepAlive = setInterval(() => {
-  axios.get(`https://${process.env.RENDER_SERVICE_NAME}.onrender.com/health`).catch(err => {
+  axios.get(`https://${process.env.RENDER_SERVICE_NAME || 'your-render-service'}.onrender.com/health`).catch(err => {
     console.error('Keep-alive request failed:', err.message);
   });
 }, 5000);
@@ -1466,6 +1353,17 @@ setInterval(() => {
     console.log('Cleared memory caches due to high usage');
   }
 }, 30000);
+
+// Clear mafiaGames on bot shutdown
+process.on('exit', () => {
+  botState.mafiaGames = {};
+  try {
+    fs.writeFileSync(LEARNED_RESPONSES_PATH, JSON.stringify(botState, null, 2), 'utf8');
+    console.log('[DEBUG] Cleared mafiaGames on exit, state saved');
+  } catch (err) {
+    console.error(`[ERROR] Failed to save state on exit: ${err.message}`);
+  }
+});
 
 process.on('uncaughtException', (err) => {
   console.error('Uncaught Exception:', err.message);
