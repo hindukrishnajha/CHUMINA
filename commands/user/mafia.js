@@ -9,15 +9,18 @@ module.exports = {
     const command = args[0] ? args[0].toLowerCase() : '';
     botState.mafiaGames = botState.mafiaGames || {};
 
+    // Cleanup invalid games on command
+    cleanupMafiaGames(botState);
+
     if (command === 'start') {
       if (!isMaster) return api.sendMessage('🚫 सिर्फ मास्टर गेम शुरू कर सकता है! 🕉️', threadID);
-      const gameID = Math.random().toString(36).substring(2, 8);
-      botState.mafiaGames[gameID] = { players: {}, phase: 'join', active: true, actions: {}, votes: {}, alive: new Set() };
+      if (botState.mafiaGames[threadID]) return api.sendMessage('🚫 पहले से गेम चल रहा है! #mafia stop से बंद करो। 🕉️', threadID);
+      botState.mafiaGames[threadID] = { players: {}, phase: 'join', active: true, actions: {}, votes: {}, alive: new Set() };
       fs.writeFileSync(LEARNED_RESPONSES_PATH, JSON.stringify(botState, null, 2), 'utf8');
       api.sendMessage('🕹️ माफिया गेम शुरू हो गया! जो-जो हिस्सा लेना चाहते हैं, #mafia join लिखो। कम से कम 4 प्लेयर्स होने पर गेम शुरू होगा। 😎', threadID);
     } else if (command === 'join') {
-      const gameID = Object.keys(botState.mafiaGames).find(id => botState.mafiaGames[id].phase === 'join' && botState.mafiaGames[id].active);
-      if (!gameID) return api.sendMessage('🚫 कोई गेम शुरू नहीं हुआ! #mafia start करो। 🕉️', threadID);
+      const gameID = threadID; // Use threadID as gameID for group-specific
+      if (!botState.mafiaGames[gameID] || botState.mafiaGames[gameID].phase !== 'join') return api.sendMessage('🚫 कोई गेम शुरू नहीं हुआ! #mafia start करो। 🕉️', threadID);
       api.getUserInfo(event.senderID, (err, ret) => {
         if (err) return api.sendMessage('⚠️ यूजर जानकारी लेने में असफल। 🕉️', threadID);
         const name = ret[event.senderID].name || 'Player';
@@ -27,15 +30,15 @@ module.exports = {
         botState.mafiaGames[gameID].players[event.senderID] = { name, role: null };
         botState.mafiaGames[gameID].alive.add(event.senderID);
         fs.writeFileSync(LEARNED_RESPONSES_PATH, JSON.stringify(botState, null, 2), 'utf8');
-        api.sendMessage(`✅ @${name}, तुम गेम में शामिल हो गए! अभी ${Object.keys(botState.mafiaGames[gameID].players).length} प्लेयर्स हैं। 🎉`, threadID);
+        api.sendMessage(`✅ @${name}, तुम गेम में शामिल हो गए! अभी ${Object.keys(botState.mafiaGames[gameID].players).length} प्लेयर्स हैं। 🎉`, threadID, null, [{ tag: name, id: event.senderID }]);
         if (Object.keys(botState.mafiaGames[gameID].players).length >= 4) {
           api.sendMessage('🔔 4+ प्लेयर्स जॉइन हो गए! मास्टर, #mafia begin से शुरू करो। 😎', threadID);
         }
       });
     } else if (command === 'begin') {
       if (!isMaster) return api.sendMessage('🚫 सिर्फ मास्टर गेम शुरू कर सकता है! 🕉️', threadID);
-      const gameID = Object.keys(botState.mafiaGames).find(id => botState.mafiaGames[id].phase === 'join' && botState.mafiaGames[id].active);
-      if (!gameID || Object.keys(botState.mafiaGames[gameID].players).length < 4) {
+      const gameID = threadID;
+      if (!botState.mafiaGames[gameID] || Object.keys(botState.mafiaGames[gameID].players).length < 4) {
         return api.sendMessage('⚠️ कम से कम 4 प्लेयर्स चाहिए! 🕉️', threadID);
       }
       assignRoles(botState, gameID);
@@ -49,8 +52,8 @@ module.exports = {
         setTimeout(() => processNightPhase(api, threadID, gameID, botState), 60000);
       }, 120000);
     } else if (command === 'eliminate') {
-      const gameID = Object.keys(botState.mafiaGames).find(id => botState.mafiaGames[id].phase === 'day' && botState.mafiaGames[id].active);
-      if (!gameID) return api.sendMessage('🚫 अभी डे फेज नहीं है! 🕉️', threadID);
+      const gameID = threadID;
+      if (!botState.mafiaGames[gameID] || botState.mafiaGames[gameID].phase !== 'day') return api.sendMessage('🚫 अभी डे फेज नहीं है! 🕉️', threadID);
       const targetID = Object.keys(event.mentions)[0];
       if (!targetID || !botState.mafiaGames[gameID].players[targetID]) {
         return api.sendMessage('⚠️ गलत यूजर! गेम में प्लेयर को मेंशन करो। 🕉️', threadID);
@@ -64,11 +67,11 @@ module.exports = {
         if (err) return api.sendMessage('⚠️ नाम लेने में असफल। 🕉️', threadID);
         const senderName = ret[event.senderID].name || 'Player';
         const targetName = ret[targetID].name || 'Player';
-        api.sendMessage(`✅ @${senderName}, तुमने @${targetName} को वोट किया! 🎯`, threadID);
+        api.sendMessage(`✅ @${senderName}, तुमने @${targetName} को वोट किया! 🎯`, threadID, null, [{ tag: senderName, id: event.senderID }, { tag: targetName, id: targetID }]);
       });
     } else if (command === 'stop') {
-      const gameID = Object.keys(botState.mafiaGames).find(id => botState.mafiaGames[id].active);
-      if (!gameID) return api.sendMessage('🚫 कोई गेम चल नहीं रहा! 🕉️', threadID);
+      const gameID = threadID;
+      if (!botState.mafiaGames[gameID]) return api.sendMessage('🚫 कोई गेम चल नहीं रहा! 🕉️', threadID);
       delete botState.mafiaGames[gameID];
       fs.writeFileSync(LEARNED_RESPONSES_PATH, JSON.stringify(botState, null, 2), 'utf8');
       api.sendMessage('🛑 माफिया गेम बंद कर दिया गया! 🕉️', threadID);
@@ -87,10 +90,12 @@ function assignRoles(botState, gameID) {
   roles.push('Doctor');
   roles.push('Detective');
   for (let i = 0; i < count - mafiaCount - 2; i++) roles.push('Villager');
-  players.sort(() => Math.random() - 0.5).forEach((id, i) => {
+  // Better shuffle
+  roles.sort(() => Math.random() - 0.5);
+  players.forEach((id, i) => {
     botState.mafiaGames[gameID].players[id].role = roles[i];
   });
-  console.log('[DEBUG] Assigned roles for game ' + gameID);
+  console.log('[DEBUG] Assigned roles for game ' + gameID + ': ' + JSON.stringify(roles));
 }
 
 function processNightPhase(api, threadID, gameID, botState) {
@@ -105,7 +110,8 @@ function processNightPhase(api, threadID, gameID, botState) {
   }
   if (target && target !== game.actions.doctor) {
     game.alive.delete(target);
-    result += `@${game.players[target].name} मर गया! वो ${game.players[target].role} था।`;
+    const targetName = game.players[target].name || 'Player';
+    result += `@${targetName} मर गया! वो ${game.players[target].role} था।`;
   } else if (target) {
     result += 'Doctor ने बचा लिया! कोई नहीं मरा।';
   } else {
@@ -114,7 +120,8 @@ function processNightPhase(api, threadID, gameID, botState) {
   if (game.actions.detective) {
     const checkedRole = game.players[game.actions.detective].role === 'Mafia' ? 'Mafia है' : 'Mafia नहीं है';
     const detectiveID = Object.keys(game.players).find(id => game.players[id].role === 'Detective');
-    api.sendMessage(`🔎 @${game.players[game.actions.detective].name} ${checkedRole}। ग्रुप में रिजल्ट देखो।`, detectiveID);
+    const checkedName = game.players[game.actions.detective].name || 'Player';
+    api.sendMessage(`🔎 @${checkedName} ${checkedRole}। ग्रुप में रिजल्ट देखो।`, detectiveID, null, [{ tag: checkedName, id: game.actions.detective }]);
   }
   game.phase = 'day';
   game.votes = {};
@@ -143,7 +150,8 @@ function processDayPhase(api, threadID, gameID, botState) {
     eliminated = Object.keys(voteCounts).reduce((a, b) => voteCounts[a] > voteCounts[b] ? a : b, null);
     if (eliminated) {
       game.alive.delete(eliminated);
-      result += `@${game.players[eliminated].name} को वोट से निकाला गया! वो ${game.players[eliminated].role} था।`;
+      const eliminatedName = game.players[eliminated].name || 'Player';
+      result += `@${eliminatedName} को वोट से निकाला गया! वो ${game.players[eliminated].role} था।`;
     }
   } else {
     result += 'कोई वोट नहीं हुआ।';
@@ -164,3 +172,26 @@ function processDayPhase(api, threadID, gameID, botState) {
   fs.writeFileSync(LEARNED_RESPONSES_PATH, JSON.stringify(botState, null, 2), 'utf8');
   api.sendMessage(result, threadID);
 }
+
+function cleanupMafiaGames(botState) {
+  Object.keys(botState.mafiaGames).forEach(gameID => {
+    const game = botState.mafiaGames[gameID];
+    if (!game.active) {
+      delete botState.mafiaGames[gameID];
+      console.log(`[DEBUG] Removed inactive game: ${gameID}`);
+      return;
+    }
+    Object.keys(game.players).forEach(playerID => {
+      if (!game.players[playerID].name || !game.players[playerID].role) {
+        console.warn(`[DEBUG] Removing invalid player ${playerID} from game ${gameID}`);
+        delete game.players[playerID];
+        game.alive.delete(playerID);
+      }
+    });
+    if (Object.keys(game.players).length === 0) {
+      delete botState.mafiaGames[gameID];
+      console.log(`[DEBUG] Removed empty game: ${gameID}`);
+    }
+  });
+  fs.writeFileSync(LEARNED_RESPONSES_PATH, JSON.stringify(botState, null, 2), 'utf8');
+    }
