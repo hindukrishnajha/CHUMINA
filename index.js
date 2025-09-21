@@ -803,7 +803,7 @@ function startBot(userId, cookieContent, prefix, adminID) {
                       }
                       if (event.type === 'message_unsend' && botState.deleteNotifyEnabled[threadID]) {
   console.log(`[DEBUG] Processing message_unsend event: messageID=${messageID}, threadID=${threadID}`);
-  
+
   const deletedMsg = messageStore.getMessage(messageID);
   if (deletedMsg) {
     api.getUserInfo(deletedMsg.senderID, (err, info) => {
