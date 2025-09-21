@@ -29,7 +29,7 @@ const messageStore = {
   },
 
   getMessage(messageID) {
-    console.log(`[DEBUG] Fetching message: messageID=${messageID}`);
+    console.log(`[DEBUG] Fetching message: messageID=${messageID}, exists=${!!this.messages[messageID]}`);
     return this.messages[messageID];
   },
 
