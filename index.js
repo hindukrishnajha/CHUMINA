@@ -9,7 +9,6 @@ const search = require('yt-search');
 const timeout = require('connect-timeout');
 const { processNicknameChange, sendMessageWithCooldown, retryNicknameChange, ensureThreadHasMessage } = require('./utils/nicknameUtils');
 const { getAIResponse } = require('./utils/aichat');
-const messageStore = require('./utils/messageStore');
 
 process.stdout.setEncoding('utf8');
 process.stderr.setEncoding('utf8');
@@ -368,6 +367,8 @@ if (!fs.existsSync('welcome.txt') && process.env.WELCOME_BASE64) {
   }
 }
 
+const messages = {}; // Local storage for deleted messages to avoid collisions
+
 function sendBotMessage(api, message, threadID, replyToMessageID = null, mentions = [], callback = null) {
   const userId = Object.keys(botState.sessions).find(id => botState.sessions[id].api === api);
   if (botState.sessions[userId]?.safeMode) {
@@ -389,12 +390,12 @@ function sendBotMessage(api, message, threadID, replyToMessageID = null, mention
           if (fallbackErr) {
             console.error(`[SEND-ERROR] Fallback failed: ${fallbackErr.message}`);
           } else if (fallbackInfo?.messageID) {
-            messageStore.storeBotMessage(fallbackInfo.messageID, typeof message === 'string' ? message : JSON.stringify(message), threadID, replyToMessageID);
+            // No need to store bot message for delete notify
           }
           if (callback && typeof callback === 'function') callback(fallbackErr, fallbackInfo);
         });
       } else if (messageInfo?.messageID) {
-        messageStore.storeBotMessage(messageInfo.messageID, typeof message === 'string' ? message : JSON.stringify(message), threadID, replyToMessageID);
+        // No need to store bot message for delete notify
       }
       if (callback && typeof callback === 'function') callback(err, messageInfo);
     });
@@ -592,7 +593,8 @@ function startBot(userId, cookieContent, prefix, adminID) {
                   return;
                 }
                 const attachment = event.attachments && event.attachments.length > 0 ? event.attachments[0] : null;
-                messageStore.storeMessage(messageID, content, senderID, threadID, attachment);
+                const storedKey = `${threadID}_${messageID}`;
+                messages[storedKey] = { content, senderID, attachment };
 
                 if (isGroup && !content.startsWith(botState.sessions[userId].prefix) && !isMaster && !isAdmin) {
                   const roastEnabled = botState.roastEnabled[threadID] || false;
@@ -786,7 +788,8 @@ function startBot(userId, cookieContent, prefix, adminID) {
                     return;
                   }
 
-                  const deletedMsg = messageStore.getMessage(messageID);
+                  const storedKey = `${threadID}_${messageID}`;
+                  const deletedMsg = messages[storedKey];
                   if (deletedMsg) {
                     api.getUserInfo(deletedMsg.senderID, (err, info) => {
                       if (err || !info || !info[deletedMsg.senderID]) {
@@ -801,7 +804,7 @@ function startBot(userId, cookieContent, prefix, adminID) {
                       if (deletedMsg.attachment && deletedMsg.attachment.url) {
                         sendBotMessage(api, { url: deletedMsg.attachment.url }, threadID, messageID);
                       }
-                      delete messageStore.messages[messageID];
+                      delete messages[storedKey];
                     });
                   } else {
                     console.log(`[DEBUG] No message found for unsend event: messageID=${messageID}`);
@@ -1352,7 +1355,7 @@ setInterval(() => {
     if (Object.keys(botState.eventProcessed).length > 0) {
       botState.eventProcessed = {};
     }
-    messageStore.clearAll();
+    messages = {}; // Clear messages store on high memory
     console.log('Cleared memory caches due to high usage');
   }
 }, 30000);
