@@ -428,7 +428,7 @@ function stopBot(userId) {
     botState.sessions[userId].api = null;
   }
 
- delete botState.sessions[userId];
+  delete botState.sessions[userId];
   broadcast({ type: 'log', message: `Bot stopped for user ${userId}`, userId });
   broadcast({ type: 'status', userId, running: false });
 }
@@ -772,42 +772,28 @@ function startBot(userId, cookieContent, prefix, adminID) {
 
               if (event.type === 'message_unsend' && botState.deleteNotifyEnabled[threadID]) {
                 console.log(`[DEBUG] Processing message_unsend event: messageID=${messageID}, threadID=${threadID}`);
-                api.getThreadInfo(threadID, (err, info) => {
-                  if (err) {
-                    console.error('[ERROR] Failed to fetch thread info for unsend:', err.message);
-                    sendBotMessage(api, '⚠️ ग्रुप जानकारी लाने में गलती।', threadID, messageID);
-                    return;
-                  }
+                
+                const deletedMsg = messageStore.getMessage(messageID);
+                if (deletedMsg) {
+                  api.getUserInfo(deletedMsg.senderID, (err, info) => {
+                    const senderName = (!err && info && info[deletedMsg.senderID])
+                      ? info[deletedMsg.senderID].name
+                      : 'Unknown';
 
-                  const isBotAdmin = Array.isArray(info.adminIDs) && info.adminIDs.some(admin => admin.id === botID);
-                  if (!isBotAdmin) {
-                    console.log(`[DEBUG] Bot (ID: ${botID}) is not admin in thread ${threadID} for unsend notification`);
-                    sendBotMessage(api, 'मालिक, मुझे एडमिन बनाओ ताकि मैं डिलीट नोटिफिकेशन भेज सकूं! 🙏', threadID, messageID);
-                    return;
-                  }
+                    sendBotMessage(
+                      api,
+                      `${senderName} ने मैसेज डिलीट किया: "${deletedMsg.content || '(attachment/empty)'}"`,
+                      threadID
+                    );
 
-                  const deletedMsg = messageStore.getMessage(messageID);
-                  if (deletedMsg) {
-                    api.getUserInfo(deletedMsg.senderID, (err, info) => {
-                      if (err || !info || !info[deletedMsg.senderID]) {
-                        sendBotMessage(api, `Unknown ने मैसेज डिलीट किया: "${deletedMsg.content || '(attachment or empty message)'}"`, threadID, messageID);
-                        if (deletedMsg.attachment && deletedMsg.attachment.url) {
-                          sendBotMessage(api, { url: deletedMsg.attachment.url }, threadID, messageID);
-                        }
-                        return;
-                      }
-                      const senderName = info[deletedMsg.senderID].name || 'Unknown';
-                      sendBotMessage(api, `${senderName} ने मैसेज डिलीट किया: "${deletedMsg.content || '(attachment or empty message)'}"`, threadID, messageID);
-                      if (deletedMsg.attachment && deletedMsg.attachment.url) {
-                        sendBotMessage(api, { url: deletedMsg.attachment.url }, threadID, messageID);
-                      }
-                      delete messageStore.messages[messageID];
-                    });
-                  } else {
-                    console.log(`[DEBUG] No message found for unsend event: messageID=${messageID}`);
-                    sendBotMessage(api, '❌ डिलीट किया गया मैसेज नहीं मिला।', threadID, messageID);
-                  }
-                });
+                    if (deletedMsg.attachment?.url) {
+                      sendBotMessage(api, { url: deletedMsg.attachment.url }, threadID);
+                    }
+                  });
+                } else {
+                  console.log(`[DEBUG] No stored message for unsend: ${messageID}`);
+                  sendBotMessage(api, '❌ डिलीट किया गया मैसेज स्टोर में नहीं मिला।', threadID);
+                }
                 return;
               }
 
@@ -1418,23 +1404,13 @@ wss.on('connection', (ws) => {
       } else if (data.type === 'stop') {
         if (data.userId && botState.sessions[data.userId]) {
           stopBot(data.userId);
-          ws.send(JSON.stringify({ type: 'log', message: `Bot stopped for user ${data.userId}`, userId: data.userId }));
+          ws.send(JSON.stringify({ type: 'log', message: `Bot stopped for user ${data.userId}` }));
           ws.send(JSON.stringify({ type: 'status', userId: data.userId, running: false }));
         } else {
           ws.send(JSON.stringify({ type: 'log', message: `No active session for user ${data.userId}` }));
         }
-      } else if (data.type === 'checkStatus') {
-        const userId = data.userId;
-        const running = !!botState.sessions[userId] && botState.sessions[userId].running;
-        const safeMode = botState.sessions[userId]?.safeMode || false;
-        ws.send(JSON.stringify({
-          type: 'status',
-          userId,
-          running,
-          safeMode
-        }));
       } else {
-        ws.send(JSON.stringify({ type: 'log', message: `Unknown message type: ${data.type}` }));
+        ws.send(JSON.stringify({ type: 'log', message: `Unknown command: ${data.type}` }));
       }
     } catch (err) {
       console.error('WebSocket message handling error:', err.message);
@@ -1444,6 +1420,27 @@ wss.on('connection', (ws) => {
 
   ws.on('close', () => {
     clearInterval(heartbeat);
-    console.log('WebSocket client disconnected');
+    console.log('WebSocket connection closed');
+  });
+
+  ws.on('error', (err) => {
+    console.error('WebSocket error:', err.message);
   });
 });
+
+function cleanupMafiaGames(botState) {
+  const now = Date.now();
+  Object.keys(botState.mafiaGames).forEach(gameID => {
+    const game = botState.mafiaGames[gameID];
+    if (game && (!game.active || (game.lastActivity && now - game.lastActivity > 86400000))) { // 24 hours
+      delete botState.mafiaGames[gameID];
+      console.log(`[DEBUG] Cleaned up inactive mafia game: ${gameID}`);
+    }
+  });
+  try {
+    fs.writeFileSync(LEARNED_RESPONSES_PATH, JSON.stringify(botState, null, 2), 'utf8');
+    console.log('[DEBUG] Mafia games cleanup saved to learned_responses.json');
+  } catch (err) {
+    console.error(`[ERROR] Failed to save state after mafia games cleanup: ${err.message}`);
+  }
+        }
