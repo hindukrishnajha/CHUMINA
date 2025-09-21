@@ -45,9 +45,11 @@ const messageStore = {
     return this.botMessages.find(msg => msg.replyToMessageID === replyMessageID || msg.messageID === replyMessageID);
   },
 
-  removeMessage(messageID) { // New: For reply case
+  removeMessage(messageID) {
     console.log(`[DEBUG] Removing message from store: messageID=${messageID}`);
-    delete this.messages[messageID];
+    if (this.messages[messageID]) {
+      delete this.messages[messageID];
+    }
   },
 
   removeBotMessage(messageID) {
