@@ -428,7 +428,7 @@ function stopBot(userId) {
     botState.sessions[userId].api = null;
   }
 
- delete botState.sessions[userId];
+  delete botState.sessions[userId];
   broadcast({ type: 'log', message: `Bot stopped for user ${userId}`, userId });
   broadcast({ type: 'status', userId, running: false });
 }
@@ -544,6 +544,7 @@ function startBot(userId, cookieContent, prefix, adminID) {
           }, 300000);  // 5 min interval for cleanup
 
           api.listenMqtt(async (err, event) => {
+            console.log(`[DEBUG] Event received: type=${event.type}, messageID=${event.messageID || 'none'}, threadID=${event.threadID || 'none'}`);
             if (err) {
               console.error(`Listen error for ${userId} (attempt ${mqttAttempt}):`, err?.message || err);
               botState.sessions[userId].safeMode = true;
@@ -771,43 +772,29 @@ function startBot(userId, cookieContent, prefix, adminID) {
               }
 
               if (event.type === 'message_unsend' && botState.deleteNotifyEnabled[threadID]) {
-                console.log(`[DEBUG] Processing message_unsend event: messageID=${messageID}, threadID=${threadID}`);
-                api.getThreadInfo(threadID, (err, info) => {
-                  if (err) {
-                    console.error('[ERROR] Failed to fetch thread info for unsend:', err.message);
-                    sendBotMessage(api, '⚠️ ग्रुप जानकारी लाने में गलती।', threadID, messageID);
-                    return;
-                  }
-
-                  const isBotAdmin = Array.isArray(info.adminIDs) && info.adminIDs.some(admin => admin.id === botID);
-                  if (!isBotAdmin) {
-                    console.log(`[DEBUG] Bot (ID: ${botID}) is not admin in thread ${threadID} for unsend notification`);
-                    sendBotMessage(api, 'मालिक, मुझे एडमिन बनाओ ताकि मैं डिलीट नोटिफिकेशन भेज सकूं! 🙏', threadID, messageID);
-                    return;
-                  }
-
-                  const deletedMsg = messageStore.getMessage(messageID);
-                  if (deletedMsg) {
-                    api.getUserInfo(deletedMsg.senderID, (err, info) => {
-                      if (err || !info || !info[deletedMsg.senderID]) {
-                        sendBotMessage(api, `Unknown ने मैसेज डिलीट किया: "${deletedMsg.content || '(attachment or empty message)'}"`, threadID, messageID);
-                        if (deletedMsg.attachment && deletedMsg.attachment.url) {
-                          sendBotMessage(api, { url: deletedMsg.attachment.url }, threadID, messageID);
-                        }
-                        return;
-                      }
-                      const senderName = info[deletedMsg.senderID].name || 'Unknown';
-                      sendBotMessage(api, `${senderName} ने मैसेज डिलीट किया: "${deletedMsg.content || '(attachment or empty message)'}"`, threadID, messageID);
+                console.log(`[DEBUG] message_unsend event: messageID=${messageID}, threadID=${threadID}`);
+                const deletedMsg = messageStore.getMessage(messageID);
+                console.log(`[DEBUG] Retrieved deleted message: messageID=${messageID}, found=${!!deletedMsg}`);
+                if (deletedMsg) {
+                  api.getUserInfo(deletedMsg.senderID, (err, info) => {
+                    if (err || !info || !info[deletedMsg.senderID]) {
+                      sendBotMessage(api, `Unknown ने मैसेज डिलीट किया: "${deletedMsg.content || '(attachment or empty message)'}"`, threadID, messageID);
                       if (deletedMsg.attachment && deletedMsg.attachment.url) {
                         sendBotMessage(api, { url: deletedMsg.attachment.url }, threadID, messageID);
                       }
-                      delete messageStore.messages[messageID];
-                    });
-                  } else {
-                    console.log(`[DEBUG] No message found for unsend event: messageID=${messageID}`);
-                    sendBotMessage(api, '❌ डिलीट किया गया मैसेज नहीं मिला।', threadID, messageID);
-                  }
-                });
+                      messageStore.removeMessage(messageID);
+                      return;
+                    }
+                    const senderName = info[deletedMsg.senderID].name || 'Unknown';
+                    sendBotMessage(api, `${senderName} ने मैसेज डिलीट किया: "${deletedMsg.content || '(attachment or empty message)'}"`, threadID, messageID);
+                    if (deletedMsg.attachment && deletedMsg.attachment.url) {
+                      sendBotMessage(api, { url: deletedMsg.attachment.url }, threadID, messageID);
+                    }
+                    messageStore.removeMessage(messageID);
+                  });
+                } else {
+                  sendBotMessage(api, '❌ डिलीट किया गया मैसेज नहीं मिला।', threadID, messageID);
+                }
                 return;
               }
 
@@ -1334,116 +1321,4 @@ try {
 }
 
 const keepAlive = setInterval(() => {
-  axios.get(`https://${process.env.RENDER_SERVICE_NAME || 'your-render-service'}.onrender.com/health`).catch(err => {
-    console.error('Keep-alive request failed:', err.message);
-  });
-}, 5000);
-
-setInterval(() => {
-  const used = process.memoryUsage().heapUsed / 1024 / 1024;
-  if (used > 150) {
-    botState.memberCache = {};
-    botState.abuseTargets = {};
-    botState.lockedNicknames = {};
-    botState.nicknameQueues = {};
-    botState.nicknameTimers = {};
-    botState.commandCooldowns = {};
-    botState.roastCooldowns = {};
-    if (Object.keys(botState.eventProcessed).length > 0) {
-      botState.eventProcessed = {};
-    }
-    messageStore.clearAll();
-    console.log('Cleared memory caches due to high usage');
-  }
-}, 30000);
-
-// Clear mafiaGames on bot shutdown
-process.on('exit', () => {
-  botState.mafiaGames = {};
-  try {
-    fs.writeFileSync(LEARNED_RESPONSES_PATH, JSON.stringify(botState, null, 2), 'utf8');
-    console.log('[DEBUG] Cleared mafiaGames on exit, state saved');
-  } catch (err) {
-    console.error(`[ERROR] Failed to save state on exit: ${err.message}`);
-  }
-});
-
-process.on('uncaughtException', (err) => {
-  console.error('Uncaught Exception:', err.message);
-});
-
-process.on('unhandledRejection', (reason, promise) => {
-  console.error('Unhandled Rejection at:', promise, 'reason:', reason);
-});
-
-wss.on('connection', (ws) => {
-  ws.isAlive = true;
-
-  const heartbeat = setInterval(() => {
-    if (ws.isAlive === false) {
-      clearInterval(heartbeat);
-      return ws.terminate();
-    }
-    ws.isAlive = false;
-    ws.send(JSON.stringify({ type: 'heartbeat' }));
-  }, 10000);
-
-  ws.on('message', (message) => {
-    try {
-      const messageStr = Buffer.isBuffer(message) ? message.toString('utf8') : message;
-      let data;
-      try {
-        data = JSON.parse(messageStr);
-      } catch (parseErr) {
-        console.error('Invalid WebSocket message:', parseErr.message);
-        ws.send(JSON.stringify({ type: 'log', message: `Invalid message format: ${parseErr.message}` }));
-        return;
-      }
-
-      if (data.type === 'heartbeat') {
-        ws.isAlive = true;
-        return;
-      }
-
-      if (data.type === 'start') {
-        if (!data.userId || !data.cookieContent) {
-          ws.send(JSON.stringify({ type: 'log', message: 'Missing userId or cookieContent' }));
-          return;
-        }
-        if (botState.sessions[data.userId]?.running) {
-          ws.send(JSON.stringify({ type: 'log', message: `Bot already running for ${data.userId}. Skipping login to avoid suspension.` }));
-          return;
-        }
-        startBot(data.userId, data.cookieContent, data.prefix, data.adminId);
-      } else if (data.type === 'stop') {
-        if (data.userId && botState.sessions[data.userId]) {
-          stopBot(data.userId);
-          ws.send(JSON.stringify({ type: 'log', message: `Bot stopped for user ${data.userId}`, userId: data.userId }));
-          ws.send(JSON.stringify({ type: 'status', userId: data.userId, running: false }));
-        } else {
-          ws.send(JSON.stringify({ type: 'log', message: `No active session for user ${data.userId}` }));
-        }
-      } else if (data.type === 'checkStatus') {
-        const userId = data.userId;
-        const running = !!botState.sessions[userId] && botState.sessions[userId].running;
-        const safeMode = botState.sessions[userId]?.safeMode || false;
-        ws.send(JSON.stringify({
-          type: 'status',
-          userId,
-          running,
-          safeMode
-        }));
-      } else {
-        ws.send(JSON.stringify({ type: 'log', message: `Unknown message type: ${data.type}` }));
-      }
-    } catch (err) {
-      console.error('WebSocket message handling error:', err.message);
-      ws.send(JSON.stringify({ type: 'log', message: `Error processing message: ${err.message}` }));
-    }
-  });
-
-  ws.on('close', () => {
-    clearInterval(heartbeat);
-    console.log('WebSocket client disconnected');
-  });
-});
+  axios.get
