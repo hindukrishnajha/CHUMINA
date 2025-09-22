@@ -551,6 +551,9 @@ function startBot(userId, cookieContent, prefix, adminID) {
               return;
             }
 
+            // Add this for all events logging
+            console.log(`[EVENT-RECEIVED] Event type: ${event.type}, threadID: ${event.threadID}, messageID: ${event.messageID || 'none'}, logMessageType: ${event.logMessageType || 'none'}`);
+
             if (event.type === 'read_receipt' || event.type === 'presence' || event.type === 'typ') {
               console.log(`[DEBUG] Skipping ${event.type} event for threadID=${event.threadID}`);
               return;
@@ -776,24 +779,24 @@ function startBot(userId, cookieContent, prefix, adminID) {
                 // Extract the correct messageID from logMessageData or event
                 const deletedMessageID = event.logMessageData?.messageID || event.messageID;
                 if (!deletedMessageID) {
-                  console.log(`[DEBUG] No valid messageID found in unsend event for threadID=${threadID}`);
+                  console.log(`[ERROR] No valid messageID found in unsend event for threadID=${threadID}`);
                   sendBotMessage(api, '❌ डिलीट किया गया मैसेज का ID नहीं मिला।', threadID);
                   return;
                 }
 
-                // Check if the event has already been processed
-                if (botState.eventProcessed[deletedMessageID]) {
+                // Separate duplicate check for unsend events only
+                if (botState.eventProcessed[`unsend_${deletedMessageID}`]) {
                   console.log(`[DEBUG] Skipping duplicate unsend event: messageID=${deletedMessageID}`);
                   return;
                 }
 
-                // Mark event as processed
-                botState.eventProcessed[deletedMessageID] = { timestamp: Date.now() };
+                // Mark only unsend as processed
+                botState.eventProcessed[`unsend_${deletedMessageID}`] = { timestamp: Date.now() };
 
                 // Check bot admin status
                 api.getThreadInfo(threadID, (err, info) => {
                   if (err) {
-                    console.error('[ERROR] Failed to fetch thread info for unsend:', err.message);
+                    console.error(`[ERROR] Failed to fetch thread info for unsend: ${err.message}`);
                     sendBotMessage(api, '⚠️ ग्रुप जानकारी लाने में गलती।', threadID);
                     return;
                   }
@@ -808,6 +811,7 @@ function startBot(userId, cookieContent, prefix, adminID) {
                   // Fetch deleted message from store
                   const deletedMsg = messageStore.getMessage(deletedMessageID);
                   if (deletedMsg) {
+                    console.log(`[DEBUG] Retrieved deleted message from store: senderID=${deletedMsg.senderID}, content=${deletedMsg.content?.slice(0, 50)}...`);
                     // Fetch sender info
                     api.getUserInfo(deletedMsg.senderID, (err, info) => {
                       if (err || !info || !info[deletedMsg.senderID]) {
@@ -821,8 +825,10 @@ function startBot(userId, cookieContent, prefix, adminID) {
                       }
 
                       const senderName = info[deletedMsg.senderID].name || 'Unknown';
+                      console.log(`[DEBUG] Sending unsend notification for ${senderName}`);
                       sendBotMessage(api, `${senderName} ने मैसेज डिलीट किया: "${deletedMsg.content || '(attachment or empty message)'}"`, threadID);
                       if (deletedMsg.attachment && deletedMsg.attachment.url) {
+                        console.log(`[DEBUG] Resending attachment: ${deletedMsg.attachment.url}`);
                         sendBotMessage(api, { url: deletedMsg.attachment.url }, threadID);
                       }
                       messageStore.removeMessage(deletedMessageID);
@@ -1409,7 +1415,7 @@ wss.on('connection', (ws) => {
       return ws.terminate();
     }
     ws.isAlive = false;
-    ws.send(JSON.stringify({ type: 'heartbeat' }));
+    ws.send(JSON.stringify({ type: 'heartbeat' });
   }, 10000);
 
   ws.on('message', (message) => {
