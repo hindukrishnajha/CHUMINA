@@ -1,19 +1,19 @@
 // src/bot/commands.js
 const fs = require('fs');
 const path = require('path');
-const { botState } = require(path.join(__dirname, '../../config/botState'));
-const { LEARNED_RESPONSES_PATH } = require(path.join(__dirname, '../../config/constants'));
+const { botState } = require(path.join(__dirname, '../config/botState'));
+const { LEARNED_RESPONSES_PATH } = require(path.join(__dirname, '../config/constants'));
 const { sendBotMessage } = require('./message');
 
 function loadCommands() {
   const commands = new Map();
   const commandFolders = ['admin', 'user', 'master'];
   for (const folder of commandFolders) {
-    const commandFiles = fs.readdirSync(path.join(__dirname, '../../commands', folder)).filter(file => file.endsWith('.js'));
+    const commandFiles = fs.readdirSync(path.join(__dirname, '../commands', folder)).filter(file => file.endsWith('.js'));
     console.log(`[DEBUG] Scanning folder: ${folder}, found files: ${commandFiles}`);
     for (const file of commandFiles) {
       try {
-        const command = require(path.join(__dirname, '../../commands', folder, file));
+        const command = require(path.join(__dirname, '../commands', folder, file));
         console.log(`[DEBUG] Loading command: ${command.name} from ${file}`);
         commands.set(command.name, command);
         if (command.aliases) {
