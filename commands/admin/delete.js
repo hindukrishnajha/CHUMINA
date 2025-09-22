@@ -8,18 +8,26 @@ module.exports = {
         try {
             const action = args[0] ? args[0].toLowerCase() : '';
             
+            // Ensure deleteNotifyEnabled exists
+            if (!botState.deleteNotifyEnabled) {
+                botState.deleteNotifyEnabled = {};
+            }
+            if (!botState.learnedResponses.deleteNotifyEnabled) {
+                botState.learnedResponses.deleteNotifyEnabled = {};
+            }
+            
             if (action === 'on') {
                 botState.deleteNotifyEnabled[threadID] = true;
-                botState.learnedResponses.deleteNotifyEnabled = botState.deleteNotifyEnabled;
+                botState.learnedResponses.deleteNotifyEnabled[threadID] = true;
                 
                 fs.writeFileSync(LEARNED_RESPONSES_PATH, JSON.stringify(botState.learnedResponses, null, 2), 'utf8');
                 api.sendMessage('✅ डिलीट नोटिफिकेशन चालू कर दिया गया।\n📸 Sticker, Photo, Message - सबका backup आएगा!', threadID, event.messageID);
             
             } else if (action === 'off') {
                 botState.deleteNotifyEnabled[threadID] = false;
-                botState.learnedResponses.deleteNotifyEnabled = botState.deleteNotifyEnabled;
+                botState.learnedResponses.deleteNotifyEnabled[threadID] = false;
                 
-                fs.writeFileSync(LEARNED_RESPONSES_PATH, JSON.stringify(botState.learnedResponses, null, 2), 'utf8');
+                fs.writeFileSync(LEARNED_RESPONSES_PATH, JSON.stringify(botState.learnedResponses, null, 2), 'utf8);
                 api.sendMessage('✅ डिलीट नोटिफिकेशन बंद कर दिया गया।', threadID, event.messageID);
             
             } else {
