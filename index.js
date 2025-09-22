@@ -1415,7 +1415,7 @@ wss.on('connection', (ws) => {
       return ws.terminate();
     }
     ws.isAlive = false;
-    ws.send(JSON.stringify({ type: 'heartbeat' });
+    ws.send(JSON.stringify({ type: 'heartbeat' }));
   }, 10000);
 
   ws.on('message', (message) => {
