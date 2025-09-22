@@ -1,12 +1,16 @@
 const fs = require('fs');
 const { LEARNED_RESPONSES_PATH } = require('../../config/constants');
 
+console.log('[DELETE-CMD] Delete command file loaded'); // DEBUG LINE
+
 module.exports = {
     name: 'delete',
     aliases: ['deletenotify', 'unsendnotify'],
     execute: (api, threadID, args, event, botState, isMaster, botID, stopBot) => {
+        console.log('[DELETE-CMD] Execute function called'); // DEBUG LINE
         try {
             const action = args[0] ? args[0].toLowerCase() : '';
+            console.log('[DELETE-CMD] Action:', action); // DEBUG LINE
             
             // Ensure deleteNotifyEnabled exists
             if (!botState.deleteNotifyEnabled) {
