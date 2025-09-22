@@ -4,7 +4,7 @@ const masterReplies = require('../../responses/masterReplies');
 module.exports = {
     name: 'loder',
     aliases: ['pel', 'target'],
-    execute: async (api, threadID, args, event, botState, isMaster, botID, stopBot) => {
+    execute: (api, threadID, args, event, botState, isMaster, botID, stopBot) => {
         try {
             if (!isMaster) {
                 api.sendMessage("🚫 ये कमांड सिर्फ मास्टर के लिए है! 🕉️", threadID);
@@ -44,32 +44,25 @@ module.exports = {
                         const randomPelReply = masterReplies.pelCommands.replies[Math.floor(Math.random() * masterReplies.pelCommands.replies.length)];
                         api.sendMessage(randomPelReply, threadID);
 
-                        // Async spam loop with proper error handling
-                        const spamLoop = async () => {
-                            try {
-                                while (botState.abuseTargets[threadID]?.[targetID] && abuseMessages.length > 0) {
-                                    if (!botState.abuseTargets[threadID]?.[targetID]) break;
-                                    
-                                    const randomMsg = abuseMessages[Math.floor(Math.random() * abuseMessages.length)];
-                                    const mentionTag = `${name.split(' ')[0]}`;
-                                    await new Promise((resolve, reject) => {
-                                        api.sendMessage(`${mentionTag} ${randomMsg}`, threadID, (err) => {
-                                            if (err) reject(err);
-                                            else resolve();
-                                        });
-                                    });
-                                    
-                                    if (!botState.abuseTargets[threadID]?.[targetID]) break;
-                                    await new Promise(r => setTimeout(r, 120000)); // 2 minute delay
-                                }
-                                console.log('[LODER] Spam loop ended for target:', targetID);
-                            } catch (err) {
-                                console.error('[LODER] Spam loop error:', err.message);
-                                delete botState.abuseTargets[threadID][targetID];
+                        // Simple spam loop without async/await
+                        let spamInterval = setInterval(() => {
+                            if (!botState.abuseTargets[threadID] || !botState.abuseTargets[threadID][targetID]) {
+                                clearInterval(spamInterval);
+                                return;
                             }
-                        };
-                        
-                        spamLoop();
+                            
+                            const randomMsg = abuseMessages[Math.floor(Math.random() * abuseMessages.length)];
+                            const mentionTag = `${name.split(' ')[0]}`;
+                            
+                            api.sendMessage(`${mentionTag} ${randomMsg}`, threadID, (err) => {
+                                if (err) {
+                                    console.error('[LODER] Send message error:', err);
+                                    clearInterval(spamInterval);
+                                    delete botState.abuseTargets[threadID][targetID];
+                                }
+                            });
+                            
+                        }, 120000); // 2 minutes interval
                     });
                 } else {
                     api.sendMessage("✅ यूजर पहले से ही टारगेटेड है! 🕉️", threadID);
