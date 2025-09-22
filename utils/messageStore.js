@@ -3,30 +3,47 @@ const messages = new Map();
 
 module.exports = {
   storeMessage(messageID, content, senderID, threadID, attachment = null) {
-    if (!messageID) return;
+    if (!messageID) {
+      console.log('[MESSAGE-STORE] Empty messageID, skipping storage');
+      return;
+    }
+    
+    // Content ko properly handle karo
+    let messageContent = content;
+    if (!messageContent && attachment) {
+      messageContent = `[${attachment.type} attachment]`;
+    }
+    
     messages.set(messageID, {
-      content,
+      content: messageContent || '[empty message]',
       senderID,
       threadID,
       attachment,
       timestamp: Date.now()
     });
-    // मेमोरी बचाने के लिए पुराने मैसेज हटाएं
+    
+    console.log(`[MESSAGE-STORE] Stored message: ${messageID} - ${messageContent?.substring(0, 50)}...`);
+    
+    // Memory management
     if (messages.size > 1000) {
       const sortedKeys = Array.from(messages.keys()).sort((a, b) => messages.get(a).timestamp - messages.get(b).timestamp);
-      for (let i = 0; i < messages.size - 500; i++) {
+      for (let i = 0; i < 200; i++) {
         messages.delete(sortedKeys[i]);
       }
-      console.log('[MESSAGE-STORE] पुराने मैसेज हटाए गए ताकि मेमोरी लिमिट में रहे');
+      console.log('[MESSAGE-STORE] Cleared old messages for memory management');
     }
   },
 
   getMessage(messageID) {
-    return messages.get(messageID);
+    const msg = messages.get(messageID);
+    console.log(`[MESSAGE-STORE] Retrieving message ${messageID}: ${msg ? 'Found' : 'Not found'}`);
+    return msg;
   },
 
   removeMessage(messageID) {
+    const existed = messages.has(messageID);
     messages.delete(messageID);
+    console.log(`[MESSAGE-STORE] Removed message ${messageID}: ${existed ? 'Existed' : 'Did not exist'}`);
   },
 
   storeBotMessage(messageID, content, threadID, replyToMessageID = null) {
@@ -41,6 +58,7 @@ module.exports = {
   },
 
   clearAll() {
+    console.log('[MESSAGE-STORE] Clearing all messages');
     messages.clear();
   }
 };
