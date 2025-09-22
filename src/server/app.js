@@ -3,7 +3,7 @@ const express = require('express');
 const path = require('path');
 const timeout = require('connect-timeout');
 const fs = require('fs');
-const { botState } = require(path.join(__dirname, '../../config/botState')); // Explicit path
+const { botState } = require(path.join(__dirname, '../../config/botState'));
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -128,7 +128,6 @@ app.post('/mafia/:gameID/action', (req, res) => {
   }
 
   try {
-    const fs = require('fs');
     const { LEARNED_RESPONSES_PATH } = require(path.join(__dirname, '../../config/constants'));
     fs.writeFileSync(LEARNED_RESPONSES_PATH, JSON.stringify(botState, null, 2), 'utf8');
     console.log(`[DEBUG] Action recorded for ${userID} in game ${gameID}`);
