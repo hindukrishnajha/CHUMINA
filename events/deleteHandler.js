@@ -6,20 +6,15 @@ function handleUnsend(api, event, botState, userId) {
     const threadID = event.threadID;
     
     if (!botState.deleteNotifyEnabled[threadID]) {
-        console.log(`[DELETE] Delete notify disabled for thread ${threadID}`);
         return;
     }
 
-    console.log(`[DELETE] Delete notify enabled for this thread`);
-    
     const deletedMsg = messageStore.getMessage(event.messageID);
     if (!deletedMsg) {
-        console.log(`[DELETE] No message found in store for ID: ${event.messageID}`);
+        console.log(`[DELETE] No message found for ID: ${event.messageID}`);
         return;
     }
 
-    console.log(`[DELETE] Found deleted message: "${deletedMsg.content}"`);
-    
     // Check if bot is admin
     api.getThreadInfo(threadID, (err, info) => {
         if (err) {
@@ -30,7 +25,6 @@ function handleUnsend(api, event, botState, userId) {
         const botID = botState.sessions[userId]?.botID;
         const isBotAdmin = Array.isArray(info.adminIDs) && info.adminIDs.some(admin => admin.id === botID);
         if (!isBotAdmin) {
-            console.log('[DELETE] Bot not admin, skipping');
             api.sendMessage('मालिक, मुझे एडमिन बनाओ ताकि मैं डिलीट नोटिफिकेशन भेज सकूं! 🙏', threadID);
             return;
         }
@@ -42,26 +36,45 @@ function handleUnsend(api, event, botState, userId) {
                 senderName = userInfo[deletedMsg.senderID].name;
             }
             
-            // Handle different attachment types
-            if (deletedMsg.content === '[attachment: photo]') {
-                api.sendMessage(`📸🗑️ ${senderName} ने एक फोटो डिलीट किया!`, threadID);
-            } 
-            else if (deletedMsg.content === '[attachment: sticker]') {
+            // STICKER DELETE
+            if (deletedMsg.content === '[attachment: sticker]') {
                 api.sendMessage(`😊🗑️ ${senderName} ने एक स्टिकर डिलीट किया!`, threadID);
+                
+                // Sticker resend attempt
+                if (deletedMsg.attachment && deletedMsg.attachment.url) {
+                    api.sendMessage({
+                        body: '🗳️ डिलीट किया गया स्टिकर:',
+                        sticker: deletedMsg.attachment.url
+                    }, threadID);
+                }
+            } 
+            // PHOTO DELETE  
+            else if (deletedMsg.content === '[attachment: photo]') {
+                api.sendMessage(`📸🗑️ ${senderName} ने एक फोटो डिलीट किया!`, threadID);
+                
+                // Photo resend attempt
+                if (deletedMsg.attachment && deletedMsg.attachment.url) {
+                    api.sendMessage({
+                        body: '🖼️ डिलीट की गई फोटो:',
+                        attachment: require('fs').createReadStream(deletedMsg.attachment.url)
+                    }, threadID, (err) => {
+                        if (err) {
+                            api.sendMessage('📸 फोटो रीसेंड नहीं हो सकी, लेकिन notification आ गया!', threadID);
+                        }
+                    });
+                }
             }
+            // VIDEO DELETE
             else if (deletedMsg.content === '[attachment: video]') {
                 api.sendMessage(`🎥🗑️ ${senderName} ने एक वीडियो डिलीट किया!`, threadID);
             }
+            // TEXT MESSAGE DELETE
             else {
-                // Text message
                 const notificationMsg = `🗑️ ${senderName} ने मैसेज डिलीट किया:\n"${deletedMsg.content}"`;
                 api.sendMessage(notificationMsg, threadID);
             }
             
-            console.log(`[DELETE] Notification sent successfully`);
-            
-            // Clean up stored message
-            messageStore.removeMessage(event.messageID);
+            console.log(`[DELETE] Notification sent for ${deletedMsg.content}`);
         });
     });
 }
