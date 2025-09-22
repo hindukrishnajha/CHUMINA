@@ -770,42 +770,58 @@ function startBot(userId, cookieContent, prefix, adminID) {
                 }
               }
 
+              // FIXED DELETE COMMAND SECTION - YAHI CHANGE KIYA HAI
               if (event.type === 'message_unsend' && botState.deleteNotifyEnabled[threadID]) {
-                console.log(`[DEBUG] Processing message_unsend event: messageID=${messageID}, threadID=${threadID}`);
+                console.log(`[DEBUG] Processing message_unsend event: messageID=${event.messageID}, threadID=${threadID}`);
+                
+                // Use the correct messageID from the unsend event
+                const unsentMessageID = event.messageID;
+                
                 api.getThreadInfo(threadID, (err, info) => {
                   if (err) {
                     console.error('[ERROR] Failed to fetch thread info for unsend:', err.message);
-                    sendBotMessage(api, '⚠️ ग्रुप जानकारी लाने में गलती।', threadID, messageID);
-                    return;
+                    return; // Don't send message if we can't get thread info
                   }
 
                   const isBotAdmin = Array.isArray(info.adminIDs) && info.adminIDs.some(admin => admin.id === botID);
                   if (!isBotAdmin) {
                     console.log(`[DEBUG] Bot (ID: ${botID}) is not admin in thread ${threadID} for unsend notification`);
-                    sendBotMessage(api, 'मालिक, मुझे एडमिन बनाओ ताकि मैं डिलीट नोटिफिकेशन भेज सकूं! 🙏', threadID, messageID);
+                    // Don't send message if bot is not admin to avoid spam
                     return;
                   }
 
-                  const deletedMsg = messageStore.getMessage(messageID);
+                  const deletedMsg = messageStore.getMessage(unsentMessageID);
                   if (deletedMsg) {
-                    api.getUserInfo(deletedMsg.senderID, (err, info) => {
-                      if (err || !info || !info[deletedMsg.senderID]) {
-                        sendBotMessage(api, `Unknown ने मैसेज डिलीट किया: "${deletedMsg.content || '(attachment or empty message)'}"`, threadID, messageID);
-                        if (deletedMsg.attachment && deletedMsg.attachment.url) {
-                          sendBotMessage(api, { url: deletedMsg.attachment.url }, threadID, messageID);
+                    api.getUserInfo(deletedMsg.senderID, (err, userInfo) => {
+                      let senderName = 'Unknown';
+                      if (!err && userInfo && userInfo[deletedMsg.senderID]) {
+                        senderName = userInfo[deletedMsg.senderID].name || 'Unknown';
+                      }
+                      
+                      // Create the notification message
+                      const notificationMsg = `${senderName} ने मैसेज डिलीट किया:\n"${deletedMsg.content || '(attachment or empty message)'}"`;
+                      
+                      // Send notification first
+                      sendBotMessage(api, notificationMsg, threadID, null, [], (err, msgInfo) => {
+                        if (err) {
+                          console.error('[ERROR] Failed to send delete notification:', err.message);
+                          return;
                         }
-                        return;
-                      }
-                      const senderName = info[deletedMsg.senderID].name || 'Unknown';
-                      sendBotMessage(api, `${senderName} ने मैसेज डिलीट किया: "${deletedMsg.content || '(attachment or empty message)'}"`, threadID, messageID);
-                      if (deletedMsg.attachment && deletedMsg.attachment.url) {
-                        sendBotMessage(api, { url: deletedMsg.attachment.url }, threadID, messageID);
-                      }
-                      delete messageStore.messages[messageID];
+                        
+                        // If there's an attachment, resend it separately
+                        if (deletedMsg.attachment && deletedMsg.attachment.url) {
+                          setTimeout(() => {
+                            sendBotMessage(api, { url: deletedMsg.attachment.url }, threadID);
+                          }, 1000);
+                        }
+                        
+                        // Clean up the stored message
+                        delete messageStore.messages[unsentMessageID];
+                      });
                     });
                   } else {
-                    console.log(`[DEBUG] No message found for unsend event: messageID=${messageID}`);
-                    sendBotMessage(api, '❌ डिलीट किया गया मैसेज नहीं मिला।', threadID, messageID);
+                    console.log(`[DEBUG] No message found for unsend event: messageID=${unsentMessageID}`);
+                    // Don't send "message not found" notification to avoid spam
                   }
                 });
                 return;
