@@ -1,49 +1,66 @@
-// messageStore.js
 const messages = new Map();
 
 module.exports = {
   storeMessage(messageID, content, senderID, threadID, attachment = null) {
-    if (!messageID) {
-      console.log('[MESSAGE-STORE] Empty messageID, skipping storage');
-      return;
-    }
+    if (!messageID) return;
     
-    // Content ko properly handle karo
     let messageContent = content;
-    if (!messageContent && attachment) {
-      messageContent = `[${attachment.type} attachment]`;
+    let attachmentData = null;
+    
+    // ATTACHMENT HANDLING - IMPROVED
+    if (attachment) {
+        if (attachment.type === 'sticker') {
+            messageContent = '[attachment: sticker]';
+            attachmentData = {
+                type: 'sticker',
+                url: attachment.url || attachment.largePreviewUrl,
+                id: attachment.ID || attachment.id
+            };
+        } else if (attachment.type === 'photo' || attachment.type === 'image') {
+            messageContent = '[attachment: photo]';
+            attachmentData = {
+                type: 'photo', 
+                url: attachment.url || attachment.largePreviewUrl || attachment.previewUrl,
+                id: attachment.ID || attachment.id
+            };
+        } else if (attachment.type === 'video') {
+            messageContent = '[attachment: video]';
+            attachmentData = {
+                type: 'video',
+                url: attachment.url,
+                id: attachment.ID || attachment.id
+            };
+        } else {
+            messageContent = `[attachment: ${attachment.type}]`;
+            attachmentData = attachment;
+        }
     }
     
     messages.set(messageID, {
-      content: messageContent || '[empty message]',
-      senderID,
-      threadID,
-      attachment,
-      timestamp: Date.now()
+        content: messageContent || '[empty message]',
+        senderID,
+        threadID,
+        attachment: attachmentData,
+        timestamp: Date.now()
     });
     
-    console.log(`[MESSAGE-STORE] Stored message: ${messageID} - ${messageContent?.substring(0, 50)}...`);
+    console.log(`[MESSAGE-STORE] Stored: ${messageID} - ${messageContent}`);
     
     // Memory management
     if (messages.size > 1000) {
-      const sortedKeys = Array.from(messages.keys()).sort((a, b) => messages.get(a).timestamp - messages.get(b).timestamp);
-      for (let i = 0; i < 200; i++) {
-        messages.delete(sortedKeys[i]);
-      }
-      console.log('[MESSAGE-STORE] Cleared old messages for memory management');
+        const sortedKeys = Array.from(messages.keys()).sort((a, b) => messages.get(a).timestamp - messages.get(b).timestamp);
+        for (let i = 0; i < 200; i++) {
+            messages.delete(sortedKeys[i]);
+        }
     }
   },
 
   getMessage(messageID) {
-    const msg = messages.get(messageID);
-    console.log(`[MESSAGE-STORE] Retrieving message ${messageID}: ${msg ? 'Found' : 'Not found'}`);
-    return msg;
+    return messages.get(messageID);
   },
 
   removeMessage(messageID) {
-    const existed = messages.has(messageID);
     messages.delete(messageID);
-    console.log(`[MESSAGE-STORE] Removed message ${messageID}: ${existed ? 'Existed' : 'Did not exist'}`);
   },
 
   storeBotMessage(messageID, content, threadID, replyToMessageID = null) {
@@ -58,7 +75,6 @@ module.exports = {
   },
 
   clearAll() {
-    console.log('[MESSAGE-STORE] Clearing all messages');
     messages.clear();
   }
 };
