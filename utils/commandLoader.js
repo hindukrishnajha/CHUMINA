@@ -21,6 +21,8 @@ function loadCommands() {
         for (const file of commandFiles) {
             try {
                 const commandPath = path.join(folderPath, file);
+                console.log(`[COMMAND-LOADER] Trying to load: ${file}`);
+                
                 const command = require(commandPath);
                 
                 if (!command.name) {
@@ -48,6 +50,7 @@ function loadCommands() {
                 }
             } catch (err) {
                 console.error(`[COMMAND-LOADER] ❌ Failed to load ${file}:`, err.message);
+                console.error(err.stack); // Full error stack
             }
         }
     }
@@ -55,35 +58,14 @@ function loadCommands() {
     console.log(`[COMMAND-LOADER] 🎯 Total commands loaded: ${commands.size}`);
     
     // Debug: List all loaded commands
-    if (commands.size > 0) {
-        console.log('[COMMAND-LOADER] 📋 Loaded commands:');
-        commands.forEach((cmd, key) => {
-            console.log(`   ${key} -> ${cmd.name}`);
-        });
-    }
+    console.log('[COMMAND-LOADER] 📋 All loaded commands:');
+    commands.forEach((cmd, key) => {
+        console.log(`   ${key} -> ${cmd.name}`);
+    });
     
     return commands;
 }
 
-// Test function to verify commands
-function testCommandLoading() {
-    const commands = loadCommands();
-    
-    // Test some common commands
-    const testCommands = ['help', 'info', 'mafia', 'kick', 'addadmin'];
-    testCommands.forEach(cmd => {
-        const command = commands.get(cmd);
-        if (command) {
-            console.log(`[TEST] ✅ ${cmd} command loaded successfully`);
-        } else {
-            console.log(`[TEST] ❌ ${cmd} command not found`);
-        }
-    });
-    
-    return commands.size > 0;
-}
-
 module.exports = {
-    loadCommands,
-    testCommandLoading
+    loadCommands
 };
