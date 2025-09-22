@@ -91,6 +91,17 @@ if (!botState.roastCooldowns) botState.roastCooldowns = {};
 if (!botState.lastNicknameChange) botState.lastNicknameChange = {};
 if (!botState.mafiaGames) botState.mafiaGames = {};
 
+// Missing function add karo
+function cleanupMafiaGames(botState) {
+  Object.keys(botState.mafiaGames).forEach(gameID => {
+    const game = botState.mafiaGames[gameID];
+    if (game && !game.active) {
+      delete botState.mafiaGames[gameID];
+      console.log(`[DEBUG] Cleaned up inactive mafia game: ${gameID}`);
+    }
+  });
+}
+
 try {
   if (fs.existsSync(LEARNED_RESPONSES_PATH)) {
     botState.learnedResponses = JSON.parse(fs.readFileSync(LEARNED_RESPONSES_PATH, 'utf8'));
@@ -113,7 +124,6 @@ try {
         botState.learnedResponses[userId] = { triggers: [] };
       }
     });
-    // Restore Sets for mafiaGames alive after load
     Object.keys(botState.mafiaGames).forEach(gameID => {
       const game = botState.mafiaGames[gameID];
       if (game && Array.isArray(game.alive)) {
@@ -182,7 +192,6 @@ botState.autoConvo = false;
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// EJS सेटअप
 const ejs = require('ejs');
 app.set('view engine', 'ejs');
 app.set('views', path.join(__dirname, 'views'));
@@ -192,7 +201,6 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static('public'));
 
-// Mafia गेम रूट्स
 app.get('/mafia/:gameID', (req, res) => {
   const gameID = req.params.gameID;
   const game = botState.mafiaGames[gameID];
@@ -206,10 +214,10 @@ app.get('/mafia/:gameID', (req, res) => {
 
 app.post('/mafia/:gameID/auth', (req, res) => {
   const gameID = req.params.gameID;
-  let userID = req.body.userID ? req.body.userID.trim() : '';  // Trim UID
+  let userID = req.body.userID ? req.body.userID.trim() : '';
   const game = botState.mafiaGames[gameID];
 
-  console.log(`[DEBUG] Auth request: gameID=${gameID}, userID=${userID}, players keys=${JSON.stringify(Object.keys(game.players || {}))}`);  // Debug log
+  console.log(`[DEBUG] Auth request: gameID=${gameID}, userID=${userID}, players keys=${JSON.stringify(Object.keys(game.players || {}))}`);
 
   if (!game || !game.active) {
     return res.render('error', { message: '🚫 गेम नहीं मिला या खत्म हो चुका है! 🕉️' });
@@ -378,7 +386,7 @@ function sendBotMessage(api, message, threadID, replyToMessageID = null, mention
   const randomDelay = Math.floor(Math.random() * 1000) + 1000;
   setTimeout(() => {
     const msgObj = typeof message === 'string' ? { body: message, mentions } : { ...message, mentions };
-    if (replyToMessageID && replyToMessageID !== undefined) {  // Fix: Check undefined
+    if (replyToMessageID && replyToMessageID !== undefined) {
       msgObj.messageReply = { messageID: replyToMessageID };
     }
     api.sendMessage(msgObj, threadID, (err, messageInfo) => {
@@ -540,8 +548,8 @@ function startBot(userId, cookieContent, prefix, adminID) {
               }
             });
             console.log('[DEBUG] Cleared old commandCooldowns');
-            cleanupMafiaGames(botState);  // Periodic cleanup every 5 min
-          }, 300000);  // 5 min interval for cleanup
+            cleanupMafiaGames(botState);
+          }, 300000);
 
           api.listenMqtt(async (err, event) => {
             if (err) {
@@ -551,8 +559,48 @@ function startBot(userId, cookieContent, prefix, adminID) {
               return;
             }
 
+            // PEHLE DELETE EVENT CHECK KARO
+            if (event.type === 'message_unsend') {
+              console.log(`🎯 [DELETE-EVENT] Caught: ${event.messageID} in thread ${event.threadID}`);
+              
+              if (botState.deleteNotifyEnabled[event.threadID]) {
+                console.log(`[DELETE] Delete notify enabled for this thread`);
+                
+                const deletedMsg = messageStore.getMessage(event.messageID);
+                if (deletedMsg) {
+                  console.log(`[DELETE] Found deleted message: "${deletedMsg.content}"`);
+                  
+                  api.getThreadInfo(event.threadID, (err, info) => {
+                    if (err) {
+                      console.error('[DELETE] Failed to get thread info');
+                      return;
+                    }
+
+                    const isBotAdmin = Array.isArray(info.adminIDs) && info.adminIDs.some(admin => admin.id === botState.sessions[userId].botID);
+                    if (!isBotAdmin) {
+                      console.log('[DELETE] Bot not admin, skipping');
+                      return;
+                    }
+
+                    api.getUserInfo(deletedMsg.senderID, (err, userInfo) => {
+                      let senderName = 'Unknown';
+                      if (!err && userInfo && userInfo[deletedMsg.senderID]) {
+                        senderName = userInfo[deletedMsg.senderID].name;
+                      }
+                      
+                      const notificationMsg = `🗑️ ${senderName} ने मैसेज डिलीट किया:\n"${deletedMsg.content}"`;
+                      sendBotMessage(api, notificationMsg, event.threadID);
+                      console.log(`[DELETE] Notification sent successfully`);
+                    });
+                  });
+                } else {
+                  console.log(`[DELETE] No message found in store for ID: ${event.messageID}`);
+                }
+              }
+              return;
+            }
+
             if (event.type === 'read_receipt' || event.type === 'presence' || event.type === 'typ') {
-              console.log(`[DEBUG] Skipping ${event.type} event for threadID=${event.threadID}`);
               return;
             }
 
@@ -768,63 +816,6 @@ function startBot(userId, cookieContent, prefix, adminID) {
                   }
                   return;
                 }
-              }
-
-              // FIXED DELETE COMMAND SECTION - YAHI CHANGE KIYA HAI
-              if (event.type === 'message_unsend' && botState.deleteNotifyEnabled[threadID]) {
-                console.log(`[DEBUG] Processing message_unsend event: messageID=${event.messageID}, threadID=${threadID}`);
-                
-                // Use the correct messageID from the unsend event
-                const unsentMessageID = event.messageID;
-                
-                api.getThreadInfo(threadID, (err, info) => {
-                  if (err) {
-                    console.error('[ERROR] Failed to fetch thread info for unsend:', err.message);
-                    return; // Don't send message if we can't get thread info
-                  }
-
-                  const isBotAdmin = Array.isArray(info.adminIDs) && info.adminIDs.some(admin => admin.id === botID);
-                  if (!isBotAdmin) {
-                    console.log(`[DEBUG] Bot (ID: ${botID}) is not admin in thread ${threadID} for unsend notification`);
-                    // Don't send message if bot is not admin to avoid spam
-                    return;
-                  }
-
-                  const deletedMsg = messageStore.getMessage(unsentMessageID);
-                  if (deletedMsg) {
-                    api.getUserInfo(deletedMsg.senderID, (err, userInfo) => {
-                      let senderName = 'Unknown';
-                      if (!err && userInfo && userInfo[deletedMsg.senderID]) {
-                        senderName = userInfo[deletedMsg.senderID].name || 'Unknown';
-                      }
-                      
-                      // Create the notification message
-                      const notificationMsg = `${senderName} ने मैसेज डिलीट किया:\n"${deletedMsg.content || '(attachment or empty message)'}"`;
-                      
-                      // Send notification first
-                      sendBotMessage(api, notificationMsg, threadID, null, [], (err, msgInfo) => {
-                        if (err) {
-                          console.error('[ERROR] Failed to send delete notification:', err.message);
-                          return;
-                        }
-                        
-                        // If there's an attachment, resend it separately
-                        if (deletedMsg.attachment && deletedMsg.attachment.url) {
-                          setTimeout(() => {
-                            sendBotMessage(api, { url: deletedMsg.attachment.url }, threadID);
-                          }, 1000);
-                        }
-                        
-                        // Clean up the stored message
-                        delete messageStore.messages[unsentMessageID];
-                      });
-                    });
-                  } else {
-                    console.log(`[DEBUG] No message found for unsend event: messageID=${unsentMessageID}`);
-                    // Don't send "message not found" notification to avoid spam
-                  }
-                });
-                return;
               }
 
               if (!senderID && !['log:thread-name', 'log:thread-admins', 'typ', 'presence'].includes(event.type)) {
@@ -1373,7 +1364,6 @@ setInterval(() => {
   }
 }, 30000);
 
-// Clear mafiaGames on bot shutdown
 process.on('exit', () => {
   botState.mafiaGames = {};
   try {
