@@ -1,172 +1,216 @@
 // src/server/app.js
 const express = require('express');
 const path = require('path');
-const timeout = require('connect-timeout');
-const fs = require('fs');
-const { botState } = require(path.join(__dirname, '../config/botState'));
-const { LEARNED_RESPONSES_PATH } = require(path.join(__dirname, '../config/constants'));
+const { botState } = require('../config/botState');
+const { sendBotMessage } = require('../bot/message');
 
-const app = express();
-const PORT = process.env.PORT || 3000;
+function setupExpress(app) {
+  // Middleware to parse JSON bodies
+  app.use(express.json());
+  app.use(express.urlencoded({ extended: true }));
 
-// EJS setup
-app.set('view engine', 'ejs');
-app.set('views', path.join(__dirname, '../views'));
+  // Serve static files for Mafia game
+  app.use('/mafia', express.static(path.join(__dirname, '../../public')));
 
-app.use(timeout('60s'));
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
-app.use(express.static(path.join(__dirname, '../public')));
-
-// Mafia game routes
-app.get('/mafia/:gameID', (req, res) => {
-  const gameID = req.params.gameID;
-  const game = botState.mafiaGames[gameID];
-
-  if (!game || !game.active) {
-    return res.render('error', { message: '🚫 गेम नहीं मिला या खत्म हो चुका है! 🕉️' });
-  }
-
-  res.render('loading', { gameID });
-});
-
-app.post('/mafia/:gameID/auth', (req, res) => {
-  const gameID = req.params.gameID;
-  let userID = req.body.userID ? req.body.userID.trim() : '';
-  const game = botState.mafiaGames[gameID];
-
-  console.log(`[DEBUG] Auth request: gameID=${gameID}, userID=${userID}, players keys=${JSON.stringify(Object.keys(game.players || {}))}`);
-
-  if (!game || !game.active) {
-    return res.render('error', { message: '🚫 गेम नहीं मिला या खत्म हो चुका है! 🕉️' });
-  }
-
-  if (!userID || !game.players[userID]) {
-    return res.render('error', { message: '🚫 गलत UID या यूजर गेम में नहीं है! 🕉️' });
-  }
-
-  res.redirect(`/mafia/${gameID}/role?uid=${userID}`);
-});
-
-app.get('/mafia/:gameID/role', (req, res) => {
-  const gameID = req.params.gameID;
-  const userID = req.query.uid;
-  const game = botState.mafiaGames[gameID];
-
-  if (!game || !game.active) {
-    return res.render('error', { message: '🚫 गेम नहीं मिला या खत्म हो चुका है! 🕉️' });
-  }
-
-  if (!userID || !game.players[userID]) {
-    return res.render('error', { message: '🚫 गलत UID या यूजर गेम में नहीं है! 🕉️' });
-  }
-
-  const player = game.players[userID];
-  const isAlive = game.alive.has(userID);
-  const roleActions = {
-    Mafia: { action: 'eliminate', description: 'किसी को मारने के लिए चुनें। 😈' },
-    Doctor: { action: 'save', description: 'किसी को बचाने के लिए चुनें। 🩺' },
-    Detective: { action: 'check', description: 'किसी की भूमिका जाँचने के लिए चुनें। 🔎' },
-    Villager: { action: null, description: 'आपका काम यहाँ नहीं, ग्रुप में है। ग्रुप में रहकर अपने दिमाग से पता लगाओ माफिया कौन है और सबको convince करो कि ये माफिया हो सकता है ताकि सब वोट देकर उसे eliminate कर दें। 🧑' }
-  };
-  const currentAction = roleActions[player.role];
-
-  const validPlayers = Object.keys(game.players)
-    .filter(id => id !== userID && game.alive.has(id))
-    .map(id => ({ id, name: game.players[id].name || `Player_${id}` }));
-
-  const actionResult = game.results && game.results[userID] ? game.results[userID] : null;
-
-  res.render('role', {
-    gameID,
-    userID,
-    role: player.role,
-    name: player.name || `Player_${userID}`,
-    isAlive,
-    phase: game.phase,
-    action: currentAction.action,
-    actionDescription: currentAction.description,
-    players: validPlayers,
-    botState,
-    message: actionResult || null
+  // Health check endpoint for Render
+  app.get('/health', (req, res) => {
+    res.status(200).send('OK');
   });
-});
 
-app.post('/mafia/:gameID/action', (req, res) => {
-  const gameID = req.params.gameID;
-  const userID = req.body.userID;
-  const targetID = req.body.targetID;
-  const game = botState.mafiaGames[gameID];
+  // Mafia game role view
+  app.get('/mafia/:gameID', (req, res) => {
+    const gameID = req.params.gameID;
+    const userID = req.query.userID;
 
-  if (!game || !game.active) {
-    return res.json({ success: false, message: '🚫 गेम नहीं मिला या खत्म हो चुका है! 🕉️' });
-  }
+    if (!botState.mafiaGames[gameID]?.active) {
+      return res.status(404).send(`
+        <html>
+          <body>
+            <h1>Game Not Found</h1>
+            <p>No active Mafia game found for this ID.</p>
+          </body>
+        </html>
+      `);
+    }
 
-  if (!userID || !game.players[userID] || !game.alive.has(userID)) {
-    return res.json({ success: false, message: '🚫 यूजर गेम में नहीं है या मर चुका है! 🕉️' });
-  }
+    const game = botState.mafiaGames[gameID];
+    if (!game.players[userID]) {
+      return res.status(403).send(`
+        <html>
+          <body>
+            <h1>Access Denied</h1>
+            <p>You are not a player in this game.</p>
+          </body>
+        </html>
+      `);
+    }
 
-  if (game.phase !== 'night') {
-    return res.json({ success: false, message: '🚫 अभी नाइट फेज नहीं है! 🕉️' });
-  }
-
-  const player = game.players[userID];
-  game.results = game.results || {};
-
-  if (player.role === 'Mafia') {
-    game.actions.mafia = game.actions.mafia || [];
-    game.actions.mafia.push(targetID);
-    game.results[userID] = `😈 तुमने ${game.players[targetID].name || `Player_${targetID}`} को मारने का प्लान बनाया।`;
-  } else if (player.role === 'Doctor') {
-    game.actions.doctor = targetID;
-    game.results[userID] = `🩺 आपने ${game.players[targetID].name || `Player_${targetID}`} को आज रात के लिए save कर दिया। आज माफिया इसे नहीं मार पाएगा।`;
-  } else if (player.role === 'Detective') {
-    const checkedRole = game.players[targetID].role === 'Mafia' ? 'Mafia है' : 'Mafia नहीं है';
-    game.actions.detective = targetID;
-    game.results[userID] = `🔎 ${game.players[targetID].name || `Player_${targetID}`} ${checkedRole}।`;
-  } else {
-    return res.json({ success: false, message: '🚫 गलत एक्शन या रोल! 🕉️' });
-  }
-
-  try {
-    fs.writeFileSync(LEARNED_RESPONSES_PATH, JSON.stringify(botState, null, 2), 'utf8');
-    console.log(`[DEBUG] Action recorded for ${userID} in game ${gameID}`);
-  } catch (err) {
-    console.error(`[ERROR] Failed to save action state: ${err.message}`);
-  }
-  res.json({ success: true, message: '✅ एक्शन रजिस्टर हो गया! रिजल्ट नीचे देखें। 🕉️' });
-});
-
-app.get('/', (req, res) => {
-  if (req.timedout) return res.status(504).send('Server timeout');
-  const filePath = path.join(__dirname, '../index.html');
-  if (fs.existsSync(filePath)) {
-    res.sendFile(filePath);
-  } else {
-    res.status(404).send('Cannot GET: index.html not found.');
-  }
-});
-
-app.get('/health', (req, res) => {
-  const firstSession = Object.values(botState.sessions)[0];
-  const status = firstSession?.safeMode ? 'SAFE MODE (ID Protected)' : 'active';
-  res.status(200).json({
-    status: status,
-    bot: 'शेलेन्द्र हिन्दू का गुलाम राम किशोर बोट नम्बर 1',
-    version: '10.0.0',
-    activeSessions: Object.keys(botState.sessions).length
+    const role = game.players[userID].role;
+    res.send(`
+      <html>
+        <head>
+          <title>Mafia Game - Role</title>
+          <style>
+            body { font-family: Arial, sans-serif; text-align: center; padding: 50px; }
+            h1 { color: #333; }
+            .role { font-size: 24px; color: #d32f2f; }
+            .phase { font-size: 18px; margin-top: 20px; }
+            .action { margin-top: 20px; }
+            select, button { padding: 10px; margin: 5px; }
+          </style>
+        </head>
+        <body>
+          <h1>Your Role: <span class="role">${role}</span></h1>
+          <p class="phase">Current Phase: ${game.phase} (Day ${game.day})</p>
+          <div class="action">
+            ${role === 'Mafia' && game.phase === 'night' ? `
+              <form action="/mafia/${gameID}/action" method="POST">
+                <input type="hidden" name="userID" value="${userID}">
+                <select name="targetID">
+                  ${Array.from(game.alive)
+                    .filter(id => id !== userID)
+                    .map(id => `<option value="${id}">${game.players[id].name}</option>`)
+                    .join('')}
+                </select>
+                <button type="submit">Kill</button>
+              </form>
+            ` : role === 'Doctor' && game.phase === 'night' ? `
+              <form action="/mafia/${gameID}/action" method="POST">
+                <input type="hidden" name="userID" value="${userID}">
+                <select name="targetID">
+                  ${Array.from(game.alive)
+                    .map(id => `<option value="${id}">${game.players[id].name}</option>`)
+                    .join('')}
+                </select>
+                <button type="submit">Save</button>
+              </form>
+            ` : role === 'Detective' && game.phase === 'night' ? `
+              <form action="/mafia/${gameID}/action" method="POST">
+                <input type="hidden" name="userID" value="${userID}">
+                <select name="targetID">
+                  ${Array.from(game.alive)
+                    .filter(id => id !== userID)
+                    .map(id => `<option value="${id}">${game.players[id].name}</option>`)
+                    .join('')}
+                </select>
+                <button type="submit">Investigate</button>
+              </form>
+            ` : game.phase === 'day' ? `
+              <form action="/mafia/${gameID}/vote" method="POST">
+                <input type="hidden" name="userID" value="${userID}">
+                <select name="targetID">
+                  ${Array.from(game.alive)
+                    .filter(id => id !== userID)
+                    .map(id => `<option value="${id}">${game.players[id].name}</option>`)
+                    .join('')}
+                </select>
+                <button type="submit">Vote to Eliminate</button>
+              </form>
+            ` : `<p>Waiting for next phase...</p>`}
+          </div>
+        </body>
+      </html>
+    `);
   });
-});
 
-app.get('/keepalive', (req, res) => {
-  res.status(200).json({ status: 'alive' });
-});
+  // Mafia game action
+  app.post('/mafia/:gameID/action', (req, res) => {
+    const gameID = req.params.gameID;
+    const { userID, targetID } = req.body;
 
-function startServer() {
-  const server = app.listen(PORT, () => {
-    console.log(`Server running on port ${PORT}`);
+    if (!botState.mafiaGames[gameID]?.active) {
+      return res.status(404).send('Game not found');
+    }
+
+    const game = botState.mafiaGames[gameID];
+    if (!game.players[userID] || !game.alive.has(userID)) {
+      return res.status(403).send('You are not a player or are not alive');
+    }
+
+    const role = game.players[userID].role;
+    if (game.phase !== 'night') {
+      return res.status(400).send('Actions can only be performed during the night phase');
+    }
+
+    if (role === 'Mafia') {
+      game.actions.mafia = [targetID];
+      sendBotMessage(
+        Object.values(botState.sessions).find(session => session.api)?.api,
+        `🕵️‍♂️ माफिया ने ${game.players[targetID].name} को टारगेट किया।`, 
+        gameID
+      );
+    } else if (role === 'Doctor') {
+      game.actions.doctor = targetID;
+      sendBotMessage(
+        Object.values(botState.sessions).find(session => session.api)?.api,
+        `🩺 डॉक्टर ने ${game.players[targetID].name} को बचाने का फैसला किया।`, 
+        gameID
+      );
+    } else if (role === 'Detective') {
+      const investigatedRole = game.players[targetID].role;
+      game.results[userID] = `🔍 ${game.players[targetID].name} का रोल है: ${investigatedRole}`;
+      sendBotMessage(
+        Object.values(botState.sessions).find(session => session.api)?.api,
+        `🔍 डिटेक्टिव ने ${game.players[targetID].name} की जांच की: रोल है ${investigatedRole}`, 
+        userID
+      );
+    }
+
+    res.redirect(`/mafia/${gameID}?userID=${userID}`);
   });
-  return server;
+
+  // Mafia game vote
+  app.post('/mafia/:gameID/vote', (req, res) => {
+    const gameID = req.params.gameID;
+    const { userID, targetID } = req.body;
+
+    if (!botState.mafiaGames[gameID]?.active) {
+      return res.status(404).send('Game not found');
+    }
+
+    const game = botState.mafiaGames[gameID];
+    if (!game.players[userID] || !game.alive.has(userID)) {
+      return res.status(403).send('You are not a player or are not alive');
+    }
+
+    if (game.phase !== 'day') {
+      return res.status(400).send('Voting can only be performed during the day phase');
+    }
+
+    if (!game.votes[targetID]) {
+      game.votes[targetID] = new Set();
+    }
+    game.votes[targetID].add(userID);
+
+    const voteCounts = Object.keys(game.votes).map(target => ({
+      target,
+      count: game.votes[target].size
+    }));
+    const maxVotes = Math.max(...voteCounts.map(v => v.count));
+    const topVoted = voteCounts.find(v => v.count === maxVotes);
+
+    if (topVoted && topVoted.count > game.alive.size / 2) {
+      game.alive.delete(topVoted.target);
+      sendBotMessage(
+        Object.values(botState.sessions).find(session => session.api)?.api,
+        `🗳️ ${game.players[topVoted.target].name} को बहुमत से बाहर कर दिया गया! 🕉️`, 
+        gameID
+      );
+      game.votes = {};
+      setTimeout(() => require('../bot/mafia').processNightPhase(
+        Object.values(botState.sessions).find(session => session.api)?.api,
+        gameID
+      ), 30000);
+    } else {
+      sendBotMessage(
+        Object.values(botState.sessions).find(session => session.api)?.api,
+        `🗳️ ${game.players[userID].name} ने ${game.players[targetID].name} को वोट दिया।`, 
+        gameID
+      );
+    }
+
+    res.redirect(`/mafia/${gameID}?userID=${userID}`);
+  });
 }
 
-module.exports = { startServer };
+module.exports = { setupExpress };
