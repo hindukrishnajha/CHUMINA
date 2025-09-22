@@ -1,22 +1,59 @@
 // src/bot/message.js
 const fs = require('fs');
+const path = require('path');
 const axios = require('axios');
-const { botState } = require('../config/botState');
-const { botConfig } = require('../config/botConfig');
-const { MASTER_ID, LEARNED_RESPONSES_PATH } = require('../config/constants');
-const { getAIResponse } = require('../utils/aichat');
-const { messageStore } = require('../utils/messageStore');
-const { processNicknameChange } = require('../utils/nicknameUtils');
-const { broadcast } = require('../utils/broadcast');
-const adminTagReplies = require('../../responses/adminTagReplies');
-const autoreplies = require('../../responses/autoreplies');
-const favoriteStickers = require('../../responses/favoriteStickers');
-const masterReplies = require('../../responses/masterReplies');
-const randomBotReplies = require('../../responses/randomBotReplies');
-const { executeCommand } = require('./commands');
+const { botState } = require(path.join(__dirname, '../../config/botState'));
+const { botConfig } = require(path.join(__dirname, '../../config/botConfig'));
+const { MASTER_ID, LEARNED_RESPONSES_PATH } = require(path.join(__dirname, '../../config/constants'));
+const { getAIResponse } = require(path.join(__dirname, '../../utils/aichat'));
+const { messageStore } = require(path.join(__dirname, '../../utils/messageStore'));
+const { processNicknameChange } = require(path.join(__dirname, '../../utils/nicknameUtils'));
+const { broadcast } = require(path.join(__dirname, '../../utils/broadcast'));
+const adminTagReplies = require(path.join(__dirname, '../../responses/adminTagReplies'));
+const autoreplies = require(path.join(__dirname, '../../responses/autoreplies'));
+const favoriteStickers = require(path.join(__dirname, '../../responses/favoriteStickers'));
+const goodbyeMessages = require(path.join(__dirname, '../../responses/goodbye')).goodbyeMessages;
+const randomBotReplies = require(path.join(__dirname, '../../responses/randomBotReplies'));
+const welcomeMessages = require(path.join(__dirname, '../../responses/welcome')).welcomeMessages;
+const masterReplies = require(path.join(__dirname, '../../responses/masterReplies'));
+const { loadAbuseMessages } = require(path.join(__dirname, '../../utils/fileUtils'));
+
+function sendBotMessage(api, message, threadID, replyToMessageID = null, mentions = [], callback = null) {
+  const userId = Object.keys(botState.sessions).find(id => botState.sessions[id].api === api);
+  if (botState.sessions[userId]?.safeMode) {
+    console.log(`SAFE MODE: Skipping message to ${threadID}`);
+    if (callback && typeof callback === 'function') callback(null, null);
+    return;
+  }
+  const randomDelay = Math.floor(Math.random() * 1000) + 1000;
+  setTimeout(() => {
+    const msgObj = typeof message === 'string' ? { body: message, mentions } : { ...message, mentions };
+    if (replyToMessageID && replyToMessageID !== undefined) {
+      msgObj.messageReply = { messageID: replyToMessageID };
+    }
+    api.sendMessage(msgObj, threadID, (err, messageInfo) => {
+      if (err) {
+        console.error(`[SEND-ERROR] Failed to send with reply: ${err.message}. Trying without reply...`);
+        const fallbackMsgObj = typeof message === 'string' ? { body: message, mentions } : { ...message, mentions };
+        api.sendMessage(fallbackMsgObj, threadID, (fallbackErr, fallbackInfo) => {
+          if (fallbackErr) {
+            console.error(`[SEND-ERROR] Fallback failed: ${fallbackErr.message}`);
+          } else if (fallbackInfo?.messageID) {
+            messageStore.storeBotMessage(fallbackInfo.messageID, typeof message === 'string' ? message : JSON.stringify(message), threadID, replyToMessageID);
+          }
+          if (callback && typeof callback === 'function') callback(fallbackErr, fallbackInfo);
+        });
+      } else if (messageInfo?.messageID) {
+        messageStore.storeBotMessage(messageInfo.messageID, typeof message === 'string' ? message : JSON.stringify(message), threadID, replyToMessageID);
+      }
+      if (callback && typeof callback === 'function') callback(err, messageInfo);
+    });
+  }, randomDelay);
+}
 
 function listenEvents(api, userId) {
   const userRateLimits = {};
+  const abuseMessages = loadAbuseMessages();
 
   setInterval(() => {
     if (Object.keys(botState.eventProcessed).length > 0) {
@@ -51,7 +88,7 @@ function listenEvents(api, userId) {
 
   api.listenMqtt(async (err, event) => {
     if (err) {
-      console.error(`Listen error for ${userId} (attempt 1):`, err?.message || err);
+      console.error(`Listen error for ${userId}:`, err?.message || err);
       botState.sessions[userId].safeMode = true;
       broadcast({ type: 'log', message: `Connection lost – SAFE MODE activated. Bot alive, update cookies.`, userId });
       return;
@@ -206,227 +243,394 @@ function listenEvents(api, userId) {
           if (isMaster) {
             api.setMessageReaction('😍', messageID, (err) => {});
           }
-          executeCommand(api, threadID, messageID, command, cleanArgs, event, isMaster, isAdmin, botID, stopBot);
+
+          const cmd = commands.get(command);
+          if (cmd) {
+            if (botState.commandCooldowns[threadID]?.[command]?.timestamp && Date.now() - botState.commandCooldowns[threadID][command].timestamp < 10000) {
+              console.log(`[DEBUG] Command ${command} on cooldown for thread ${threadID}`);
+              sendBotMessage(api, '⚠️ कूलडाउन: 10 सेकंड बाद ट्राई करें।', threadID, messageID);
+              return;
+            }
+            try {
+              if (['stickerspam', 'antiout', 'groupnamelock', 'nicknamelock', 'unsend', 'roast', 'mute', 'unmute'].includes(cmd.name) && !isAdmin) {
+                sendBotMessage(api, "🚫 ये कमांड सिर्फ एडमिन्स या मास्टर के लिए है! 🕉️", threadID, messageID);
+                console.log(`[DEBUG] Command ${cmd.name} rejected: Sender ${senderID} is not admin`);
+              } else if (['stopall', 'status', 'removeadmin', 'masterid', 'mastercommand', 'listadmins', 'list', 'kick', 'addadmin'].includes(cmd.name) && !isMaster) {
+                sendBotMessage(api, "🚫 ये कमांड सिर्फ मास्टर के लिए है! 🕉️", threadID, messageID);
+                console.log(`[DEBUG] Command ${cmd.name} rejected: Sender ${senderID} is not master`);
+              } else {
+                cmd.execute(api, threadID, cleanArgs, event, botState, isMaster, botID, stopBot);
+                if (!botState.commandCooldowns[threadID]) botState.commandCooldowns[threadID] = {};
+                botState.commandCooldowns[threadID][command] = { timestamp: Date.now() };
+                setTimeout(() => delete botState.commandCooldowns[threadID][command], 10000);
+              }
+            } catch (err) {
+              console.error(`[ERROR] Command ${command} error:`, err.message);
+              sendBotMessage(api, `❌ कमांड चलाने में गलती: ${err.message} 🕉️`, threadID, messageID);
+            }
+          } else {
+            if (command === 'learn') {
+              const fullMsg = event.body;
+              const match = fullMsg.match(/#learn\s*\(\s*([^)]+)\s*\)\s*\{\s*([^}]+)\s*\}/i);
+              if (match && isAdmin) {
+                const trigger = match[1].trim();
+                const response = match[2].trim();
+                if (trigger && response) {
+                  if (!botState.learnedResponses[userId]) {
+                    botState.learnedResponses[userId] = { triggers: [] };
+                  }
+                  let existingIndex = -1;
+                  botState.learnedResponses[userId].triggers.forEach((entry, index) => {
+                    if (entry.trigger.toLowerCase().trim() === trigger.toLowerCase().trim()) {
+                      existingIndex = index;
+                    }
+                  });
+                  if (existingIndex !== -1) {
+                    botState.learnedResponses[userId].triggers[existingIndex].responses.push(response);
+                    sendBotMessage(api, `✅ ट्रिगर "${trigger}" अपडेट हो गया! नया रिस्पॉन्स: ${response} 🕉️`, threadID, messageID);
+                  } else {
+                    botState.learnedResponses[userId].triggers.push({
+                      trigger: trigger,
+                      responses: [response]
+                    });
+                    sendBotMessage(api, `✅ नया रिस्पॉन्स सीखा गया!\nट्रिगर: ${trigger}\nरिस्पॉन्स: ${response} 🕉️`, threadID, messageID);
+                  }
+                  fs.writeFileSync(LEARNED_RESPONSES_PATH, JSON.stringify(botState.learnedResponses, null, 2), 'utf8');
+                } else {
+                  sendBotMessage(api, '❌ ट्रिगर को ( ) में डालें, जैसे: #learn (trigger) {response} 🕉️', threadID, messageID);
+                }
+              } else if (!isAdmin) {
+                sendBotMessage(api, "🚫 ये कमांड सिर्फ एडमिन्स या मास्टर के लिए है! 🕉️", threadID, messageID);
+              } else {
+                sendBotMessage(api, `❌ गलत कमांड "${command}"। यूज: ${botState.sessions[userId].prefix}help 🕉️`, threadID, messageID);
+              }
+            } else {
+              console.log(`[DEBUG] Command not found: ${command}`);
+              sendBotMessage(api, `❌ गलत कमांड "${command}"। यूज: ${botState.sessions[userId].prefix}help 🕉️`, threadID, messageID);
+            }
+          }
           return;
         }
-      }
 
-      if (event.type === 'message_unsend' && botState.deleteNotifyEnabled[threadID]) {
-        console.log(`[DEBUG] Processing message_unsend event: messageID=${messageID}, threadID=${threadID}`);
-        api.getThreadInfo(threadID, (err, info) => {
-          if (err) {
-            console.error('[ERROR] Failed to fetch thread info for unsend:', err.message);
-            sendBotMessage(api, '⚠️ ग्रुप जानकारी लाने में गलती।', threadID, messageID);
-            return;
-          }
+        if (event.type === 'message_unsend' && botState.deleteNotifyEnabled[threadID]) {
+          console.log(`[DEBUG] Processing message_unsend event: messageID=${messageID}, threadID=${threadID}`);
+          api.getThreadInfo(threadID, (err, info) => {
+            if (err) {
+              console.error('[ERROR] Failed to fetch thread info for unsend:', err.message);
+              sendBotMessage(api, '⚠️ ग्रुप जानकारी लाने में गलती।', threadID, messageID);
+              return;
+            }
 
-          const isBotAdmin = Array.isArray(info.adminIDs) && info.adminIDs.some(admin => admin.id === botID);
-          if (!isBotAdmin) {
-            console.log(`[DEBUG] Bot (ID: ${botID}) is not admin in thread ${threadID} for unsend notification`);
-            sendBotMessage(api, 'मालिक, मुझे एडमिन बनाओ ताकि मैं डिलीट नोटिफिकेशन भेज सकूं! 🙏', threadID, messageID);
-            return;
-          }
+            const isBotAdmin = Array.isArray(info.adminIDs) && info.adminIDs.some(admin => admin.id === botID);
+            if (!isBotAdmin) {
+              console.log(`[DEBUG] Bot (ID: ${botID}) is not admin in thread ${threadID} for unsend notification`);
+              sendBotMessage(api, 'मालिक, मुझे एडमिन बनाओ ताकि मैं डिलीट नोटिफिकेशन भेज सकूं! 🙏', threadID, messageID);
+              return;
+            }
 
-          const deletedMsg = messageStore.getMessage(messageID);
-          if (deletedMsg) {
-            api.getUserInfo(deletedMsg.senderID, (err, info) => {
-              if (err || !info || !info[deletedMsg.senderID]) {
-                sendBotMessage(api, `Unknown ने मैसेज डिलीट किया: "${deletedMsg.content || '(attachment or empty message)'}"`, threadID, messageID);
+            const deletedMsg = messageStore.getMessage(messageID);
+            if (deletedMsg) {
+              api.getUserInfo(deletedMsg.senderID, (err, info) => {
+                if (err || !info || !info[deletedMsg.senderID]) {
+                  sendBotMessage(api, `Unknown ने मैसेज डिलीट किया: "${deletedMsg.content || '(attachment or empty message)'}"`, threadID, messageID);
+                  if (deletedMsg.attachment && deletedMsg.attachment.url) {
+                    sendBotMessage(api, { url: deletedMsg.attachment.url }, threadID, messageID);
+                  }
+                  return;
+                }
+                const senderName = info[deletedMsg.senderID].name || 'Unknown';
+                sendBotMessage(api, `${senderName} ने मैसेज डिलीट किया: "${deletedMsg.content || '(attachment or empty message)'}"`, threadID, messageID);
                 if (deletedMsg.attachment && deletedMsg.attachment.url) {
                   sendBotMessage(api, { url: deletedMsg.attachment.url }, threadID, messageID);
                 }
-                return;
-              }
-              const senderName = info[deletedMsg.senderID].name || 'Unknown';
-              sendBotMessage(api, `${senderName} ने मैसेज डिलीट किया: "${deletedMsg.content || '(attachment or empty message)'}"`, threadID, messageID);
-              if (deletedMsg.attachment && deletedMsg.attachment.url) {
-                sendBotMessage(api, { url: deletedMsg.attachment.url }, threadID, messageID);
-              }
-              delete messageStore.messages[messageID];
-            });
-          } else {
-            console.log(`[DEBUG] No message found for unsend event: messageID=${messageID}`);
-            sendBotMessage(api, '❌ डिलीट किया गया मैसेज नहीं मिला।', threadID, messageID);
-          }
-        });
-        return;
-      }
-
-      if (!senderID && !['log:thread-name', 'log:thread-admins', 'typ', 'presence'].includes(event.type)) {
-        console.warn(`[DEBUG] senderID is undefined for event in thread ${event.threadID || 'undefined'}. Event type: ${event.type}`);
-        return;
-      }
-
-      if (event.type === 'message' && senderID && botState.chatEnabled[threadID] && (event.body?.toLowerCase().startsWith('#ai') || event.body?.toLowerCase().startsWith('@ai'))) {
-        const now = Date.now();
-        if (userRateLimits[senderID] && now - userRateLimits[senderID] < 120000) {
-          sendBotMessage(api, '🚫 किंग के नियमों का पालन करो, भाई! 🕉️ एक मिनट में सिर्फ एक सवाल पूछ सकते हो, ताकि तुम किंग की महानता, शूरवीरता, दानवीरता और परमवीरता पर विचार कर सको। सोचो, वो कितने महान हैं! 🌟 जय श्री राम! 🙏', threadID, messageID);
+                delete messageStore.messages[messageID];
+              });
+            } else {
+              console.log(`[DEBUG] No message found for unsend event: messageID=${messageID}`);
+              sendBotMessage(api, '❌ डिलीट किया गया मैसेज नहीं मिला।', threadID, messageID);
+            }
+          });
           return;
         }
-        userRateLimits[senderID] = now;
-        const userMessage = event.body.replace(/#ai|@ai/gi, '').trim();
-        const groqResponse = await getAIResponse(userMessage || 'अरे भाई, कुछ मस्ती करो ना! 😎');
-        sendBotMessage(api, groqResponse, threadID, messageID);
-        return;
-      }
 
-      if (isGroup && senderID !== botID) {
-        if (!botState.memberCache[threadID]) {
-          botState.memberCache[threadID] = new Set();
+        if (!senderID && !['log:thread-name', 'log:thread-admins', 'typ', 'presence'].includes(event.type)) {
+          console.warn(`[DEBUG] senderID is undefined for event in thread ${event.threadID || 'undefined'}. Event type: ${event.type}`);
+          return;
         }
-        botState.memberCache[threadID].add(senderID);
-        if (botState.memberCache[threadID].size > 50) {
-          botState.memberCache[threadID].clear();
-        }
-      }
 
-      if (event.mentions && typeof event.mentions === 'object' && Object.keys(event.mentions).length > 0) {
-        if (!botState.memberCache[threadID]) {
-          botState.memberCache[threadID] = new Set();
-        }
-        Object.keys(event.mentions).forEach(id => {
-          if (id !== botID) {
-            botState.memberCache[threadID].add(id);
-            if (botState.memberCache[threadID].size > 50) {
-              botState.memberCache[threadID].clear();
-            }
-          }
-        });
-      }
-
-      if (event.logMessageType === 'log:subscribe') {
-        const addedIDs = Array.isArray(event.logMessageData?.addedParticipants) ? event.logMessageData.addedParticipants.map(p => p.userFbId) : [];
-        if (!botState.memberCache[threadID]) {
-          botState.memberCache[threadID] = new Set();
-        }
-        addedIDs.forEach(id => {
-          if (botState.mutedUsers && botState.mutedUsers[threadID] && botState.mutedUsers[threadID].includes(id)) {
-            console.log(`[MUTE] Skipping welcome for muted user ${id}`);
+        if (event.type === 'message' && senderID && botState.chatEnabled[threadID] && (event.body?.toLowerCase().startsWith('#ai') || event.body?.toLowerCase().startsWith('@ai'))) {
+          const now = Date.now();
+          if (userRateLimits[senderID] && now - userRateLimits[senderID] < 120000) {
+            sendBotMessage(api, '🚫 किंग के नियमों का पालन करो, भाई! 🕉️ एक मिनट में सिर्फ एक सवाल पूछ सकते हो, ताकि तुम किंग की महानता, शूरवीरता, दानवीरता और परमवीरता पर विचार कर सको। सोचो, वो कितने महान हैं! 🌟 जय श्री राम! 🙏', threadID, messageID);
             return;
           }
-          if (id === botID) {
-            sendBotMessage(api, `🍒💙•••Ɓ❍ʈ Ƈøɳɳɛƈʈɛɗ•••💞🌿
+          userRateLimits[senderID] = now;
+          const userMessage = event.body.replace(/#ai|@ai/gi, '').trim();
+          const groqResponse = await getAIResponse(userMessage || 'अरे भाई, कुछ मस्ती करो ना! 😎');
+          sendBotMessage(api, groqResponse, threadID, messageID);
+          return;
+        }
+
+        if (isGroup && senderID !== botID) {
+          if (!botState.memberCache[threadID]) {
+            botState.memberCache[threadID] = new Set();
+          }
+          botState.memberCache[threadID].add(senderID);
+          if (botState.memberCache[threadID].size > 50) {
+            botState.memberCache[threadID].clear();
+          }
+        }
+
+        if (event.mentions && typeof event.mentions === 'object' && Object.keys(event.mentions).length > 0) {
+          if (!botState.memberCache[threadID]) {
+            botState.memberCache[threadID] = new Set();
+          }
+          Object.keys(event.mentions).forEach(id => {
+            if (id !== botID) {
+              botState.memberCache[threadID].add(id);
+              if (botState.memberCache[threadID].size > 50) {
+                botState.memberCache[threadID].clear();
+              }
+            }
+          });
+        }
+
+        if (event.logMessageType === 'log:subscribe') {
+          const addedIDs = Array.isArray(event.logMessageData?.addedParticipants) ? event.logMessageData.addedParticipants.map(p => p.userFbId) : [];
+          if (!botState.memberCache[threadID]) {
+            botState.memberCache[threadID] = new Set();
+          }
+          addedIDs.forEach(id => {
+            if (botState.mutedUsers && botState.mutedUsers[threadID] && botState.mutedUsers[threadID].includes(id)) {
+              console.log(`[MUTE] Skipping welcome for muted user ${id}`);
+              return;
+            }
+            if (id === botID) {
+              sendBotMessage(api, `🍒💙•••Ɓ❍ʈ Ƈøɳɳɛƈʈɛɗ•••💞🌿
 🕊️🌸...Ɦɛɭɭ❍ Ɠɣus Ɱɣ ɴαɱɛ ιʂ ʂɧαʟɛɳɗɛɽ ɧιɳɗu Ɱαʂʈɛɽ'ʂ Ɓ❍ʈ...🌸🕊️
 🛠️...use #help for commands...🛠️`, threadID, messageID);
-          } else {
-            botState.memberCache[threadID].add(id);
-            try {
-              api.getUserInfo(id, (err, ret) => {
-                if (err || !ret || !ret[id]) {
-                  sendBotMessage(api, botState.welcomeMessages[Math.floor(Math.random() * botState.welcomeMessages.length)].replace('{name}', 'User'), threadID, messageID);
-                  return;
-                }
-                const name = ret[id].name || 'User';
-                const welcomeMsg = botState.welcomeMessages[Math.floor(Math.random() * botState.welcomeMessages.length)].replace('{name}', name);
-                sendBotMessage(api, welcomeMsg, threadID, messageID);
-              });
-            } catch (err) {
-              sendBotMessage(api, botState.welcomeMessages[Math.floor(Math.random() * botState.welcomeMessages.length)].replace('{name}', 'User'), threadID, messageID);
+            } else {
+              botState.memberCache[threadID].add(id);
+              try {
+                api.getUserInfo(id, (err, ret) => {
+                  if (err || !ret || !ret[id]) {
+                    sendBotMessage(api, botState.welcomeMessages[Math.floor(Math.random() * botState.welcomeMessages.length)].replace('{name}', 'User'), threadID, messageID);
+                    return;
+                  }
+                  const name = ret[id].name || 'User';
+                  const welcomeMsg = botState.welcomeMessages[Math.floor(Math.random() * botState.welcomeMessages.length)].replace('{name}', name);
+                  sendBotMessage(api, welcomeMsg, threadID, messageID);
+                });
+              } catch (err) {
+                sendBotMessage(api, botState.welcomeMessages[Math.floor(Math.random() * botState.welcomeMessages.length)].replace('{name}', 'User'), threadID, messageID);
+              }
             }
-          }
-        });
-      }
-
-      if (isMaster && event.type === 'message') {
-        api.setMessageReaction('😍', messageID, (err) => {});
-      }
-
-      if (botConfig.autoSpamAccept && event.type === 'message_request') {
-        api.handleMessageRequest(event.threadID, true, (err) => {
-          if (!err) {
-            sendBotMessage(api, "🚀 ऑटो-एक्सेप्ट किया गया मैसेज रिक्वेस्ट!", threadID, messageID);
-          }
-        });
-      }
-
-      if (event.type === 'message') {
-        const msg = event.body?.toLowerCase() || '';
-        if (!msg) return;
-
-        const lowerMsg = msg.trim().toLowerCase();
-        let responseSent = false;
-
-        const specialTags = ['#ai', '@ai'];
-        if (!responseSent && specialTags.some(tag => lowerMsg.includes(tag))) {
-          if (botState.chatEnabled[threadID] === true) {
-            const userMessage = event.body.replace(/#ai|@ai/gi, '').trim();
-            const groqResponse = await getAIResponse(userMessage || 'अरे भाई, कुछ मस्ती करो ना! 😎');
-            sendBotMessage(api, groqResponse, threadID, messageID);
-            responseSent = true;
-            if (messageID && botState.eventProcessed[messageID]) {
-              delete botState.eventProcessed[messageID];
-              console.log(`[MEMORY] Cleared eventProcessed for messageID: ${messageID}`);
-            }
-            if (senderID && userRateLimits[senderID]) {
-              delete userRateLimits[senderID];
-              console.log(`[MEMORY] Cleared userRateLimits for senderID: ${senderID}`);
-            }
-          } else {
-            sendBotMessage(api, '❌ मालिक, चैट ऑफ है! पहले #chat on करो। 🕉️', threadID, messageID);
-            responseSent = true;
-          }
-          return;
+          });
         }
 
-        if (isMaster) {
-          if (masterReplies.generalCalls.triggers.some(trigger => lowerMsg === trigger || lowerMsg.includes(trigger))) {
-            const randomReply = masterReplies.generalCalls.replies[Math.floor(Math.random() * masterReplies.generalCalls.replies.length)];
-            sendBotMessage(api, randomReply, threadID, messageID);
-            responseSent = true;
+        if (isMaster && event.type === 'message') {
+          api.setMessageReaction('😍', messageID, (err) => {});
+        }
+
+        if (botConfig.autoSpamAccept && event.type === 'message_request') {
+          api.handleMessageRequest(event.threadID, true, (err) => {
+            if (!err) {
+              sendBotMessage(api, "🚀 ऑटो-एक्सेप्ट किया गया मैसेज रिक्वेस्ट!", threadID, messageID);
+            }
+          });
+        }
+
+        if (event.type === 'message') {
+          const msg = event.body?.toLowerCase() || '';
+          if (!msg) return;
+
+          const lowerMsg = msg.trim().toLowerCase();
+          let responseSent = false;
+
+          const specialTags = ['#ai', '@ai'];
+          if (!responseSent && specialTags.some(tag => lowerMsg.includes(tag))) {
+            if (botState.chatEnabled[threadID] === true) {
+              const userMessage = event.body.replace(/#ai|@ai/gi, '').trim();
+              const groqResponse = await getAIResponse(userMessage || 'अरे भाई, कुछ मस्ती करो ना! 😎');
+              sendBotMessage(api, groqResponse, threadID, messageID);
+              responseSent = true;
+              if (messageID && botState.eventProcessed[messageID]) {
+                delete botState.eventProcessed[messageID];
+                console.log(`[MEMORY] Cleared eventProcessed for messageID: ${messageID}`);
+              }
+              if (senderID && userRateLimits[senderID]) {
+                delete userRateLimits[senderID];
+                console.log(`[MEMORY] Cleared userRateLimits for senderID: ${senderID}`);
+              }
+            } else {
+              sendBotMessage(api, '❌ मालिक, चैट ऑफ है! पहले #chat on करो। 🕉️', threadID, messageID);
+              responseSent = true;
+            }
             return;
           }
 
-          if (masterReplies.morningGreetings.triggers.some(trigger => lowerMsg === trigger || lowerMsg.includes(trigger))) {
-            const randomReply = masterReplies.morningGreetings.replies[Math.floor(Math.random() * masterReplies.morningGreetings.replies.length)];
-            sendBotMessage(api, randomReply, threadID, messageID);
-            responseSent = true;
-            return;
-          }
-
-          if (masterReplies.ramGreetings.triggers.some(trigger => lowerMsg === trigger || lowerMsg.includes(trigger))) {
-            const randomReply = masterReplies.ramGreetings.replies[Math.floor(Math.random() * masterReplies.ramGreetings.replies.length)];
-            sendBotMessage(api, randomReply, threadID, messageID);
-            responseSent = true;
-            return;
-          }
-
-          if (masterReplies.pelCommands.triggers.some(trigger => lowerMsg.includes(trigger)) && event.mentions && Object.keys(event.mentions).length > 0) {
-            const targetID = Object.keys(event.mentions)[0];
-            if (Array.isArray(botState.adminList) && botState.adminList.includes(targetID)) {
-              const randomAdminAbuseReply = masterReplies.adminAbuseReplies.replies[Math.floor(Math.random() * masterReplies.adminAbuseReplies.replies.length)];
-              sendBotMessage(api, randomAdminAbuseReply, threadID, messageID);
+          if (isMaster) {
+            if (masterReplies.generalCalls.triggers.some(trigger => lowerMsg === trigger || lowerMsg.includes(trigger))) {
+              const randomReply = masterReplies.generalCalls.replies[Math.floor(Math.random() * masterReplies.generalCalls.replies.length)];
+              sendBotMessage(api, randomReply, threadID, messageID);
               responseSent = true;
               return;
             }
+
+            if (masterReplies.morningGreetings.triggers.some(trigger => lowerMsg === trigger || lowerMsg.includes(trigger))) {
+              const randomReply = masterReplies.morningGreetings.replies[Math.floor(Math.random() * masterReplies.morningGreetings.replies.length)];
+              sendBotMessage(api, randomReply, threadID, messageID);
+              responseSent = true;
+              return;
+            }
+
+            if (masterReplies.ramGreetings.triggers.some(trigger => lowerMsg === trigger || lowerMsg.includes(trigger))) {
+              const randomReply = masterReplies.ramGreetings.replies[Math.floor(Math.random() * masterReplies.ramGreetings.replies.length)];
+              sendBotMessage(api, randomReply, threadID, messageID);
+              responseSent = true;
+              return;
+            }
+
+            if (masterReplies.pelCommands.triggers.some(trigger => lowerMsg.includes(trigger)) && event.mentions && Object.keys(event.mentions).length > 0) {
+              const targetID = Object.keys(event.mentions)[0];
+              if (Array.isArray(botState.adminList) && botState.adminList.includes(targetID)) {
+                const randomAdminAbuseReply = masterReplies.adminAbuseReplies.replies[Math.floor(Math.random() * masterReplies.adminAbuseReplies.replies.length)];
+                sendBotMessage(api, randomAdminAbuseReply, threadID, messageID);
+                responseSent = true;
+                return;
+              }
+              if (!botState.abuseTargets[threadID]) {
+                botState.abuseTargets[threadID] = {};
+              }
+              if (!botState.abuseTargets[threadID][targetID] && abuseMessages.length > 0) {
+                botState.abuseTargets[threadID][targetID] = true;
+                try {
+                  api.getUserInfo(targetID, (err, ret) => {
+                    if (err || !ret || !ret[targetID]) {
+                      sendBotMessage(api, '⚠️ यूजर जानकारी लाने में असफल। 🕉️', threadID, messageID);
+                      return;
+                    }
+                    const name = ret[targetID].name || 'User';
+                    const randomPelReply = masterReplies.pelCommands.replies[Math.floor(Math.random() * masterReplies.pelCommands.replies.length)];
+                    sendBotMessage(api, randomPelReply, threadID, messageID);
+                    const spamLoop = async () => {
+                      while (botState.abuseTargets[threadID]?.[targetID] && abuseMessages.length > 0) {
+                        if (!botState.abuseTargets[threadID]?.[targetID]) break;
+                        try {
+                          const randomMsg = abuseMessages[Math.floor(Math.random() * abuseMessages.length)];
+                          const mentionTag = `${name.split(' ')[0]}`;
+                          await sendBotMessage(api, `${mentionTag} ${randomMsg}`, threadID);
+                          if (!botState.abuseTargets[threadID]?.[targetID]) break;
+                        } catch (err) {
+                          console.error('Pel command abuse loop error:', err.message);
+                          break;
+                        }
+                        await new Promise(r => setTimeout(r, 120000));
+                      }
+                      console.log('[DEBUG] Pel spam loop ended for target:', targetID);
+                    };
+                    spamLoop();
+                  });
+                } catch (err) {
+                  sendBotMessage(api, '⚠️ यूजर जानकारी लाने में असफल। 🕉️', threadID, messageID);
+                }
+              }
+              responseSent = true;
+              return;
+            }
+
+            for (const question in masterReplies.questionReplies) {
+              if (lowerMsg.includes(question)) {
+                let reply = masterReplies.questionReplies[question];
+                if (Array.isArray(reply)) {
+                  reply = reply[Math.floor(Math.random() * reply.length)];
+                }
+                sendBotMessage(api, reply, threadID, messageID);
+                responseSent = true;
+                return;
+              }
+            }
+          }
+
+          if (botState.learnedResponses[userId]?.triggers) {
+            for (const triggerEntry of botState.learnedResponses[userId].triggers) {
+              const triggerLower = triggerEntry.trigger.toLowerCase().trim();
+              if (lowerMsg === triggerLower || lowerMsg.includes(triggerLower)) {
+                const responses = triggerEntry.responses;
+                if (responses && responses.length > 0) {
+                  const randomResponse = responses[Math.floor(Math.random() * responses.length)];
+                  sendBotMessage(api, randomResponse, threadID, messageID);
+                  responseSent = true;
+                  break;
+                }
+              }
+            }
+          }
+          if (responseSent) return;
+
+          if (isMaster && event.mentions && Array.isArray(botState.adminList) && Object.keys(event.mentions).some(id => botState.adminList.includes(id))) {
+            const randomAdminTagReply = masterReplies.adminTagReplies.replies[Math.floor(Math.random() * masterReplies.adminTagReplies.replies.length)];
+            sendBotMessage(api, randomAdminTagReply, threadID, messageID);
+            responseSent = true;
+            return;
+          }
+
+          const replyList = autoreplies.autoreplies;
+          for (let key in replyList) {
+            if (lowerMsg.includes(key.toLowerCase())) {
+              const responses = Array.isArray(replyList[key]) ? [replyList[key]] : [replyList[key]];
+              const randomReply = responses[Math.floor(Math.random() * responses.length)];
+              sendBotMessage(api, randomReply, threadID, messageID);
+              responseSent = true;
+              return;
+            }
+          }
+
+          const badWords = [
+            'gandu', 'chutia', 'chutiya', 'lodu', 'lavdi', 'jhatu', 'gandwa', 'gandvi', 'bhosdiwala', 'chinal', 'chapri',
+            'namoona', 'jokar', 'ullu', 'jhat ka baal', 'bhosdiwala', 'bsdk', 'loda lele', 'b gand de',
+            'bc', 'mc', 'lode', 'lode k baal', 'abe lode', 'abe lund', 'abe chutiye', 'abe gandu',
+            'chup lodu', 'chup gandu', 'chup chutiye', 'chup chinal', 'chup lodi', 'chup jhatu',
+            'chup lvdi', 'chup lvda', 'lvda', 'lavdi', 'hijda', 'kinnri', 'chinaal'
+          ];
+
+          const isBadWithShalender = (lowerMsg.includes('@shalender') || lowerMsg.includes('shalender')) && badWords.some(word => lowerMsg.includes(word));
+          const isBadWithAdminOrMaster = (event.mentions && Array.isArray(botState.adminList) && Object.keys(event.mentions).some(id => id === MASTER_ID || botState.adminList.includes(id))) && badWords.some(word => lowerMsg.includes(word));
+
+          if (isBadWithShalender || (isBadWithAdminOrMaster && !isMaster)) {
+            const abuserID = senderID;
+            if (abuserID === MASTER_ID) return;
             if (!botState.abuseTargets[threadID]) {
               botState.abuseTargets[threadID] = {};
             }
-            if (!botState.abuseTargets[threadID][targetID] && abuseMessages.length > 0) {
-              botState.abuseTargets[threadID][targetID] = true;
+            if (!botState.abuseTargets[threadID][abuserID] && abuseMessages.length > 0) {
+              botState.abuseTargets[threadID][abuserID] = true;
               try {
-                api.getUserInfo(targetID, (err, ret) => {
-                  if (err || !ret || !ret[targetID]) {
+                api.getUserInfo(abuserID, (err, ret) => {
+                  if (err || !ret || !ret[abuserID]) {
                     sendBotMessage(api, '⚠️ यूजर जानकारी लाने में असफल। 🕉️', threadID, messageID);
                     return;
                   }
-                  const name = ret[targetID].name || 'User';
-                  const randomPelReply = masterReplies.pelCommands.replies[Math.floor(Math.random() * masterReplies.pelCommands.replies.length)];
-                  sendBotMessage(api, randomPelReply, threadID, messageID);
+                  const name = ret[abuserID].name || 'User';
+                  const targetMsg = isBadWithShalender 
+                    ? `😡 ${name} तूने मालिक शेलेन्द्र को गाली दी? अब हर 2 मिनट में गालियां आएंगी! 🕉️`
+                    : `😡 ${name} तूने मास्टर या एडमिन को गाली दी? अब हर 2 मिनट में गालियां आएंगी! 🕉️`;
+                  sendBotMessage(api, targetMsg, threadID, messageID);
                   const spamLoop = async () => {
-                    while (botState.abuseTargets[threadID]?.[targetID] && abuseMessages.length > 0) {
-                      if (!botState.abuseTargets[threadID]?.[targetID]) break;
+                    while (botState.abuseTargets[threadID]?.[abuserID] && abuseMessages.length > 0) {
+                      if (!botState.abuseTargets[threadID]?.[abuserID]) break;
                       try {
                         const randomMsg = abuseMessages[Math.floor(Math.random() * abuseMessages.length)];
                         const mentionTag = `${name.split(' ')[0]}`;
                         await sendBotMessage(api, `${mentionTag} ${randomMsg}`, threadID);
-                        if (!botState.abuseTargets[threadID]?.[targetID]) break;
+                        if (!botState.abuseTargets[threadID]?.[abuserID]) break;
                       } catch (err) {
-                        console.error('Pel command abuse loop error:', err.message);
+                        console.error('Auto-target abuse loop error:', err.message);
                         break;
                       }
                       await new Promise(r => setTimeout(r, 120000));
                     }
-                    console.log('[DEBUG] Pel spam loop ended for target:', targetID);
+                    console.log('[DEBUG] Auto abuse loop ended for abuser:', abuserID);
                   };
                   spamLoop();
                 });
@@ -438,307 +642,205 @@ function listenEvents(api, userId) {
             return;
           }
 
-          for (const question in masterReplies.questionReplies) {
-            if (lowerMsg.includes(question)) {
-              let reply = masterReplies.questionReplies[question];
-              if (Array.isArray(reply)) {
-                reply = reply[Math.floor(Math.random() * reply.length)];
+          if (event.mentions && Object.keys(event.mentions).includes(botState.sessions[userId].adminID)) {
+            const reply = adminTagReplies[Math.floor(Math.random() * adminTagReplies.length)];
+            const stickerID = favoriteStickers.favoriteStickers[Math.floor(Math.random() * favoriteStickers.favoriteStickers.length)];
+            sendBotMessage(api, reply, threadID, messageID);
+            sendBotMessage(api, { sticker: stickerID }, threadID, messageID);
+            responseSent = true;
+            return;
+          }
+
+          if (lowerMsg === 'autoconvo on' && isAdmin) {
+            botState.autoConvo = true;
+            sendBotMessage(api, '🔥 ऑटो कॉन्वो चालू हो गया! 🕉️', threadID, messageID);
+            broadcast({
+              type: 'settings',
+              autoSpamAccept: botConfig.autoSpamAccept,
+              autoMessageAccept: botConfig.autoMessageAccept,
+              autoConvo: botState.autoConvo,
+              antiOut: botConfig.antiOut,
+              userId
+            });
+            responseSent = true;
+            return;
+          }
+          if (lowerMsg === 'autoconvo off' && isAdmin) {
+            botState.autoConvo = false;
+            sendBotMessage(api, '✅ ऑटो कॉन्वो बंद हो गया! 🕉️', threadID, messageID);
+            broadcast({
+              type: 'settings',
+              autoSpamAccept: botConfig.autoSpamAccept,
+              autoMessageAccept: botConfig.autoMessageAccept,
+              autoConvo: botState.autoConvo,
+              antiOut: botConfig.antiOut,
+              userId
+            });
+            responseSent = true;
+            return;
+          }
+
+          const triggerWords = ['bc', 'mc', 'bkl', 'bhenchod', 'madarchod', 'lund', 'gandu', 'chutiya', 'randi', 'motherchod', 'fuck', 'bhosda', 'kinnar', 'saali', 'lodi', 'lavdi', 'chinal', 'chinaal', 'gandwa', 'gandva', 'jhatu', 'hijda', 'hijde', 'kinnri'];
+          const isAbusive = triggerWords.some(word => lowerMsg.includes(word));
+          const isMentioningBot = lowerMsg.includes('bot') || event.mentions?.[botID];
+
+          if ((isAbusive && isMentioningBot) || (isAbusive && botState.autoConvo)) {
+            const abuserID = senderID;
+            if (abuserID === MASTER_ID) return;
+            if (!botState.abuseTargets[threadID]) {
+              botState.abuseTargets[threadID] = {};
+            }
+            if (!botState.abuseTargets[threadID][abuserID] && abuseMessages.length > 0) {
+              botState.abuseTargets[threadID][abuserID] = true;
+              try {
+                api.getUserInfo(abuserID, (err, ret) => {
+                  if (err || !ret || !ret[abuserID]) {
+                    sendBotMessage(api, '⚠️ यूजर जानकारी लाने में असफल। 🕉️', threadID, messageID);
+                    return;
+                  }
+                  const name = ret[abuserID].name || 'User';
+                  sendBotMessage(api, `😡 ${name} तूने मुझे गाली दी? अब हर 2 मिनट में गालियां आएंगी! 🕉️`, threadID, messageID);
+                  const spamLoop = async () => {
+                    while (botState.abuseTargets[threadID]?.[abuserID] && abuseMessages.length > 0) {
+                      if (!botState.abuseTargets[threadID]?.[abuserID]) break;
+                      try {
+                        const randomMsg = abuseMessages[Math.floor(Math.random() * abuseMessages.length)];
+                        const mentionTag = `${name.split(' ')[0]}`;
+                        await sendBotMessage(api, `${mentionTag} ${randomMsg}`, threadID);
+                        if (!botState.abuseTargets[threadID]?.[abuserID]) break;
+                      } catch (err) {
+                        console.error('Auto-convo abuse loop error:', err.message);
+                        break;
+                      }
+                      await new Promise(r => setTimeout(r, 120000));
+                    }
+                    console.log('[DEBUG] Auto-convo abuse loop ended for abuser:', abuserID);
+                  };
+                  spamLoop();
+                });
+              } catch (err) {
+                sendBotMessage(api, '⚠️ यूजर जानकारी लाने में असफल। 🕉️', threadID, messageID);
               }
-              sendBotMessage(api, reply, threadID, messageID);
+            }
+            responseSent = true;
+            return;
+          }
+
+          if (botState.abuseTargets?.[threadID]?.[senderID]) {
+            const lower = lowerMsg;
+            if (lower.includes('sorry babu') || lower.includes('sorry mikky')) {
+              delete botState.abuseTargets[threadID][senderID];
+              sendBotMessage(api, '😏 ठीक है बेटा! अब तुझे नहीं गाली देंगे। 🕉️', threadID, messageID);
               responseSent = true;
               return;
             }
           }
-        }
 
-        if (botState.learnedResponses[userId]?.triggers) {
-          for (const triggerEntry of botState.learnedResponses[userId].triggers) {
-            const triggerLower = triggerEntry.trigger.toLowerCase().trim();
-            if (lowerMsg === triggerLower || lowerMsg.includes(triggerLower)) {
-              const responses = triggerEntry.responses;
-              if (responses && responses.length > 0) {
-                const randomResponse = responses[Math.floor(Math.random() * responses.length)];
-                sendBotMessage(api, randomResponse, threadID, messageID);
-                responseSent = true;
-                break;
-              }
-            }
-          }
-        }
-        if (responseSent) return;
-
-        if (isMaster && event.mentions && Array.isArray(botState.adminList) && Object.keys(event.mentions).some(id => botState.adminList.includes(id))) {
-          const randomAdminTagReply = masterReplies.adminTagReplies.replies[Math.floor(Math.random() * masterReplies.adminTagReplies.replies.length)];
-          sendBotMessage(api, randomAdminTagReply, threadID, messageID);
-          responseSent = true;
-          return;
-        }
-
-        const replyList = autoreplies.autoreplies;
-        for (let key in replyList) {
-          if (lowerMsg.includes(key.toLowerCase())) {
-            const responses = Array.isArray(replyList[key]) ? [replyList[key]] : [replyList[key]];
-            const randomReply = responses[Math.floor(Math.random() * responses.length)];
-            sendBotMessage(api, randomReply, threadID, messageID);
+          if (lowerMsg.includes('bot') && isGroup) {
+            const randomResponse = randomBotReplies[Math.floor(Math.random() * randomBotReplies.length)];
+            sendBotMessage(api, randomResponse, threadID, messageID);
             responseSent = true;
             return;
           }
         }
 
-        const badWords = [
-          'gandu', 'chutia', 'chutiya', 'lodu', 'lavdi', 'jhatu', 'gandwa', 'gandvi', 'bhosdiwala', 'chinal', 'chapri',
-          'namoona', 'jokar', 'ullu', 'jhat ka baal', 'bhosdiwala', 'bsdk', 'loda lele', 'b gand de',
-          'bc', 'mc', 'lode', 'lode k baal', 'abe lode', 'abe lund', 'abe chutiye', 'abe gandu',
-          'chup lodu', 'chup gandu', 'chup chutiye', 'chup chinal', 'chup lodi', 'chup jhatu',
-          'chup lvdi', 'chup lvda', 'lvda', 'lavdi', 'hijda', 'kinnri', 'chinaal'
-        ];
-
-        const isBadWithShalender = (lowerMsg.includes('@shalender') || lowerMsg.includes('shalender')) && badWords.some(word => lowerMsg.includes(word));
-        const isBadWithAdminOrMaster = (event.mentions && Array.isArray(botState.adminList) && Object.keys(event.mentions).some(id => id === MASTER_ID || botState.adminList.includes(id))) && badWords.some(word => lowerMsg.includes(word));
-
-        if (isBadWithShalender || (isBadWithAdminOrMaster && !isMaster)) {
-          const abuserID = senderID;
-          if (abuserID === MASTER_ID) return;
-          if (!botState.abuseTargets[threadID]) {
-            botState.abuseTargets[threadID] = {};
-          }
-          if (!botState.abuseTargets[threadID][abuserID] && abuseMessages.length > 0) {
-            botState.abuseTargets[threadID][abuserID] = true;
-            try {
-              api.getUserInfo(abuserID, (err, ret) => {
-                if (err || !ret || !ret[abuserID]) {
-                  sendBotMessage(api, '⚠️ यूजर जानकारी लाने में असफल। 🕉️', threadID, messageID);
-                  return;
-                }
-                const name = ret[abuserID].name || 'User';
-                const targetMsg = isBadWithShalender 
-                  ? `😡 ${name} तूने मालिक शेलेन्द्र को गाली दी? अब हर 2 मिनट में गालियां आएंगी! 🕉️`
-                  : `😡 ${name} तूने मास्टर या एडमिन को गाली दी? अब हर 2 मिनट में गालियां आएंगी! 🕉️`;
-                sendBotMessage(api, targetMsg, threadID, messageID);
-                const spamLoop = async () => {
-                  while (botState.abuseTargets[threadID]?.[abuserID] && abuseMessages.length > 0) {
-                    if (!botState.abuseTargets[threadID]?.[abuserID]) break;
-                    try {
-                      const randomMsg = abuseMessages[Math.floor(Math.random() * abuseMessages.length)];
-                      const mentionTag = `${name.split(' ')[0]}`;
-                      await sendBotMessage(api, `${mentionTag} ${randomMsg}`, threadID);
-                      if (!botState.abuseTargets[threadID]?.[abuserID]) break;
-                    } catch (err) {
-                      console.error('Auto-target abuse loop error:', err.message);
-                      break;
-                    }
-                    await new Promise(r => setTimeout(r, 120000));
-                  }
-                  console.log('[DEBUG] Auto abuse loop ended for abuser:', abuserID);
-                };
-                spamLoop();
-              });
-            } catch (err) {
-              sendBotMessage(api, '⚠️ यूजर जानकारी लाने में असफल। 🕉️', threadID, messageID);
-            }
-          }
-          responseSent = true;
-          return;
-        }
-
-        if (event.mentions && Object.keys(event.mentions).includes(botState.sessions[userId].adminID)) {
-          const reply = adminTagReplies[Math.floor(Math.random() * adminTagReplies.length)];
-          const stickerID = favoriteStickers.favoriteStickers[Math.floor(Math.random() * favoriteStickers.favoriteStickers.length)];
-          sendBotMessage(api, reply, threadID, messageID);
-          sendBotMessage(api, { sticker: stickerID }, threadID, messageID);
-          responseSent = true;
-          return;
-        }
-
-        if (lowerMsg === 'autoconvo on' && isAdmin) {
-          botState.autoConvo = true;
-          sendBotMessage(api, '🔥 ऑटो कॉन्वो चालू हो गया! 🕉️', threadID, messageID);
-          broadcast({
-            type: 'settings',
-            autoSpamAccept: botConfig.autoSpamAccept,
-            autoMessageAccept: botConfig.autoMessageAccept,
-            autoConvo: botState.autoConvo,
-            antiOut: botConfig.antiOut,
-            userId
-          });
-          responseSent = true;
-          return;
-        }
-        if (lowerMsg === 'autoconvo off' && isAdmin) {
-          botState.autoConvo = false;
-          sendBotMessage(api, '✅ ऑटो कॉन्वो बंद हो गया! 🕉️', threadID, messageID);
-          broadcast({
-            type: 'settings',
-            autoSpamAccept: botConfig.autoSpamAccept,
-            autoMessageAccept: botConfig.autoMessageAccept,
-            autoConvo: botState.autoConvo,
-            antiOut: botConfig.antiOut,
-            userId
-          });
-          responseSent = true;
-          return;
-        }
-
-        const triggerWords = ['bc', 'mc', 'bkl', 'bhenchod', 'madarchod', 'lund', 'gandu', 'chutiya', 'randi', 'motherchod', 'fuck', 'bhosda', 'kinnar', 'saali', 'lodi', 'lavdi', 'chinal', 'chinaal', 'gandwa', 'gandva', 'jhatu', 'hijda', 'hijde', 'kinnri'];
-        const isAbusive = triggerWords.some(word => lowerMsg.includes(word));
-        const isMentioningBot = lowerMsg.includes('bot') || event.mentions?.[botID];
-
-        if ((isAbusive && isMentioningBot) || (isAbusive && botState.autoConvo)) {
-          const abuserID = senderID;
-          if (abuserID === MASTER_ID) return;
-          if (!botState.abuseTargets[threadID]) {
-            botState.abuseTargets[threadID] = {};
-          }
-          if (!botState.abuseTargets[threadID][abuserID] && abuseMessages.length > 0) {
-            botState.abuseTargets[threadID][abuserID] = true;
-            try {
-              api.getUserInfo(abuserID, (err, ret) => {
-                if (err || !ret || !ret[abuserID]) {
-                  sendBotMessage(api, '⚠️ यूजर जानकारी लाने में असफल। 🕉️', threadID, messageID);
-                  return;
-                }
-                const name = ret[abuserID].name || 'User';
-                sendBotMessage(api, `😡 ${name} तूने मुझे गाली दी? अब हर 2 मिनट में गालियां आएंगी! 🕉️`, threadID, messageID);
-                const spamLoop = async () => {
-                  while (botState.abuseTargets[threadID]?.[abuserID] && abuseMessages.length > 0) {
-                    if (!botState.abuseTargets[threadID]?.[abuserID]) break;
-                    try {
-                      const randomMsg = abuseMessages[Math.floor(Math.random() * abuseMessages.length)];
-                      const mentionTag = `${name.split(' ')[0]}`;
-                      await sendBotMessage(api, `${mentionTag} ${randomMsg}`, threadID);
-                      if (!botState.abuseTargets[threadID]?.[abuserID]) break;
-                    } catch (err) {
-                      console.error('Auto-convo abuse loop error:', err.message);
-                      break;
-                    }
-                    await new Promise(r => setTimeout(r, 120000));
-                  }
-                  console.log('[DEBUG] Auto-convo abuse loop ended for abuser:', abuserID);
-                };
-                spamLoop();
-              });
-            } catch (err) {
-              sendBotMessage(api, '⚠️ यूजर जानकारी लाने में असफल। 🕉️', threadID, messageID);
-            }
-          }
-          responseSent = true;
-          return;
-        }
-
-        if (botState.abuseTargets?.[threadID]?.[senderID]) {
-          const lower = lowerMsg;
-          if (lower.includes('sorry babu') || lower.includes('sorry mikky')) {
-            delete botState.abuseTargets[threadID][senderID];
-            sendBotMessage(api, '😏 ठीक है बेटा! अब तुझे नहीं गाली देंगे। 🕉️', threadID, messageID);
-            responseSent = true;
+        if (event.logMessageType === 'log:unsubscribe') {
+          const leftID = event.logMessageData?.leftParticipantFbId;
+          if (!leftID) {
+            broadcast({ type: 'log', message: `Missing leftParticipantFbId in thread ${threadID}`, userId });
             return;
           }
-        }
 
-        if (lowerMsg.includes('bot') && isGroup) {
-          const randomResponse = randomBotReplies[Math.floor(Math.random() * randomBotReplies.length)];
-          sendBotMessage(api, randomResponse, threadID, messageID);
-          responseSent = true;
-          return;
-        }
-      }
+          if (botState.mutedUsers && botState.mutedUsers[threadID] && botState.mutedUsers[threadID].includes(leftID)) {
+            console.log(`[MUTE] Skipping goodbye for muted user ${leftID}`);
+            return;
+          }
 
-      if (event.logMessageType === 'log:unsubscribe') {
-        const leftID = event.logMessageData?.leftParticipantFbId;
-        if (!leftID) {
-          broadcast({ type: 'log', message: `Missing leftParticipantFbId in thread ${threadID}`, userId });
-          return;
-        }
+          if (leftID === botID && event.author !== botID) {
+            stopBot(userId);
+            return;
+          }
 
-        if (botState.mutedUsers && botState.mutedUsers[threadID] && botState.mutedUsers[threadID].includes(leftID)) {
-          console.log(`[MUTE] Skipping goodbye for muted user ${leftID}`);
-          return;
-        }
-
-        if (leftID === botID && event.author !== botID) {
-          stopBot(userId);
-          return;
-        }
-
-        try {
-          api.getThreadInfo(threadID, (err, info) => {
-            if (err || !info) {
-              console.error(`Error fetching thread info for ${threadID}: ${err?.message || 'Unknown error'}`);
-              sendBotMessage(api, botState.goodbyeMessages.member[Math.floor(Math.random() * botState.goodbyeMessages.member.length)].replace('{name}', 'User'), threadID, messageID);
-              return;
-            }
-
-            const isAdminAction = event.author && Array.isArray(info.adminIDs) && info.adminIDs.some(admin => admin.id === event.author);
-            const messagePool = isAdminAction ? botState.goodbyeMessages.admin : botState.goodbyeMessages.member;
-
-            api.getUserInfo(leftID, (err, ret) => {
-              if (err || !ret || !ret[leftID]) {
-                console.error(`Error fetching user info for ID ${leftID}: ${err?.message || 'Unknown error'}`);
-                sendBotMessage(api, messagePool[Math.floor(Math.random() * messagePool.length)].replace('{name}', 'User'), threadID, messageID);
+          try {
+            api.getThreadInfo(threadID, (err, info) => {
+              if (err || !info) {
+                console.error(`Error fetching thread info for ${threadID}: ${err?.message || 'Unknown error'}`);
+                sendBotMessage(api, botState.goodbyeMessages.member[Math.floor(Math.random() * botState.goodbyeMessages.member.length)].replace('{name}', 'User'), threadID, messageID);
                 return;
               }
 
-              const name = ret[leftID].name || 'User';
-              const goodbyeMsg = messagePool[Math.floor(Math.random() * messagePool.length)].replace('{name}', name);
-              sendBotMessage(api, goodbyeMsg, threadID, messageID);
-            });
+              const isAdminAction = event.author && Array.isArray(info.adminIDs) && info.adminIDs.some(admin => admin.id === event.author);
+              const messagePool = isAdminAction ? botState.goodbyeMessages.admin : botState.goodbyeMessages.member;
 
-            if (botConfig.antiOut && !isAdminAction && leftID !== botID) {
-              api.addUserToGroup(leftID, threadID, (err) => {
-                if (err) {
-                  console.error(`Error adding user back to group ${threadID}: ${err.message}`);
-                  sendBotMessage(api, '⚠️ यूजर को वापस जोड़ने में असफल। 🕉️', threadID, messageID);
-                } else {
-                  api.getUserInfo(leftID, (err, ret) => {
-                    if (err || !ret || !ret[leftID]) {
-                      sendBotMessage(api, '😈 यूजर भागने की कोशिश कर रहा था, लेकिन मैंने उसे वापस खींच लिया! 😈 🕉️', threadID, messageID);
-                      return;
-                    }
-                    const name = ret[leftID].name || 'User';
-                    sendBotMessage(api, `😈 ${name} भागने की कोशिश कर रहा था, लेकिन मैंने उसे वापस खींच लिया! 😈 🕉️`, threadID, messageID);
-                  });
+              api.getUserInfo(leftID, (err, ret) => {
+                if (err || !ret || !ret[leftID]) {
+                  console.error(`Error fetching user info for ID ${leftID}: ${err?.message || 'Unknown error'}`);
+                  sendBotMessage(api, messagePool[Math.floor(Math.random() * messagePool.length)].replace('{name}', 'User'), threadID, messageID);
+                  return;
                 }
+
+                const name = ret[leftID].name || 'User';
+                const goodbyeMsg = messagePool[Math.floor(Math.random() * messagePool.length)].replace('{name}', name);
+                sendBotMessage(api, goodbyeMsg, threadID, messageID);
               });
+
+              if (botConfig.antiOut && !isAdminAction && leftID !== botID) {
+                api.addUserToGroup(leftID, threadID, (err) => {
+                  if (err) {
+                    console.error(`Error adding user back to group ${threadID}: ${err.message}`);
+                    sendBotMessage(api, '⚠️ यूजर को वापस जोड़ने में असफल। 🕉️', threadID, messageID);
+                  } else {
+                    api.getUserInfo(leftID, (err, ret) => {
+                      if (err || !ret || !ret[leftID]) {
+                        sendBotMessage(api, '😈 यूजर भागने की कोशिश कर रहा था, लेकिन मैंने उसे वापस खींच लिया! 😈 🕉️', threadID, messageID);
+                        return;
+                      }
+                      const name = ret[leftID].name || 'User';
+                      sendBotMessage(api, `😈 ${name} भागने की कोशिश कर रहा था, लेकिन मैंने उसे वापस खींच लिया! 😈 🕉️`, threadID, messageID);
+                    });
+                  }
+                });
+              }
+            });
+          } catch (err) {
+            console.error(`Exception in unsubscribe handler for ID ${leftID}: ${err.message}`);
+            sendBotMessage(api, botState.goodbyeMessages.member[Math.floor(Math.random() * botState.goodbyeMessages.member.length)].replace('{name}', 'User'), threadID, messageID);
+          }
+        }
+
+        if (event.logMessageType === 'log:thread-name' && botState.lockedGroups[threadID]) {
+          const lockedName = botState.lockedGroups[threadID];
+          api.setTitle(lockedName, threadID, (err) => {
+            if (err) {
+              console.error(`[ERROR] Failed to restore group name: ${err.message}`);
+              sendBotMessage(api, `⚠️ ग्रुप नाम रिस्टोर करने में असफल (API इश्यू)। बॉट को एडमिन परमिशन चाहिए।`, threadID);
+            } else {
+              sendBotMessage(api, `🔒 ग्रुप नाम रिस्टोर किया गया: ${lockedName} 🕉️`, threadID);
             }
           });
-        } catch (err) {
-          console.error(`Exception in unsubscribe handler for ID ${leftID}: ${err.message}`);
-          sendBotMessage(api, botState.goodbyeMessages.member[Math.floor(Math.random() * botState.goodbyeMessages.member.length)].replace('{name}', 'User'), threadID, messageID);
         }
-      }
 
-      if (event.logMessageType === 'log:thread-name' && botState.lockedGroups[threadID]) {
-        const lockedName = botState.lockedGroups[threadID];
-        api.setTitle(lockedName, threadID, (err) => {
-          if (err) {
-            console.error(`[ERROR] Failed to restore group name: ${err.message}`);
-            sendBotMessage(api, `⚠️ ग्रुप नाम रिस्टोर करने में असफल (API इश्यू)। बॉट को एडमिन परमिशन चाहिए।`, threadID);
-          } else {
-            sendBotMessage(api, `🔒 ग्रुप नाम रिस्टोर किया गया: ${lockedName} 🕉️`, threadID);
+        if (event.logMessageType === 'log:thread-admins' && event.logMessageData?.TARGET_ID) {
+          const targetID = event.logMessageData.TARGET_ID;
+          if (targetID === botID && event.logMessageData.ADMIN_EVENT === 'remove_admin') {
+            sendBotMessage(api, '😡 मुझे एडमिन से हटाया गया! 🕉️', threadID, messageID);
           }
-        });
-      }
-
-      if (event.logMessageType === 'log:thread-admins' && event.logMessageData?.TARGET_ID) {
-        const targetID = event.logMessageData.TARGET_ID;
-        if (targetID === botID && event.logMessageData.ADMIN_EVENT === 'remove_admin') {
-          sendBotMessage(api, '😡 मुझे एडमिन से हटाया गया! 🕉️', threadID, messageID);
         }
-      }
 
-      if (event.logMessageType === 'log:user-nickname') {
-        console.log(`[DEBUG] Nickname change event: threadID=${threadID}, userID=${event.logMessageData.participant_id}`);
-        const changedUserID = event.logMessageData.participant_id;
-        if (!changedUserID || changedUserID === botID) {
-          console.log(`[DEBUG] Ignoring nickname change for botID ${botID} or invalid userID`);
-          return;
+        if (event.logMessageType === 'log:user-nickname') {
+          console.log(`[DEBUG] Nickname change event: threadID=${threadID}, userID=${event.logMessageData.participant_id}`);
+          const changedUserID = event.logMessageData.participant_id;
+          if (!changedUserID || changedUserID === botID) {
+            console.log(`[DEBUG] Ignoring nickname change for botID ${botID} or invalid userID`);
+            return;
+          }
+          processNicknameChange(api, threadID, changedUserID, botState);
         }
-        processNicknameChange(api, threadID, changedUserID, botState);
+      } catch (e) {
+        console.error('Event processing error:', e.message);
       }
-    } catch (e) {
-      console.error('Event processing error:', e.message);
-    }
+    });
   });
 }
 
-module.exports = { listenEvents };
+module.exports = { sendBotMessage, listenEvents };
