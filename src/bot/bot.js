@@ -1,10 +1,13 @@
 // src/bot/bot.js
 const fs = require('fs');
+const path = require('path');
 const wiegine = require('fca-mafiya');
-const { botState } = require('../config/botState');
-const { LEARNED_RESPONSES_PATH, MASTER_ID } = require('../config/constants');
-const { loadAbuseMessages, loadWelcomeMessages, saveFile } = require('../utils/fileUtils');
+const { botState } = require(path.join(__dirname, '../../config/botState'));
+const { botConfig } = require(path.join(__dirname, '../../config/botConfig'));
+const { LEARNED_RESPONSES_PATH, MASTER_ID } = require(path.join(__dirname, '../../config/constants'));
+const { loadAbuseMessages, loadWelcomeMessages, saveFile } = require(path.join(__dirname, '../../utils/fileUtils'));
 const { listenEvents } = require('./message');
+const { broadcast } = require(path.join(__dirname, '../../utils/broadcast'));
 
 function stopBot(userId) {
   if (!botState.sessions[userId]) {
@@ -50,7 +53,7 @@ function startBot(userId, cookieContent, prefix, adminID) {
     adminID: adminID || '',
     api: null,
     cookieContent,
-    botConfig: { autoSpamAccept: false, autoMessageAccept: false, antiOut: botConfig.antiOut },
+    botConfig: { autoSpamAccept: false, autoMessageAccept: false, antiOut: botConfig.botConfig.antiOut },
     manualStop: false,
     safeMode: false
   };
@@ -77,7 +80,7 @@ function startBot(userId, cookieContent, prefix, adminID) {
     try {
       const cookieFile = `cookies_${userId}.txt`;
       if (!fs.existsSync(cookieFile)) {
-        fs.writeFileSync(cookieFile, cookieContent, 'utf8');
+        fs.writeFileSync(cookieFile, Buffer.from(cookieContent, 'base64').toString('utf8'), 'utf8');
       }
 
       wiegine.login(cookieContent, {}, (err, api) => {
@@ -104,7 +107,7 @@ function startBot(userId, cookieContent, prefix, adminID) {
         listenEvents(api, userId);
       });
     } catch (err) {
-      console.error(`Error in startBot for user ${userId}:`, err.message);
+      console.error(`Error in startBot for ${userId}:`, err.message);
       botState.sessions[userId].safeMode = true;
       botState.sessions[userId].running = true;
     }
