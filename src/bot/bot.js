@@ -2,12 +2,12 @@
 const fs = require('fs');
 const path = require('path');
 const wiegine = require('fca-mafiya');
-const { botState } = require(path.join(__dirname, '../../config/botState'));
-const { botConfig } = require(path.join(__dirname, '../../config/botConfig'));
-const { LEARNED_RESPONSES_PATH, MASTER_ID } = require(path.join(__dirname, '../../config/constants'));
-const { loadAbuseMessages, loadWelcomeMessages, saveFile } = require(path.join(__dirname, '../../utils/fileUtils'));
+const { botState } = require(path.join(__dirname, '../config/botState'));
+const { botConfig } = require(path.join(__dirname, '../config/botConfig'));
+const { LEARNED_RESPONSES_PATH, MASTER_ID } = require(path.join(__dirname, '../config/constants'));
+const { loadAbuseMessages, loadWelcomeMessages, saveFile } = require(path.join(__dirname, '../utils/fileUtils'));
 const { listenEvents } = require('./message');
-const { broadcast } = require(path.join(__dirname, '../../utils/broadcast'));
+const { broadcast } = require(path.join(__dirname, '../utils/broadcast'));
 
 function stopBot(userId) {
   if (!botState.sessions[userId]) {
@@ -23,7 +23,7 @@ function stopBot(userId) {
       fs.writeFileSync(LEARNED_RESPONSES_PATH, JSON.stringify(botState.learnedResponses, null, 2), 'utf8');
       console.log(`Deleted learned responses for user ${userId}`);
     } catch (err) {
-      console.error(`Error saving learned_responses.json after deleting user ${userId} responses: ${err.message}`);
+      console.error(`Error saving learnedResponses.json after deleting user ${userId} responses: ${err.message}`);
     }
   }
 
