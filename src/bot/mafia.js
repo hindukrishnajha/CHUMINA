@@ -1,5 +1,5 @@
 // src/bot/mafia.js
-const { botState } = require(path.join(__dirname, '../config/botState'));
+const { botState } = require('../config/botState');
 const { sendBotMessage } = require('./message');
 
 function startMafiaGame(api, threadID, messageID, args) {
@@ -44,7 +44,7 @@ function startMafiaGame(api, threadID, messageID, args) {
 
   console.log(`[MAFIA] Game started in thread ${threadID} with players: ${JSON.stringify(players)}`);
 
-  setTimeout(() => processDayPhase(api, threadID), 180000); // 3 minutes for night phase
+  setTimeout(() => processDayPhase(api, threadID), 180000);
 }
 
 function processDayPhase(api, threadID) {
@@ -72,7 +72,7 @@ function processDayPhase(api, threadID) {
   const alivePlayers = Array.from(game.alive).map(id => ({ id, name: game.players[id].name }));
   sendBotMessage(api, `🌞 डे फेज ${game.day} शुरू! वोट करें कि किसे बाहर करना है। बचे प्लेयर्स: ${alivePlayers.map(p => p.name).join(', ')} 🕉️`, threadID);
 
-  setTimeout(() => processNightPhase(api, threadID), 180000); // 3 minutes for day phase
+  setTimeout(() => processNightPhase(api, threadID), 180000);
 }
 
 function processNightPhase(api, threadID) {
@@ -95,7 +95,7 @@ function processNightPhase(api, threadID) {
   }
 
   sendBotMessage(api, `🌙 नाइट फेज ${game.day + 1} शुरू! अपने रोल के हिसाब से एक्शन लें: https://${process.env.RENDER_SERVICE_NAME}.onrender.com/mafia/${threadID} 🕉️`, threadID);
-  setTimeout(() => processDayPhase(api, threadID), 180000); // 3 minutes for night phase
+  setTimeout(() => processDayPhase(api, threadID), 180000);
 }
 
 function endMafiaGame(api, threadID, messageID) {
@@ -109,4 +109,14 @@ function endMafiaGame(api, threadID, messageID) {
   console.log(`[MAFIA] Game ended in thread ${threadID}`);
 }
 
-module.exports = { startMafiaGame, endMafiaGame, processDayPhase, processNightPhase };
+function cleanupMafiaGames(botState) {
+  Object.keys(botState.mafiaGames).forEach(threadID => {
+    const game = botState.mafiaGames[threadID];
+    if (game && Date.now() - (game.lastActivity || 0) > 3600000) { // 1 hour
+      delete botState.mafiaGames[threadID];
+      console.log(`[MAFIA] Cleaned up inactive game in thread ${threadID}`);
+    }
+  });
+}
+
+module.exports = { startMafiaGame, endMafiaGame, processDayPhase, processNightPhase, cleanupMafiaGames };
