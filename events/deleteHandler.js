@@ -5,7 +5,8 @@ function handleUnsend(api, event, botState, userId) {
     
     const threadID = event.threadID;
     
-    if (!botState.deleteNotifyEnabled[threadID]) {
+    // Ensure deleteNotifyEnabled exists
+    if (!botState.deleteNotifyEnabled || !botState.deleteNotifyEnabled[threadID]) {
         return;
     }
 
@@ -39,30 +40,10 @@ function handleUnsend(api, event, botState, userId) {
             // STICKER DELETE
             if (deletedMsg.content === '[attachment: sticker]') {
                 api.sendMessage(`😊🗑️ ${senderName} ने एक स्टिकर डिलीट किया!`, threadID);
-                
-                // Sticker resend attempt
-                if (deletedMsg.attachment && deletedMsg.attachment.url) {
-                    api.sendMessage({
-                        body: '🗳️ डिलीट किया गया स्टिकर:',
-                        sticker: deletedMsg.attachment.url
-                    }, threadID);
-                }
             } 
             // PHOTO DELETE  
             else if (deletedMsg.content === '[attachment: photo]') {
                 api.sendMessage(`📸🗑️ ${senderName} ने एक फोटो डिलीट किया!`, threadID);
-                
-                // Photo resend attempt
-                if (deletedMsg.attachment && deletedMsg.attachment.url) {
-                    api.sendMessage({
-                        body: '🖼️ डिलीट की गई फोटो:',
-                        attachment: require('fs').createReadStream(deletedMsg.attachment.url)
-                    }, threadID, (err) => {
-                        if (err) {
-                            api.sendMessage('📸 फोटो रीसेंड नहीं हो सकी, लेकिन notification आ गया!', threadID);
-                        }
-                    });
-                }
             }
             // VIDEO DELETE
             else if (deletedMsg.content === '[attachment: video]') {
