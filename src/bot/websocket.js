@@ -1,39 +1,22 @@
 // src/bot/websocket.js
-const WebSocket = require('ws');
-const { botState } = require(path.join(__dirname, '../config/botState'));
-
-function initializeWebSocket(server) {
-  const wss = new WebSocket.Server({ server });
-
+function setupWebSocket(wss, startBot, stopBot) {
   wss.on('connection', (ws) => {
-    console.log('[WEBSOCKET] Client connected');
+    ws.isAlive = true;
+
+    const heartbeat = setInterval(() => {
+      if (ws.isAlive === false) {
+        clearInterval(heartbeat);
+        return ws.terminate();
+      }
+      ws.isAlive = false;
+      ws.send(JSON.stringify({ type: 'heartbeat' }));
+    }, 10000);
 
     ws.on('message', (message) => {
       try {
-        const data = JSON.parse(message);
-        if (data.type === 'subscribe') {
-          ws.userId = data.userId;
-          console.log(`[WEBSOCKET] Client subscribed for user ${data.userId}`);
-        }
-      } catch (err) {
-        console.error('[WEBSOCKET] Error parsing message:', err.message);
-      }
-    });
-
-    ws.on('close', () => {
-      console.log('[WEBSOCKET] Client disconnected');
-    });
-  });
-
-  function broadcast(message) {
-    wss.clients.forEach(client => {
-      if (client.readyState === WebSocket.OPEN && (!message.userId || client.userId === message.userId)) {
-        client.send(JSON.stringify(message));
-      }
-    });
-  }
-
-  botState.broadcast = broadcast;
-}
-
-module.exports = { initializeWebSocket };
+        const messageStr = Buffer.isBuffer(message) ? message.toString('utf8') : message;
+        let data;
+        try {
+          data = JSON.parse(messageStr);
+        } catch (parseErr) {
+          console.error('Invalid WebSocket message:', parseErr
