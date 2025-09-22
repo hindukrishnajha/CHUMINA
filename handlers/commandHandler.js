@@ -38,8 +38,8 @@ class CommandHandler {
             return;
         }
 
-        // Execute command
-        this.executeCommand(api, cmd, threadID, cleanArgs, event, botState, isMaster, userId);
+        // Execute command with better error handling
+        this.executeCommand(api, cmd, threadID, cleanArgs, event, botState, isMaster, userId, messageID);
         
         // Set cooldown
         this.setCooldown(botState, threadID, command);
@@ -78,16 +78,32 @@ class CommandHandler {
         }
     }
 
-    executeCommand(api, cmd, threadID, cleanArgs, event, botState, isMaster, userId) {
+    executeCommand(api, cmd, threadID, cleanArgs, event, botState, isMaster, userId, messageID) {
         try {
             const botID = botState.sessions[userId].botID;
             const stopBot = require('../utils/botManager').stopBot;
             
             console.log(`[CMD] Executing: ${cmd.name} with args:`, cleanArgs);
-            cmd.execute(api, threadID, cleanArgs, event, botState, isMaster, botID, stopBot);
+            
+            // Extra safety - timeout agar command hang ho jaye
+            const timeoutPromise = new Promise((_, reject) => {
+                setTimeout(() => reject(new Error('Command timeout')), 30000);
+            });
+            
+            const commandPromise = Promise.resolve().then(() => {
+                return cmd.execute(api, threadID, cleanArgs, event, botState, isMaster, botID, stopBot);
+            });
+            
+            // Race between command and timeout
+            Promise.race([commandPromise, timeoutPromise])
+                .catch(err => {
+                    console.error(`[CMD-SAFETY-ERROR] ${cmd.name}:`, err);
+                    api.sendMessage(`❌ कमांड timeout/error: ${err.message}`, threadID, messageID);
+                });
+                
         } catch (err) {
             console.error(`[CMD-ERROR] ${cmd.name}:`, err);
-            api.sendMessage(`❌ कमांड error: ${err.message}`, threadID, event.messageID);
+            api.sendMessage(`❌ कमांड error: ${err.message}`, threadID, messageID);
         }
     }
 
