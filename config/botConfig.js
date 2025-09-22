@@ -1,10 +1,10 @@
-// config/botConfig.js
+// ./config/botConfig.js
 module.exports = {
   botConfig: {
-    prefix: process.env.PREFIX || '#',
-    adminID: process.env.ADMIN_ID || 'SHALENDER.HINDU.BAAP.JI.HERE.1',
+    prefix: '#',
+    adminID: process.env.ADMIN_ID || '',
     autoSpamAccept: false,
     autoMessageAccept: false,
-    antiOut: true
+    antiOut: true // डिफॉल्ट में ऑन करने के लिए
   }
 };
