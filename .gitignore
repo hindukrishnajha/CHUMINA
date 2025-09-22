@@ -1,4 +1,5 @@
-node_modules
+node_modules/
 .env
-selected_cookie.txt
-welcome.txt
+cookies_*.txt
+learned_responses.json
+.DS_Store
