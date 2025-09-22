@@ -16,12 +16,15 @@ function loadCommands() {
         }
 
         const commandFiles = fs.readdirSync(folderPath).filter(file => file.endsWith('.js'));
-        console.log(`[COMMAND-LOADER] 📁 Loading ${commandFiles.length} commands from ${folder}`);
+        console.log(`[COMMAND-LOADER] 📁 Loading commands from ${folder}:`, commandFiles);
         
         for (const file of commandFiles) {
             try {
                 const commandPath = path.join(folderPath, file);
-                console.log(`[COMMAND-LOADER] Trying to load: ${file}`);
+                console.log(`[COMMAND-LOADER] 🔄 Loading: ${file}`);
+                
+                // Delete cache to ensure fresh load
+                delete require.cache[require.resolve(commandPath)];
                 
                 const command = require(commandPath);
                 
@@ -30,9 +33,8 @@ function loadCommands() {
                     continue;
                 }
 
-                // Check if command has execute function
                 if (typeof command.execute !== 'function') {
-                    console.log(`[COMMAND-LOADER] ❌ ${file} has no execute function`);
+                    console.log(`[COMMAND-LOADER] ⚠️ ${file} has no execute function`);
                     continue;
                 }
 
@@ -50,18 +52,18 @@ function loadCommands() {
                 }
             } catch (err) {
                 console.error(`[COMMAND-LOADER] ❌ Failed to load ${file}:`, err.message);
-                console.error(err.stack); // Full error stack
             }
         }
     }
     
     console.log(`[COMMAND-LOADER] 🎯 Total commands loaded: ${commands.size}`);
     
-    // Debug: List all loaded commands
-    console.log('[COMMAND-LOADER] 📋 All loaded commands:');
-    commands.forEach((cmd, key) => {
-        console.log(`   ${key} -> ${cmd.name}`);
-    });
+    // SPECIAL DEBUG: Check if delete command exists
+    const deleteCmd = commands.get('delete');
+    console.log(`[COMMAND-LOADER] 🔍 Delete command found: ${!!deleteCmd}`);
+    if (deleteCmd) {
+        console.log(`[COMMAND-LOADER] 🔍 Delete command details:`, deleteCmd.name, deleteCmd.aliases);
+    }
     
     return commands;
 }
