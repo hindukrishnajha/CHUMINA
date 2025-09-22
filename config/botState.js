@@ -1,3 +1,4 @@
+// config/botState.js
 const botState = {
   sessions: {},
   nicknameTimers: {},
@@ -9,7 +10,7 @@ const botState = {
   adminList: [],
   autoConvo: false,
   memberCache: {},
-  commandCooldowns: {}, // शुरू में खाली ऑब्जेक्ट
+  commandCooldowns: {},
   learnedResponses: {},
   eventProcessed: {},
   chatEnabled: {}
