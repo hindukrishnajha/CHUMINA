@@ -3,19 +3,20 @@ const express = require('express');
 const path = require('path');
 const timeout = require('connect-timeout');
 const fs = require('fs');
-const { botState } = require(path.join(__dirname, '../../config/botState'));
+const { botState } = require(path.join(__dirname, '../config/botState'));
+const { LEARNED_RESPONSES_PATH } = require(path.join(__dirname, '../config/constants'));
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
 // EJS setup
 app.set('view engine', 'ejs');
-app.set('views', path.join(__dirname, '../../views'));
+app.set('views', path.join(__dirname, '../views'));
 
 app.use(timeout('60s'));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
-app.use(express.static(path.join(__dirname, '../../public')));
+app.use(express.static(path.join(__dirname, '../public')));
 
 // Mafia game routes
 app.get('/mafia/:gameID', (req, res) => {
@@ -128,7 +129,6 @@ app.post('/mafia/:gameID/action', (req, res) => {
   }
 
   try {
-    const { LEARNED_RESPONSES_PATH } = require(path.join(__dirname, '../../config/constants'));
     fs.writeFileSync(LEARNED_RESPONSES_PATH, JSON.stringify(botState, null, 2), 'utf8');
     console.log(`[DEBUG] Action recorded for ${userID} in game ${gameID}`);
   } catch (err) {
@@ -139,7 +139,7 @@ app.post('/mafia/:gameID/action', (req, res) => {
 
 app.get('/', (req, res) => {
   if (req.timedout) return res.status(504).send('Server timeout');
-  const filePath = path.join(__dirname, '../../index.html');
+  const filePath = path.join(__dirname, '../index.html');
   if (fs.existsSync(filePath)) {
     res.sendFile(filePath);
   } else {
