@@ -1,19 +1,10 @@
-// config/botState.js
-const botState = {
-  sessions: {},
-  nicknameTimers: {},
-  nicknameQueues: {},
-  stickerSpam: {},
-  lockedGroups: {},
-  abuseTargets: {},
-  welcomeMessages: [],
-  adminList: [],
-  autoConvo: false,
-  memberCache: {},
-  commandCooldowns: {},
-  learnedResponses: {},
-  eventProcessed: {},
-  chatEnabled: {}
+// config/botConfig.js
+module.exports = {
+  botConfig: {
+    prefix: process.env.PREFIX || '#',
+    adminID: process.env.ADMIN_ID || 'SHALENDER.HINDU.BAAP.JI.HERE.1',
+    autoSpamAccept: false,
+    autoMessageAccept: false,
+    antiOut: true
+  }
 };
-
-module.exports = { botState };
