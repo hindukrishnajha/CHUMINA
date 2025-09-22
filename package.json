@@ -2,16 +2,15 @@
   "name": "shalender-bot",
   "version": "10.0.0",
   "description": "Shalender Hindu's Facebook Messenger Bot",
-  "main": "src/index.js",
+  "main": "index.js",
   "scripts": {
-    "start": "node --max-old-space-size=512 src/index.js",
-    "dev": "nodemon src/index.js"
+    "start": "node --max-old-space-size=512 index.js",
+    "dev": "nodemon index.js"
   },
   "dependencies": {
     "axios": "^1.7.7",
     "connect-timeout": "^1.9.0",
     "dotenv": "^16.4.5",
-    "ejs": "^3.1.9",
     "express": "^4.21.0",
     "fca-mafiya": "latest",
     "gtts": "^0.2.1",
