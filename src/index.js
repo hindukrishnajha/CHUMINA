@@ -1,25 +1,28 @@
 // src/index.js
-require('dotenv').config();
+const path = require('path');
 const { startServer } = require('./server/app');
-const { initializeWebSocket } = require('./server/websocket');
 const { startBot } = require('./bot/bot');
+const { initializeWebSocket } = require('./bot/websocket');
+const { botState } = require(path.join(__dirname, '../config/botState'));
+const { botConfig } = require(path.join(__dirname, '../config/botConfig'));
+const { MASTER_ID } = require(path.join(__dirname, '../config/constants'));
 
-console.log('Starting CHUMINA Bot...');
-
-// Start Express server
 const server = startServer();
-
-// Initialize WebSocket
 initializeWebSocket(server);
 
-// Start bot (you can pass userId, cookieContent, prefix, adminId if needed)
-startBot(process.env.USER_ID, process.env.COOKIE_CONTENT, process.env.PREFIX, process.env.ADMIN_ID);
+// Start bot with environment variables
+const userId = process.env.USER_ID || MASTER_ID;
+const cookieContent = process.env.COOKIE_BASE64 || '';
+const prefix = process.env.PREFIX || '#';
+const adminID = process.env.ADMIN_ID || 'SHALENDER.HINDU.BAAP.JI.HERE.1';
 
-// Handle uncaught errors
-process.on('uncaughtException', (err) => {
-  console.error('Uncaught Exception:', err.message);
-});
+if (!cookieContent) {
+  console.error('[ERROR] COOKIE_BASE64 not provided in environment variables');
+  process.exit(1);
+}
 
-process.on('unhandledRejection', (reason, promise) => {
-  console.error('Unhandled Rejection at:', promise, 'reason:', reason);
-});
+startBot(userId, cookieContent, prefix, adminID);
+
+setInterval(() => {
+  console.log('[KEEPALIVE] Bot is running...');
+}, 300000);
