@@ -2,7 +2,10 @@ const messages = new Map();
 
 module.exports = {
   storeMessage(messageID, content, senderID, threadID, attachment = null) {
-    if (!messageID) return;
+    if (!messageID) {
+      console.error(`[MESSAGE-STORE] Failed to store message: No messageID provided`);
+      return;
+    }
     
     let messageContent = content;
     let attachmentData = null;
@@ -44,15 +47,17 @@ module.exports = {
         timestamp: Date.now()
     });
     
-    console.log(`[MESSAGE-STORE] Stored: ${messageID} - ${messageContent}`);
+    console.log(`[MESSAGE-STORE] Stored: ${messageID} - ${messageContent} for thread ${threadID}`);
     
-    // Memory management
+    // Memory management (commented out for testing)
+    /*
     if (messages.size > 1000) {
         const sortedKeys = Array.from(messages.keys()).sort((a, b) => messages.get(a).timestamp - messages.get(b).timestamp);
         for (let i = 0; i < 200; i++) {
             messages.delete(sortedKeys[i]);
         }
     }
+    */
   },
 
   getMessage(messageID) {
@@ -65,7 +70,11 @@ module.exports = {
 
   storeBotMessage(messageID, content, threadID, replyToMessageID = null) {
     if (!messageID) {
-      console.error(`[MESSAGE-STORE] Failed to store bot message: No messageID provided`);
+      console.error(`[MESSAGE-STORE] Failed to store bot message: No messageID provided for thread ${threadID}`);
+      return;
+    }
+    if (!threadID) {
+      console.error(`[MESSAGE-STORE] Failed to store bot message: No threadID provided for message ${messageID}`);
       return;
     }
     messages.set(messageID, {
@@ -75,7 +84,7 @@ module.exports = {
       replyToMessageID,
       timestamp: Date.now()
     });
-    console.log(`[MESSAGE-STORE] Stored bot message: ${messageID} - ${content}`);
+    console.log(`[MESSAGE-STORE] Stored bot message: ${messageID} - ${content} for thread ${threadID}`);
   },
 
   getBotMessageByReply(replyMessageID) {
@@ -102,7 +111,7 @@ module.exports = {
         threadID: msg.threadID,
         timestamp: msg.timestamp
       }));
-    console.log(`[MESSAGE-STORE] Found ${botMessages.length} bot messages for thread ${threadID}`);
+    console.log(`[MESSAGE-STORE] Found ${botMessages.length} bot messages for thread ${threadID}:`, botMessages.map(m => m.messageID));
     return botMessages;
   },
 
