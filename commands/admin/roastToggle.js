@@ -139,4 +139,6 @@ module.exports = {
       const path = require('path');
       const LEARNED_RESPONSES_PATH = path.join(__dirname, '../../config/learned_responses.json');
       fs.writeFileSync(LEARNED_RESPONSES_PATH, JSON.stringify(botState.learnedResponses, null, 2), 'utf8');
-                                     }
+    }
+  }
+};
