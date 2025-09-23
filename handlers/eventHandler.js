@@ -6,19 +6,21 @@ const Groq = require("groq-sdk");
 
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
-async function handleAutoRoast(api, event, botState) {
-    try {
-        if (!botState.roastEnabled?.[event.threadID]) return false;
-        if (botState.roastTargets?.[event.threadID] && !botState.roastTargets[event.threadID][event.senderID]) return false;
-        if (!event.body || event.body.startsWith('#')) return false;
+const bannedWords = [
+    'maa', 'behen', 'baap', 'bhai', 'dadi', 'nani', 'chacha',
+    'mausi', 'bua', 'chachi', 'patni', 'biwi', 'mummy', 'papa',
+    'aunty', 'uncle', 'aukat'
+];
 
+async function generateRoastCore(api, event, message, wordLimit = 30) {
+    try {
         const prompt = `
-        Short roast (20-30 words).
+        Short roast (${wordLimit - 10}-${wordLimit} words).
         Rules:
         - Family banned
         - 'Aukat' banned
         - Allowed words: gandu, chutia, kinnar, lund, chut, gaand, lavde, chutiye
-        User: "${event.body}"`;
+        User: "${message}"`;
 
         const completion = await groq.chat.completions.create({
             messages: [
@@ -27,35 +29,62 @@ async function handleAutoRoast(api, event, botState) {
             ],
             model: "llama-3.1-8b-instant",
             temperature: 0.9,
-            max_tokens: 80,
+            max_tokens: wordLimit * 2,
         });
 
-        let roastResponse = completion.choices[0]?.message?.content || "Chup kar gandu!";
-        const bannedWords = ['maa', 'behen', 'baap', 'bhai', 'dadi', 'nani', 'chacha', 'mausi', 'bua', 'chachi', 'patni', 'biwi', 'mummy', 'papa', 'aunty', 'uncle', 'aukat'];
+        let roast = completion.choices[0]?.message?.content || "Chup kar gandu!";
         bannedWords.forEach(word => {
             const regex = new RegExp(word, 'gi');
-            roastResponse = roastResponse.replace(regex, '');
+            roast = roast.replace(regex, '');
         });
+        return roast;
+    } catch (error) {
+        console.error("Roast generation error:", error);
+        return "Server slow hai, baad me try kar!";
+    }
+}
 
-        api.sendMessage(roastResponse, event.threadID);
+async function handleAutoRoast(api, event, botState, botId) {
+    try {
+        botState.roastEnabled = botState.roastEnabled || {};
+        botState.roastTargets = botState.roastTargets || {};
+        botState.lastRoastTime = botState.lastRoastTime || {};
+
+        if (!botState.roastEnabled[event.threadID]) return false;
+        if (event.senderID === botId) return false; // Ignore bot's own messages
+        if (botState.roastTargets[event.threadID] && !botState.roastTargets[event.threadID][event.senderID]) return false;
+        if (!event.body || event.body.startsWith('#')) return false;
+
+        // Cooldown check: 10 seconds per thread
+        const now = Date.now();
+        if (botState.lastRoastTime[event.threadID] && now - botState.lastRoastTime[event.threadID] < 10000) return false;
+        botState.lastRoastTime[event.threadID] = now;
+
+        const userInfo = await api.getUserInfo([event.senderID]);
+        const targetName = userInfo[event.senderID]?.name || "User";
+
+        const roastResponse = await generateRoastCore(api, event, event.body, 20);
+        api.sendMessage(`${targetName}, ${roastResponse}`, event.threadID);
         return true;
     } catch (error) {
         console.error("Auto-roast error:", error);
+        api.sendMessage("❌ Auto-roast mein error aa gaya!", event.threadID);
         return false;
     }
 }
 
-function handleEvent(api, event, botState, userId) {
+function handleEvent(api, event, botState, botId) {
     try {
         if (event.type === 'message' && !event.body.startsWith('#')) {
-            handleAutoRoast(api, event, botState).catch(console.error);
-            return messageHandler.handleMessage(api, event, botState, userId);
+            handleAutoRoast(api, event, botState, botId).catch(console.error);
+            return messageHandler.handleMessage(api, event, botState, botId);
         }
-        if (event.type === 'message_unsend') return deleteHandler.handleUnsend(api, event, botState, userId);
-        if (event.logMessageType === 'log:subscribe') return welcomeHandler.handleWelcome(api, event, botState, userId);
-        if (event.logMessageType === 'log:unsubscribe') return welcomeHandler.handleGoodbye(api, event, botState, userId);
+        if (event.type === 'message_unsend') return deleteHandler.handleUnsend(api, event, botState, botId);
+        if (event.logMessageType === 'log:subscribe') return welcomeHandler.handleWelcome(api, event, botState, botId);
+        if (event.logMessageType === 'log:unsubscribe') return welcomeHandler.handleGoodbye(api, event, botState, botId);
     } catch (error) {
         console.error('[EVENT-ERROR] Event handling failed:', error.message);
+        api.sendMessage("❌ Bot mein error aa gaya, try again!", event.threadID);
     }
 }
 
