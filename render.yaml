@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: shalender-bot
+    env: node
+    plan: free
+    region: ohio
+    buildCommand: npm install
+    startCommand: node index.js
+    envVars:
+      - key: NODE_ENV
+        value: production
+    healthCheckPath: /health
+    autoDeploy: true
