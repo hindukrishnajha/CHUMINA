@@ -2,15 +2,14 @@ const messages = new Map();
 
 module.exports = {
   storeMessage(messageID, content, senderID, threadID, attachment = null) {
-    if (!messageID) {
-      console.error(`[MESSAGE-STORE] Failed to store message: No messageID provided`);
+    if (!messageID || !threadID) {
+      console.error(`[MESSAGE-STORE] Invalid params for storeMessage: ID=${messageID}, thread=${threadID}`);
       return;
     }
     
     let messageContent = content;
     let attachmentData = null;
     
-    // ATTACHMENT HANDLING - IMPROVED
     if (attachment) {
         if (attachment.type === 'sticker') {
             messageContent = '[attachment: sticker]';
@@ -47,9 +46,9 @@ module.exports = {
         timestamp: Date.now()
     });
     
-    console.log(`[MESSAGE-STORE] Stored: ${messageID} - ${messageContent} for thread ${threadID}`);
+    console.log(`[MESSAGE-STORE] Stored message: ${messageID} for thread ${threadID}`);
     
-    // Memory management (commented out for testing)
+    // Memory management (commented for testing)
     /*
     if (messages.size > 1000) {
         const sortedKeys = Array.from(messages.keys()).sort((a, b) => messages.get(a).timestamp - messages.get(b).timestamp);
@@ -69,12 +68,8 @@ module.exports = {
   },
 
   storeBotMessage(messageID, content, threadID, replyToMessageID = null) {
-    if (!messageID) {
-      console.error(`[MESSAGE-STORE] Failed to store bot message: No messageID provided for thread ${threadID}`);
-      return;
-    }
-    if (!threadID) {
-      console.error(`[MESSAGE-STORE] Failed to store bot message: No threadID provided for message ${messageID}`);
+    if (!messageID || !threadID) {
+      console.error(`[MESSAGE-STORE] Invalid params for storeBotMessage: ID=${messageID}, thread=${threadID}`);
       return;
     }
     messages.set(messageID, {
@@ -84,26 +79,22 @@ module.exports = {
       replyToMessageID,
       timestamp: Date.now()
     });
-    console.log(`[MESSAGE-STORE] Stored bot message: ${messageID} - ${content} for thread ${threadID}`);
+    console.log(`[MESSAGE-STORE] Stored bot message: ${messageID} - ${content.slice(0, 20)}... for thread ${threadID}`);
   },
 
   getBotMessageByReply(replyMessageID) {
-    const message = Array.from(messages.values()).find(
-      msg => msg.replyToMessageID === replyMessageID && msg.senderID === 'bot'
-    );
+    const message = Array.from(messages.values()).find(msg => msg.replyToMessageID === replyMessageID && msg.senderID === 'bot');
     if (message) {
       const messageID = Array.from(messages.keys()).find(key => messages.get(key) === message);
-      console.log(`[MESSAGE-STORE] Found bot message for reply ID ${replyMessageID}: ${messageID}`);
       return { ...message, messageID };
     }
-    console.log(`[MESSAGE-STORE] No bot message found for reply ID ${replyMessageID}`);
     return null;
   },
 
   getLastBotMessages(threadID, limit = 3) {
     const botMessages = Array.from(messages.values())
       .filter(msg => msg.senderID === 'bot' && msg.threadID === threadID)
-      .sort((a, b) => b.timestamp - a.timestamp) // Sort by timestamp descending
+      .sort((a, b) => b.timestamp - a.timestamp)
       .slice(0, limit)
       .map(msg => ({
         messageID: Array.from(messages.keys()).find(key => messages.get(key) === msg),
@@ -111,7 +102,7 @@ module.exports = {
         threadID: msg.threadID,
         timestamp: msg.timestamp
       }));
-    console.log(`[MESSAGE-STORE] Found ${botMessages.length} bot messages for thread ${threadID}:`, botMessages.map(m => m.messageID));
+    console.log(`[MESSAGE-STORE] Found ${botMessages.length} bot messages for thread ${threadID}`);
     return botMessages;
   },
 
