@@ -1,3 +1,4 @@
+
 const favoriteStickers = require('../../responses/favoriteStickers');
 
 module.exports = {
@@ -35,8 +36,18 @@ module.exports = {
             return;
           }
 
+          // Added validation and logging for stickers
+          const validStickers = stickers.filter(id => typeof id === 'number' && id > 0);
+          if (validStickers.length === 0) {
+            console.error('[ERROR] No valid sticker IDs found');
+            api.sendMessage('⚠️ कोई वैलिड स्टिकर ID नहीं मिला। favoriteStickers.js check करो।', threadID);
+            return;
+          }
+          console.log('[DEBUG] Valid stickers:', validStickers);
+
           const intervalId = setInterval(() => {
-            const randomSticker = stickers[Math.floor(Math.random() * stickers.length)];
+            const randomSticker = validStickers[Math.floor(Math.random() * validStickers.length)];
+            console.log(`[DEBUG] Sending sticker ${randomSticker} to thread ${threadID}`);
             api.sendMessage({ sticker: randomSticker }, threadID, (err) => {
               if (err) {
                 console.error(`[ERROR] Sticker spam failed for thread ${threadID}:`, err.message);
@@ -56,16 +67,8 @@ module.exports = {
 
           api.sendMessage(`✅ Thanks Master! स्टिकर स्पैम शुरू! हर ${timeSeconds} सेकंड में एक स्टिकर भेजा जाएगा। (${timeSeconds}s तक चलेगा। Stop करने के लिए #stickerspam sticker stop)`, threadID);
           
-          // Auto-stop after time (optional, to prevent infinite)
-          setTimeout(() => {
-            if (botState.stickerSpam[threadID]) {
-              clearInterval(botState.stickerSpam[threadID].interval);
-              delete botState.stickerSpam[threadID];
-              api.sendMessage('⏰ स्टिकर स्पैम समय समाप्त! बंद हो गया।', threadID);
-            }
-          }, timeMs * timeSeconds / 1000 + 5000); // Extra 5 sec buffer, wait no—timeMs is already interval, total duration is timeSeconds seconds? Wait, fix: total duration = timeSeconds * 1000 ms
-          
-          // Correct auto-stop: Spam runs for timeSeconds seconds, but since interval is timeMs, it will send ~1 sticker per interval
+          // Removed incorrect setTimeout
+          // Correct auto-stop: Spam runs for timeSeconds seconds
           setTimeout(() => {
             if (botState.stickerSpam[threadID]) {
               clearInterval(botState.stickerSpam[threadID].interval);
