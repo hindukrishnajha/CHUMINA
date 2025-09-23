@@ -54,7 +54,10 @@ module.exports = {
   },
 
   removeMessage(messageID) {
-    messages.delete(messageID);
+    if (messageID) {
+      messages.delete(messageID);
+      console.log(`[MESSAGE-STORE] Removed message: ${messageID}`);
+    }
   },
 
   storeBotMessage(messageID, content, threadID, replyToMessageID = null) {
@@ -79,6 +82,7 @@ module.exports = {
     );
     if (message) {
       const messageID = Array.from(messages.keys()).find(key => messages.get(key) === message);
+      console.log(`[MESSAGE-STORE] Found bot message for reply ID ${replyMessageID}: ${messageID}`);
       return { ...message, messageID };
     }
     return null;
@@ -95,11 +99,12 @@ module.exports = {
         threadID: msg.threadID,
         timestamp: msg.timestamp
       }));
-    console.log(`[MESSAGE-STORE] Found ${botMessages.length} bot messages for thread ${threadID}`);
+    console.log(`[MESSAGE-STORE] Found ${botMessages.length} bot messages for thread ${threadID}:`, botMessages.map(m => m.messageID));
     return botMessages;
   },
 
   clearAll() {
     messages.clear();
+    console.log(`[MESSAGE-STORE] Cleared all messages`);
   }
 };
