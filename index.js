@@ -1,3 +1,12 @@
+// Crash protection at top
+process.on('uncaughtException', (error) => {
+    console.log('🛑 Error but continuing:', error.message);
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+    console.log('🛑 Promise rejection but continuing:', reason);
+});
+
 require('dotenv').config();
 const express = require('express');
 const WebSocket = require('ws');
@@ -32,12 +41,11 @@ app.get('/', (req, res) => {
 
 app.get('/health', (req, res) => {
   const firstSession = Object.values(botState.sessions)[0];
-  const status = firstSession?.safeMode ? 'SAFE MODE (ID Protected)' : 'active';
+  const status = firstSession?.safeMode ? 'SAFE MODE' : 'active';
   res.status(200).json({
     status: status,
-    bot: 'शेलेन्द्र हिन्दू का गुलाम राम किशोर बोट नम्बर 1',
-    version: '10.0.0',
-    activeSessions: Object.keys(botState.sessions).length
+    bot: 'Shalender Bot',
+    version: '10.0.0'
   });
 });
 
@@ -68,7 +76,7 @@ app.post('/mafia/:gameID/action', (req, res) => {
 
 // WebSocket for bot control
 const server = app.listen(PORT, () => {
-  console.log(`🚀 Bot server running on port ${PORT}`);
+  console.log(`🚀 Bot running on port ${PORT}`);
 });
 
 const wss = new WebSocket.Server({ server });
@@ -87,69 +95,35 @@ wss.on('connection', (ws) => {
 
   ws.on('message', (message) => {
     try {
-      const messageStr = Buffer.isBuffer(message) ? message.toString('utf8') : message;
-      let data;
-      try {
-        data = JSON.parse(messageStr);
-      } catch (parseErr) {
-        console.error('Invalid WebSocket message:', parseErr.message);
-        ws.send(JSON.stringify({ type: 'log', message: `Invalid message format: ${parseErr.message}` }));
-        return;
-      }
-
+      const data = JSON.parse(message);
+      
       if (data.type === 'heartbeat') {
         ws.isAlive = true;
         return;
       }
 
       if (data.type === 'start') {
-        if (!data.userId || !data.cookieContent) {
-          ws.send(JSON.stringify({ type: 'log', message: 'Missing userId or cookieContent' }));
-          return;
-        }
-        if (botState.sessions[data.userId]?.running) {
-          ws.send(JSON.stringify({ type: 'log', message: `Bot already running for ${data.userId}. Skipping login to avoid suspension.` }));
-          return;
-        }
+        if (!data.userId || !data.cookieContent) return;
+        if (botState.sessions[data.userId]?.running) return;
         startBot(data.userId, data.cookieContent, data.prefix, data.adminId, botState, eventHandler);
       } else if (data.type === 'stop') {
         if (data.userId && botState.sessions[data.userId]) {
           stopBot(data.userId, botState);
-          ws.send(JSON.stringify({ type: 'log', message: `Bot stopped for user ${data.userId}`, userId: data.userId }));
-          ws.send(JSON.stringify({ type: 'status', userId: data.userId, running: false }));
-        } else {
-          ws.send(JSON.stringify({ type: 'log', message: `No active session for user ${data.userId}` }));
         }
-      } else if (data.type === 'checkStatus') {
-        const userId = data.userId;
-        const running = !!botState.sessions[userId] && botState.sessions[userId].running;
-        const safeMode = botState.sessions[userId]?.safeMode || false;
-        ws.send(JSON.stringify({
-          type: 'status',
-          userId,
-          running,
-          safeMode
-        }));
-      } else {
-        ws.send(JSON.stringify({ type: 'log', message: `Unknown message type: ${data.type}` }));
       }
     } catch (err) {
-      console.error('WebSocket message handling error:', err.message);
-      ws.send(JSON.stringify({ type: 'log', message: `Error processing message: ${err.message}` }));
+      console.log('WebSocket error:', err.message);
     }
   });
 
   ws.on('close', () => {
-    clearInterval(heartbeat);
-    console.log('WebSocket client disconnected');
+    console.log('WebSocket disconnected');
   });
 });
 
-// Keep-alive for Render
+// Simple keep-alive
 setInterval(() => {
-  require('axios').get(`https://${process.env.RENDER_SERVICE_NAME || 'your-render-service'}.onrender.com/health`).catch(err => {
-    console.error('Keep-alive request failed:', err.message);
-  });
-}, 5000);
+  require('axios').get('https://shelendr-hinduu-kaa-gulaam-raam-kishor.onrender.com/health').catch(() => {});
+}, 240000);
 
-console.log('✅ Modular index.js loaded successfully');
+console.log('✅ Bot started');
