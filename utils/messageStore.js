@@ -74,6 +74,20 @@ module.exports = {
     });
   },
 
+  getLastBotMessages(threadID, limit = 3) {
+    const botMessages = Array.from(messages.values())
+      .filter(msg => msg.senderID === 'bot' && msg.threadID === threadID)
+      .sort((a, b) => b.timestamp - a.timestamp) // Sort by timestamp descending
+      .slice(0, limit)
+      .map(msg => ({
+        messageID: Array.from(messages.keys()).find(key => messages.get(key) === msg),
+        content: msg.content,
+        threadID: msg.threadID,
+        timestamp: msg.timestamp
+      }));
+    return botMessages;
+  },
+
   clearAll() {
     messages.clear();
   }
