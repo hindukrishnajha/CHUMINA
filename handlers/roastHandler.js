@@ -62,7 +62,7 @@ async function handleRoast(api, event, args, botState, userId) {
                     content: prompt
                 }
             ],
-            model: "llama-3.1-70b-versatile", // ✅ FIXED
+            model: "llama-3.3-70b-versatile", // ✅ FIXED
             temperature: 0.9,
             max_tokens: 100,
             top_p: 1,
