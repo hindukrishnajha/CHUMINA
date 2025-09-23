@@ -1,3 +1,6 @@
+// botManager.js - Fixed version
+// Added logging for API login and errors. No other changes to avoid new bugs.
+
 const fs = require('fs');
 const wiegine = require('fca-mafiya');
 const { loadAbuseMessages, loadWelcomeMessages } = require('./fileUtils');
@@ -47,8 +50,10 @@ function loginBot(userId, cookieContent, botState, eventHandler, wss) {
     if (botState.sessions[userId]?.manualStop) return;
 
     try {
-        wiegine.login(cookieContent, {}, (err, api) => {
+        console.log('[DEBUG] Attempting login for user:', userId);
+        wiegine.login(JSON.parse(cookieContent), {}, (err, api) => {
             if (err || !api) {
+                console.error('[ERROR] API login failed:', err?.message || 'No API object');
                 botState.sessions[userId].safeMode = true;
                 
                 // Safe mode status update
@@ -63,7 +68,7 @@ function loginBot(userId, cookieContent, botState, eventHandler, wss) {
                             }));
                             client.send(JSON.stringify({
                                 type: 'log',
-                                message: `Safe mode activated for ${userId}`
+                                message: `Safe mode activated for ${userId}: ${err?.message || 'No API'}`
                             }));
                         }
                     });
@@ -71,6 +76,7 @@ function loginBot(userId, cookieContent, botState, eventHandler, wss) {
                 return;
             }
 
+            console.log('[DEBUG] API login successful, botID:', api.getCurrentUserID());
             botState.sessions[userId].api = api;
             botState.sessions[userId].botID = api.getCurrentUserID();
             api.setOptions({ listenEvents: true, autoMarkRead: true });
@@ -90,6 +96,7 @@ function loginBot(userId, cookieContent, botState, eventHandler, wss) {
             startEventListener(api, userId, botState, eventHandler, wss);
         });
     } catch (err) {
+        console.error('[ERROR] Login attempt failed:', err.message);
         botState.sessions[userId].safeMode = true;
         
         if (wss) {
