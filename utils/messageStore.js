@@ -47,16 +47,6 @@ module.exports = {
     });
     
     console.log(`[MESSAGE-STORE] Stored message: ${messageID} for thread ${threadID}`);
-    
-    // Memory management (commented for testing)
-    /*
-    if (messages.size > 1000) {
-        const sortedKeys = Array.from(messages.keys()).sort((a, b) => messages.get(a).timestamp - messages.get(b).timestamp);
-        for (let i = 0; i < 200; i++) {
-            messages.delete(sortedKeys[i]);
-        }
-    }
-    */
   },
 
   getMessage(messageID) {
@@ -79,11 +69,14 @@ module.exports = {
       replyToMessageID,
       timestamp: Date.now()
     });
-    console.log(`[MESSAGE-STORE] Stored bot message: ${messageID} - ${content.slice(0, 20)}... for thread ${threadID}`);
+    console.log(`[MESSAGE-STORE] Stored bot message: ${messageID} for thread ${threadID}`);
   },
 
   getBotMessageByReply(replyMessageID) {
-    const message = Array.from(messages.values()).find(msg => msg.replyToMessageID === replyMessageID && msg.senderID === 'bot');
+    if (!replyMessageID) return null;
+    const message = Array.from(messages.values()).find(
+      msg => msg.replyToMessageID === replyMessageID && msg.senderID === 'bot'
+    );
     if (message) {
       const messageID = Array.from(messages.keys()).find(key => messages.get(key) === message);
       return { ...message, messageID };
