@@ -70,7 +70,7 @@ async function handleAutoRoast(api, event, botState) {
                     content: prompt
                 }
             ],
-            model: "llama3-70b-8192",
+            model: "llama-3.1-70b-versatile", // ✅ FIXED
             temperature: 0.9,
             max_tokens: 80,
             top_p: 1,
