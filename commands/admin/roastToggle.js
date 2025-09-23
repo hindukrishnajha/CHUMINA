@@ -32,7 +32,7 @@ async function generateRoast(targetMessage, targetName) {
                     content: prompt
                 }
             ],
-            model: "llama3-70b-8192",
+            model: "llama-3.1-70b-versatile", // ✅ FIXED
             temperature: 0.9,
             max_tokens: 100,
             top_p: 1,
@@ -109,7 +109,7 @@ module.exports = {
       } else if (Object.keys(event.mentions).length > 0) {
         const targetID = Object.keys(event.mentions)[0];
         targetName = event.mentions[targetID];
-        targetMessage = event.body.replace(/@\[.*?\]/g, '').replace(/^#roast\s+manual\s*/i, '').trim();
+        targetMessage = event.body.replace(/@.*?/g, '').replace(/^#roast\s+manual\s*/i, '').trim();
       } else {
         targetMessage = event.body.replace(/^#roast\s+manual\s*/i, '').trim();
       }
@@ -139,6 +139,4 @@ module.exports = {
       const path = require('path');
       const LEARNED_RESPONSES_PATH = path.join(__dirname, '../../config/learned_responses.json');
       fs.writeFileSync(LEARNED_RESPONSES_PATH, JSON.stringify(botState.learnedResponses, null, 2), 'utf8');
-    }
-  }
-};
+                                     }
