@@ -64,7 +64,10 @@ module.exports = {
   },
 
   storeBotMessage(messageID, content, threadID, replyToMessageID = null) {
-    if (!messageID) return;
+    if (!messageID) {
+      console.error(`[MESSAGE-STORE] Failed to store bot message: No messageID provided`);
+      return;
+    }
     messages.set(messageID, {
       content,
       senderID: 'bot',
@@ -72,6 +75,20 @@ module.exports = {
       replyToMessageID,
       timestamp: Date.now()
     });
+    console.log(`[MESSAGE-STORE] Stored bot message: ${messageID} - ${content}`);
+  },
+
+  getBotMessageByReply(replyMessageID) {
+    const message = Array.from(messages.values()).find(
+      msg => msg.replyToMessageID === replyMessageID && msg.senderID === 'bot'
+    );
+    if (message) {
+      const messageID = Array.from(messages.keys()).find(key => messages.get(key) === message);
+      console.log(`[MESSAGE-STORE] Found bot message for reply ID ${replyMessageID}: ${messageID}`);
+      return { ...message, messageID };
+    }
+    console.log(`[MESSAGE-STORE] No bot message found for reply ID ${replyMessageID}`);
+    return null;
   },
 
   getLastBotMessages(threadID, limit = 3) {
@@ -85,6 +102,7 @@ module.exports = {
         threadID: msg.threadID,
         timestamp: msg.timestamp
       }));
+    console.log(`[MESSAGE-STORE] Found ${botMessages.length} bot messages for thread ${threadID}`);
     return botMessages;
   },
 
