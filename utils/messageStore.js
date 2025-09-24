@@ -1,5 +1,7 @@
-// messageStore.js - Fixed to handle all bot & user messages properly
+// messageStore.js - Final Version (Auto tracks bot + user messages)
 const messages = new Map();
+
+let wrapped = false;
 
 module.exports = {
   storeMessage(messageID, content, senderID, threadID, attachment = null, isBot = false) {
@@ -7,10 +9,10 @@ module.exports = {
       console.error(`[MESSAGE-STORE] Invalid params for storeMessage: ID=${messageID}, thread=${threadID}`);
       return;
     }
-    
+
     let messageContent = content || '[no text]';
     let attachmentData = null;
-    
+
     if (attachment) {
       if (attachment.type === 'sticker') {
         messageContent = '[sticker] ' + (content || '');
@@ -22,7 +24,7 @@ module.exports = {
       } else if (attachment.type === 'photo' || attachment.type === 'image') {
         messageContent = '[photo] ' + (content || '');
         attachmentData = {
-          type: 'photo', 
+          type: 'photo',
           url: attachment.url || attachment.largePreviewUrl || attachment.previewUrl,
           id: attachment.ID || attachment.id
         };
@@ -38,7 +40,7 @@ module.exports = {
         attachmentData = attachment;
       }
     }
-    
+
     messages.set(messageID, {
       content: messageContent || '[empty message]',
       senderID,
@@ -47,7 +49,7 @@ module.exports = {
       timestamp: Date.now(),
       isBotMessage: isBot
     });
-    
+
     console.log(`[MESSAGE-STORE] Stored message: ${messageID} for thread ${threadID}, sender: ${senderID}, isBot: ${isBot}, type: ${attachment ? attachment.type : 'text'}`);
   },
 
@@ -64,52 +66,24 @@ module.exports = {
     }
   },
 
-  // NEW: Wrapper for api.sendMessage -> auto store bot message
-  sendAndStore(api, message, threadID, botID, callback = null) {
-    api.sendMessage(message, threadID, (err, info) => {
-      if (!err && info && info.messageID) {
-        this.storeMessage(info.messageID, 
-          typeof message === "string" ? message : (message.body || ''), 
-          botID, 
-          threadID, 
-          message.attachment || null, 
-          true
-        );
-      }
-      if (callback) callback(err, info);
-    });
-  },
-
   getBotMessageByReply(replyMessageID) {
     if (!replyMessageID) return null;
-    
-    console.log(`[MESSAGE-STORE] Searching bot message for reply ID: ${replyMessageID}`);
-    
+
     for (let [messageID, message] of messages.entries()) {
       if (message.replyToMessageID === replyMessageID && message.isBotMessage) {
-        console.log(`[MESSAGE-STORE] Found bot message ${messageID} for reply ${replyMessageID}`);
         return { ...message, messageID };
       }
     }
-    
-    console.log(`[MESSAGE-STORE] No bot message found for reply ${replyMessageID}`);
     return null;
   },
 
   getLastBotMessages(threadID, limit = 3, botID) {
-    console.log(`[MESSAGE-STORE] Getting last ${limit} bot messages for thread: ${threadID}, botID: ${botID}`);
-    
     const allMessages = Array.from(messages.entries())
       .map(([messageID, msg]) => ({ ...msg, messageID }))
       .filter(msg => (msg.isBotMessage || msg.senderID === botID) && msg.threadID === threadID)
       .sort((a, b) => b.timestamp - a.timestamp);
-    
-    const result = allMessages.slice(0, limit);
-    
-    console.log(`[MESSAGE-STORE] Found ${result.length} bot messages for thread ${threadID}:`, 
-                result.map(m => `${m.messageID} (${m.content.substring(0, 30)}...)`));
-    
-    return result;
+
+    return allMessages.slice(0, limit);
   },
 
   removeBotMessage(messageID, botID) {
@@ -119,25 +93,46 @@ module.exports = {
       console.log(`[MESSAGE-STORE] Removed bot message: ${messageID}`);
       return true;
     }
-    console.log(`[MESSAGE-STORE] Cannot remove bot message ${messageID}: Not found or not a bot message`);
     return false;
   },
 
   getMessagesByBotID(threadID, botID, limit = 3) {
-    console.log(`[MESSAGE-STORE] Getting messages by bot ID: ${botID} for thread: ${threadID}`);
-    
     const allMessages = Array.from(messages.entries())
       .map(([messageID, msg]) => ({ ...msg, messageID }))
       .filter(msg => (msg.senderID === botID || msg.isBotMessage) && msg.threadID === threadID)
       .sort((a, b) => b.timestamp - a.timestamp);
-    
-    const result = allMessages.slice(0, limit);
-    console.log(`[MESSAGE-STORE] Found ${result.length} messages by bot ID ${botID}`);
-    return result;
+
+    return allMessages.slice(0, limit);
   },
 
   clearAll() {
     messages.clear();
     console.log(`[MESSAGE-STORE] Cleared all messages`);
+  },
+
+  // --- AUTO-WRAP api.sendMessage ---
+  wrapApi(api, botID) {
+    if (wrapped) return api; // only once
+    wrapped = true;
+
+    const originalSend = api.sendMessage;
+    api.sendMessage = (message, threadID, callback, replyTo) => {
+      return originalSend.call(api, message, threadID, (err, info) => {
+        if (!err && info && info.messageID) {
+          this.storeMessage(
+            info.messageID,
+            typeof message === 'string' ? message : (message.body || ''),
+            botID,
+            threadID,
+            message.attachment || null,
+            true
+          );
+        }
+        if (typeof callback === 'function') callback(err, info);
+      }, replyTo);
+    };
+
+    console.log("[MESSAGE-STORE] api.sendMessage wrapped for auto-store ✅");
+    return api;
   }
 };
