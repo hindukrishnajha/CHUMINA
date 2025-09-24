@@ -6,87 +6,116 @@ const ffmpeg = require("fluent-ffmpeg");
 const ffmpegPath = require("@ffmpeg-installer/ffmpeg").path;
 ffmpeg.setFfmpegPath(ffmpegPath);
 
-const songQueue = {};
 const CACHE_DIR = path.join(__dirname, "../cache");
 if (!fs.existsSync(CACHE_DIR)) fs.mkdirSync(CACHE_DIR, { recursive: true });
 
-module.exports = {
-  name: "music",
-  description: "Plays a song from YouTube safely.",
-  async execute(api, threadID, args, event, botState) {
-    const query = args.join(" ");
-    if (!query) return api.sendMessage("❌ गाना नाम डालो।", threadID);
+// simple wait
+const wait = (ms) => new Promise((res) => setTimeout(res, ms));
 
-    if (!songQueue[threadID]) songQueue[threadID] = [];
+// --- GLOBAL QUEUE (max 1 song at a time) ---
+const globalQueue = [];
+let isProcessing = false;
 
-    const processSong = async () => {
-      if (songQueue[threadID].length === 0) return;
-
-      const songReq = songQueue[threadID][0];
-
+// cache cleanup helper
+function cleanCache(maxFiles = 50) {
+  const files = fs.readdirSync(CACHE_DIR).map(f => ({
+    name: f,
+    time: fs.statSync(path.join(CACHE_DIR, f)).mtimeMs
+  }));
+  if (files.length > maxFiles) {
+    files.sort((a, b) => a.time - b.time); // oldest first
+    const toDelete = files.slice(0, files.length - maxFiles);
+    for (const f of toDelete) {
       try {
-        const cacheFile = path.join(CACHE_DIR, encodeURIComponent(songReq.query) + ".mp3");
-        if (fs.existsSync(cacheFile)) {
-          await sendSong(cacheFile, songReq);
-          return;
-        }
+        fs.unlinkSync(path.join(CACHE_DIR, f.name));
+      } catch {}
+    }
+  }
+}
 
-        const search = await yts(songReq.query);
-        if (!search.videos.length) {
-          api.sendMessage("❌ गाना नहीं मिला।", threadID);
-          songQueue[threadID].shift();
-          processSong();
-          return;
-        }
+async function processQueue(api) {
+  if (isProcessing || globalQueue.length === 0) return;
+  isProcessing = true;
 
+  const job = globalQueue[0];
+  const { query, threadID } = job;
+
+  try {
+    const cacheFile = path.join(CACHE_DIR, encodeURIComponent(query) + ".mp3");
+
+    if (fs.existsSync(cacheFile)) {
+      await sendSong(api, threadID, cacheFile, job);
+    } else {
+      const search = await yts(query);
+      if (!search.videos.length) {
+        api.sendMessage("❌ गाना नहीं मिला।", threadID);
+      } else {
         const song = search.videos[0];
-        songReq.url = song.url;
-        songReq.title = song.title;
+        job.url = song.url;
+        job.title = song.title;
 
-        const stream = await play.stream(song.url, { quality: 2 });
-        const webmPath = path.join(CACHE_DIR, `${Date.now()}.webm`);
-        await new Promise((resolve, reject) => {
-          const ws = fs.createWriteStream(webmPath);
-          stream.stream.pipe(ws);
-          ws.on("finish", resolve);
-          ws.on("error", reject);
-        });
+        // retry on 429
+        let attempt = 0, stream;
+        while (attempt < 4) {
+          try {
+            stream = await play.stream(song.url, { quality: 2 });
+            break;
+          } catch (err) {
+            attempt++;
+            if (err.message.includes("429") || err.message.includes("rate")) {
+              const backoff = 1000 * Math.pow(2, attempt) + Math.random() * 500;
+              console.warn(`429 error, retry in ${backoff}ms`);
+              await wait(backoff);
+            } else throw err;
+          }
+        }
+        if (!stream) throw new Error("Stream fetch failed");
 
+        // direct convert to mp3, no temp files
         await new Promise((resolve, reject) => {
-          ffmpeg(webmPath)
-            .toFormat("mp3")
+          ffmpeg(stream.stream)
             .audioBitrate(128)
+            .format("mp3")
             .on("end", resolve)
             .on("error", reject)
             .save(cacheFile);
         });
 
-        if (fs.existsSync(webmPath)) fs.unlinkSync(webmPath);
-        await sendSong(cacheFile, songReq);
-
-      } catch (err) {
-        console.error("Music command error:", err);
-        api.sendMessage("❌ गाना भेजने में गलती हुई।", threadID);
-      } finally {
-        songQueue[threadID].shift();
-        if (songQueue[threadID].length > 0) processSong();
+        await sendSong(api, threadID, cacheFile, job);
+        cleanCache(50); // keep cache small
       }
-    };
-
-    const sendSong = async (filePath, songReq) => {
-      api.sendMessage(
-        {
-          body: `🎵 गाना: ${songReq.title || songReq.query}\n🔗 ${songReq.url || 'URL not available'}`,
-          attachment: fs.createReadStream(filePath)
-        },
-        threadID,
-        (err) => {
-          if (err) console.error("SendMessage error:", err);
-        }
-      );
-    };
-
-    songQueue[threadID].push({ query });
-    if (songQueue[threadID].length === 1) processSong();
+    }
+  } catch (err) {
+    console.error("Music error:", err);
+    api.sendMessage("❌ गाना भेजने में गलती हुई।", job.threadID);
+  } finally {
+    globalQueue.shift();
+    isProcessing = false;
+    if (globalQueue.length > 0) processQueue(api);
   }
+}
+
+async function sendSong(api, threadID, filePath, job) {
+  api.sendMessage(
+    {
+      body: `🎵 गाना: ${job.title || job.query}\n🔗 ${job.url || "URL not available"}`,
+      attachment: fs.createReadStream(filePath),
+    },
+    threadID,
+    (err) => {
+      if (err) console.error("Send error:", err);
+    }
+  );
+}
+
+module.exports = {
+  name: "music",
+  description: "Plays YouTube music safely (no cookies, low memory).",
+  async execute(api, threadID, args) {
+    const query = args.join(" ");
+    if (!query) return api.sendMessage("❌ गाना नाम डालो।", threadID);
+
+    globalQueue.push({ query, threadID });
+    processQueue(api);
+  },
 };
