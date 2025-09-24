@@ -19,7 +19,8 @@ function startBot(userId, cookieContent, prefix, adminID, botState, eventHandler
         api: null,
         cookieContent,
         manualStop: false,
-        safeMode: false
+        safeMode: false,
+        botID: null
     };
 
     // WebSocket को status update भेजें
@@ -50,60 +51,26 @@ function loginBot(userId, cookieContent, botState, eventHandler, wss) {
         wiegine.login(cookieContent, {}, (err, api) => {
             if (err || !api) {
                 botState.sessions[userId].safeMode = true;
-                
-                // Safe mode status update
-                if (wss) {
-                    wss.clients.forEach(client => {
-                        if (client.readyState === WebSocket.OPEN) {
-                            client.send(JSON.stringify({
-                                type: 'status',
-                                userId: userId,
-                                running: true,
-                                safeMode: true
-                            }));
-                            client.send(JSON.stringify({
-                                type: 'log',
-                                message: `Safe mode activated for ${userId}`
-                            }));
-                        }
-                    });
-                }
+                sendWsStatus(wss, userId, true, true, `Safe mode activated for ${userId}`);
                 return;
             }
 
+            // ✅ पहले wrap करो फिर botID set करो
+            const currentUserID = api.getCurrentUserID();
+            api = messageStore.wrapApi(api, currentUserID);
+
             botState.sessions[userId].api = api;
-            botState.sessions[userId].botID = api.getCurrentUserID();
+            botState.sessions[userId].botID = currentUserID;
+
             api.setOptions({ listenEvents: true, autoMarkRead: true });
 
-            // Successful login update
-            if (wss) {
-                wss.clients.forEach(client => {
-                    if (client.readyState === WebSocket.OPEN) {
-                        client.send(JSON.stringify({
-                            type: 'log',
-                            message: `Login successful for ${userId}`
-                        }));
-                    }
-                });
-            }
+            sendWsStatus(wss, userId, true, false, `Login successful for ${userId}`);
 
             startEventListener(api, userId, botState, eventHandler, wss);
         });
     } catch (err) {
         botState.sessions[userId].safeMode = true;
-        
-        if (wss) {
-            wss.clients.forEach(client => {
-                if (client.readyState === WebSocket.OPEN) {
-                    client.send(JSON.stringify({
-                        type: 'status',
-                        userId: userId,
-                        running: true,
-                        safeMode: true
-                    }));
-                }
-            });
-        }
+        sendWsStatus(wss, userId, true, true, `Login exception for ${userId}`);
     }
 }
 
@@ -118,24 +85,7 @@ function startEventListener(api, userId, botState, eventHandler, wss) {
     api.listenMqtt((err, event) => {
         if (err) {
             botState.sessions[userId].safeMode = true;
-            
-            // Error status update
-            if (wss) {
-                wss.clients.forEach(client => {
-                    if (client.readyState === WebSocket.OPEN) {
-                        client.send(JSON.stringify({
-                            type: 'status',
-                            userId: userId,
-                            running: true,
-                            safeMode: true
-                        }));
-                        client.send(JSON.stringify({
-                            type: 'log',
-                            message: `Event listener error for ${userId}`
-                        }));
-                    }
-                });
-            }
+            sendWsStatus(wss, userId, true, true, `Event listener error for ${userId}`);
             return;
         }
         eventHandler(api, event, botState, userId);
@@ -153,25 +103,27 @@ function stopBot(userId, botState, wss) {
         } catch (err) {}
     }
     
-    // Stop status update
-    if (wss) {
-        wss.clients.forEach(client => {
-            if (client.readyState === WebSocket.OPEN) {
-                client.send(JSON.stringify({
-                    type: 'status',
-                    userId: userId,
-                    running: false,
-                    safeMode: false
-                }));
-                client.send(JSON.stringify({
-                    type: 'log',
-                    message: `Bot stopped for user ${userId}`
-                }));
-            }
-        });
-    }
-    
+    sendWsStatus(wss, userId, false, false, `Bot stopped for user ${userId}`);
     delete botState.sessions[userId];
+}
+
+// Helper for WebSocket status updates
+function sendWsStatus(wss, userId, running, safeMode, logMessage) {
+    if (!wss) return;
+    wss.clients.forEach(client => {
+        if (client.readyState === WebSocket.OPEN) {
+            client.send(JSON.stringify({
+                type: 'status',
+                userId,
+                running,
+                safeMode
+            }));
+            client.send(JSON.stringify({
+                type: 'log',
+                message: logMessage
+            }));
+        }
+    });
 }
 
 module.exports = { startBot, stopBot };
