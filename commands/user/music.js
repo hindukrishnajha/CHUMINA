@@ -9,18 +9,13 @@ ffmpeg.setFfmpegPath(ffmpegPath);
 const CACHE_DIR = path.join(__dirname, "../cache");
 if (!fs.existsSync(CACHE_DIR)) fs.mkdirSync(CACHE_DIR, { recursive: true });
 
-// cookies from environment variable
 const YT_COOKIES = process.env.YOUTUBE_COOKIES || "";
-
-// wait helper
 const wait = (ms) => new Promise((res) => setTimeout(res, ms));
 
-// --- GLOBAL QUEUE ---
 const globalQueue = [];
 let isProcessing = false;
 
-// clean old cache files
-function cleanCache(maxFiles = 50) {
+function cleanCache(maxFiles = 100) {
   const files = fs.readdirSync(CACHE_DIR).map(f => ({
     name: f,
     time: fs.statSync(path.join(CACHE_DIR, f)).mtimeMs
@@ -55,14 +50,13 @@ async function processQueue(api) {
         job.url = song.url;
         job.title = song.title;
 
-        // random small delay before stream
-        await wait(500 + Math.random() * 500);
+        await wait(1000 + Math.random() * 1000); // Increased delay
 
-        // retry logic for 429
         let attempt = 0, stream;
         const maxAttempts = 6;
         while (attempt < maxAttempts) {
           try {
+            console.log(`Request for ${query}, attempt ${attempt + 1}`);
             stream = await play.stream(song.url, {
               quality: 2,
               cookies: YT_COOKIES || undefined
@@ -71,7 +65,7 @@ async function processQueue(api) {
           } catch (err) {
             attempt++;
             if (err.message.includes("429") || err.message.includes("rate")) {
-              const backoff = 1000 * Math.pow(2, attempt) + Math.random() * 500;
+              const backoff = 2000 * Math.pow(2, attempt) + Math.random() * 1000;
               console.warn(`⚠️ 429 error, retry #${attempt} in ${Math.round(backoff)}ms`);
               await wait(backoff);
             } else throw err;
@@ -79,7 +73,6 @@ async function processQueue(api) {
         }
         if (!stream) throw new Error("Stream fetch failed after retries");
 
-        // convert to mp3
         await new Promise((resolve, reject) => {
           ffmpeg(stream.stream)
             .audioBitrate(128)
@@ -90,12 +83,17 @@ async function processQueue(api) {
         });
 
         await sendSong(api, threadID, cacheFile, job);
-        cleanCache(50);
+        cleanCache(100);
       }
     }
   } catch (err) {
     console.error("Music error:", err);
-    api.sendMessage("❌ गाना भेजने में गलती हुई।", threadID);
+    if (err.message.includes("429")) {
+      cleanCache(0); // Clear cache on 429
+      api.sendMessage("❌ Rate limit error, thodi der baad try karo.", threadID);
+    } else {
+      api.sendMessage("❌ गाना भेजने में गलती हुई।", threadID);
+    }
   } finally {
     globalQueue.shift();
     isProcessing = false;
