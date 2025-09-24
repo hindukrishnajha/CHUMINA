@@ -110,7 +110,7 @@ module.exports = {
     console.log(`[MESSAGE-STORE] Cleared all messages`);
   },
 
-  // --- AUTO-WRAP api.sendMessage ---
+  // --- AUTO-WRAP api.sendMessage + api.listenMqtt ---
   wrapApi(api, botID) {
     if (wrapped) return api; // only once
     wrapped = true;
@@ -132,7 +132,24 @@ module.exports = {
       }, replyTo);
     };
 
-    console.log("[MESSAGE-STORE] api.sendMessage wrapped for auto-store ✅");
+    const originalListen = api.listenMqtt;
+    api.listenMqtt = (callback) => {
+      return originalListen((err, event) => {
+        if (!err && event && event.body) {
+          this.storeMessage(
+            event.messageID,
+            event.body,
+            event.senderID,
+            event.threadID,
+            event.attachments?.[0] || null,
+            event.senderID === botID // ✅ bot ka apna msg bhi save होगा
+          );
+        }
+        callback(err, event);
+      });
+    };
+
+    console.log("[MESSAGE-STORE] api.sendMessage + api.listenMqtt wrapped for auto-store ✅");
     return api;
   }
 };
