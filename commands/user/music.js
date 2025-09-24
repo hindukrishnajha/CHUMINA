@@ -1,7 +1,7 @@
 const fs = require("fs");
 const path = require("path");
 const yts = require("yt-search");
-const { exec } = require("child_process");
+const ytdl = require("ytdl-core");
 const ffmpeg = require("fluent-ffmpeg");
 const ffmpegPath = require("@ffmpeg-installer/ffmpeg").path;
 ffmpeg.setFfmpegPath(ffmpegPath);
@@ -43,44 +43,82 @@ async function processQueue(api) {
       await sendSong(api, threadID, cacheFile, job);
     } else {
       const search = await yts(query);
-      if (!search.videos.length) {
-        api.sendMessage("❌ गाना नहीं मिला।", threadID);
+      // Filter out live streams, shorts, and non-videos
+      const videos = search.videos.filter(v => !v.live && v.duration && v.duration.seconds > 30 && v.duration.seconds < 600);
+      if (!videos.length) {
+        api.sendMessage("❌ कोई उपयुक्त गाना नहीं मिला।", threadID);
       } else {
         let videoIndex = 0;
-        let success = false;
-        const maxVideos = Math.min(search.videos.length, 3);
-        const cookieFile = path.join(CACHE_DIR, "cookies.txt");
+        let stream = null;
+        const maxVideos = Math.min(videos.length, 5); // Try up to 5 videos
+        const cookieString = YT_COOKIES.map(c => `${c.name}=${c.value}`).join("; ");
 
-        // Write cookies to a file for yt-dlp
-        const cookieString = YT_COOKIES.map(c => `youtube.com\tTRUE\t/\t${c.secure ? "TRUE" : "FALSE"}\t${c.expirationDate || 0}\t${c.name}\t${c.value}`).join("\n");
-        fs.writeFileSync(cookieFile, cookieString);
+        // Optional: Proxy setup
+        // const { HttpsProxyAgent } = require("https-proxy-agent");
+        // const proxy = 'http://your_proxy_ip:port';
+        // const agent = new HttpsProxyAgent(proxy);
 
-        while (videoIndex < maxVideos && !success) {
-          const song = search.videos[videoIndex];
+        while (videoIndex < maxVideos && !stream) {
+          const song = videos[videoIndex];
           job.url = song.url;
           job.title = song.title;
           console.log(`Trying video: ${job.title} (${job.url})`);
 
           await wait(2000 + Math.random() * 2000);
 
-          try {
-            await new Promise((resolve, reject) => {
-              // Optional: Add proxy if needed
-              // const proxy = 'http://your_proxy_ip:port';
-              // exec(`yt-dlp --cookies ${cookieFile} --proxy ${proxy} -x --audio-format mp3 -o "${cacheFile}" "${song.url}"`, (err) => {
-              exec(`yt-dlp --cookies ${cookieFile} -x --audio-format mp3 -o "${cacheFile}" "${song.url}"`, (err) => {
-                if (err) reject(err);
-                else resolve();
+          let attempt = 0;
+          const maxAttempts = 5;
+
+          while (attempt < maxAttempts) {
+            try {
+              console.log(`Request for ${query}, attempt ${attempt + 1}, video ${videoIndex + 1}`);
+              stream = ytdl(song.url, {
+                quality: "highestaudio",
+                filter: "audioonly",
+                highWaterMark: 1 << 25, // 32MB buffer
+                requestOptions: {
+                  headers: {
+                    cookie: cookieString,
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+                  }
+                  // agent // Uncomment for proxy
+                }
               });
-            });
-            success = true;
-          } catch (err) {
-            console.warn(`⚠️ Error for ${song.url}: ${err.message}`);
-            videoIndex++;
+              // Test stream before processing
+              await new Promise((resolve, reject) => {
+                stream.on('info', resolve);
+                stream.on('error', reject);
+              });
+              break;
+            } catch (err) {
+              attempt++;
+              if (err.message.includes("410") || err.message.includes("Status code: 410")) {
+                console.warn(`⚠️ 410 error for ${song.url}, moving to next video`);
+                stream = null;
+                break;
+              } else if (err.message.includes("429") || err.message.includes("rate")) {
+                const backoff = 5000 * Math.pow(2, attempt) + Math.random() * 2000;
+                console.warn(`⚠️ 429 error, retry #${attempt} in ${Math.round(backoff)}ms`);
+                await wait(backoff);
+              } else {
+                console.error('Stream error:', err);
+                throw err;
+              }
+            }
           }
+          videoIndex++;
         }
 
-        if (!success) throw new Error("No playable video found after trying multiple sources");
+        if (!stream) throw new Error("No playable video found after trying multiple sources");
+
+        await new Promise((resolve, reject) => {
+          ffmpeg(stream)
+            .audioBitrate(128)
+            .format("mp3")
+            .on("end", resolve)
+            .on("error", reject)
+            .save(cacheFile);
+        });
 
         await sendSong(api, threadID, cacheFile, job);
         cleanCache(200);
@@ -88,7 +126,7 @@ async function processQueue(api) {
     }
   } catch (err) {
     console.error("Music error:", err);
-    if (err.message.includes("not available") || err.message.includes("410")) {
+    if (err.message.includes("410") || err.message.includes("not available")) {
       api.sendMessage("❌ गाना उपलब्ध नहीं है, कृपया दूसरा गाना ट्राई करें।", threadID);
     } else if (err.message.includes("429")) {
       cleanCache(0);
@@ -116,7 +154,7 @@ async function sendSong(api, threadID, filePath, job) {
 
 module.exports = {
   name: "music",
-  description: "Plays YouTube music using yt-dlp (handles 410 and 429).",
+  description: "Plays YouTube music using ytdl-core (handles 410 and 429).",
   async execute(api, threadID, args) {
     const query = args.join(" ");
     if (!query) return api.sendMessage("❌ गाना नाम डालो।", threadID);
