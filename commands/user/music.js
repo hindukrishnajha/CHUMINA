@@ -9,24 +9,24 @@ ffmpeg.setFfmpegPath(ffmpegPath);
 const CACHE_DIR = path.join(__dirname, "../cache");
 if (!fs.existsSync(CACHE_DIR)) fs.mkdirSync(CACHE_DIR, { recursive: true });
 
-// use environment variable for cookies
+// cookies from environment variable
 const YT_COOKIES = process.env.YOUTUBE_COOKIES || "";
 
-// simple wait
+// wait helper
 const wait = (ms) => new Promise((res) => setTimeout(res, ms));
 
-// --- GLOBAL QUEUE (max 1 song at a time) ---
+// --- GLOBAL QUEUE ---
 const globalQueue = [];
 let isProcessing = false;
 
-// cache cleanup helper
+// clean old cache files
 function cleanCache(maxFiles = 50) {
   const files = fs.readdirSync(CACHE_DIR).map(f => ({
     name: f,
     time: fs.statSync(path.join(CACHE_DIR, f)).mtimeMs
   }));
   if (files.length > maxFiles) {
-    files.sort((a, b) => a.time - b.time); // oldest first
+    files.sort((a, b) => a.time - b.time);
     const toDelete = files.slice(0, files.length - maxFiles);
     for (const f of toDelete) {
       try { fs.unlinkSync(path.join(CACHE_DIR, f.name)); } catch {}
@@ -55,9 +55,13 @@ async function processQueue(api) {
         job.url = song.url;
         job.title = song.title;
 
-        // retry on 429 using cookies
+        // random small delay before stream
+        await wait(500 + Math.random() * 500);
+
+        // retry logic for 429
         let attempt = 0, stream;
-        while (attempt < 4) {
+        const maxAttempts = 6;
+        while (attempt < maxAttempts) {
           try {
             stream = await play.stream(song.url, {
               quality: 2,
@@ -68,14 +72,14 @@ async function processQueue(api) {
             attempt++;
             if (err.message.includes("429") || err.message.includes("rate")) {
               const backoff = 1000 * Math.pow(2, attempt) + Math.random() * 500;
-              console.warn(`429 error, retry #${attempt} in ${backoff}ms`);
+              console.warn(`⚠️ 429 error, retry #${attempt} in ${Math.round(backoff)}ms`);
               await wait(backoff);
             } else throw err;
           }
         }
-        if (!stream) throw new Error("Stream fetch failed");
+        if (!stream) throw new Error("Stream fetch failed after retries");
 
-        // direct convert to mp3
+        // convert to mp3
         await new Promise((resolve, reject) => {
           ffmpeg(stream.stream)
             .audioBitrate(128)
@@ -112,7 +116,7 @@ async function sendSong(api, threadID, filePath, job) {
 
 module.exports = {
   name: "music",
-  description: "Plays YouTube music safely using cookies (low memory).",
+  description: "Plays YouTube music safely using cookies (handles 429).",
   async execute(api, threadID, args) {
     const query = args.join(" ");
     if (!query) return api.sendMessage("❌ गाना नाम डालो।", threadID);
