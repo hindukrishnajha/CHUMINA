@@ -3,6 +3,7 @@ const { loadCommands } = require('../utils/commandLoader');
 class CommandHandler {
     constructor() {
         this.commands = loadCommands();
+        this.cooldownWarnings = {}; // ⚡ group cooldown spam prevent
     }
 
     handleCommand(api, event, botState, userId) {
@@ -11,7 +12,7 @@ class CommandHandler {
         const fullCommand = content.split(' ')[0].toLowerCase();
         const command = fullCommand.slice(prefix.length).toLowerCase();
         const cleanArgs = content.split(' ').slice(1);
-        
+
         const senderID = event.senderID;
         const isMaster = senderID === require('../config/constants').MASTER_ID;
         const isAdmin = Array.isArray(botState.adminList) && (botState.adminList.includes(senderID) || isMaster);
@@ -26,9 +27,14 @@ class CommandHandler {
             return;
         }
 
-        // Cooldown check
+        // ✅ Group-wide Cooldown check (spam fix)
         if (this.isOnCooldown(botState, threadID, command)) {
-            api.sendMessage('⚠️ कूलडाउन: 10 सेकंड बाद ट्राई करें।', threadID, messageID);
+            const warnKey = `${threadID}_${command}`;
+            if (!this.cooldownWarnings[warnKey]) {
+                api.sendMessage('⚠️ कूलडाउन: 10 सेकंड बाद ट्राई करें।', threadID, messageID);
+                this.cooldownWarnings[warnKey] = true;
+                setTimeout(() => delete this.cooldownWarnings[warnKey], 10000);
+            }
             return;
         }
 
@@ -38,10 +44,10 @@ class CommandHandler {
             return;
         }
 
-        // Execute command with better error handling
+        // Execute command
         this.executeCommand(api, cmd, threadID, cleanArgs, event, botState, isMaster, userId, messageID);
-        
-        // Set cooldown
+
+        // Set group-wide cooldown
         this.setCooldown(botState, threadID, command);
     }
 
@@ -54,7 +60,7 @@ class CommandHandler {
     }
 
     isOnCooldown(botState, threadID, command) {
-        return botState.commandCooldowns[threadID]?.[command]?.timestamp && 
+        return botState.commandCooldowns[threadID]?.[command]?.timestamp &&
                Date.now() - botState.commandCooldowns[threadID][command].timestamp < 10000;
     }
 
@@ -64,13 +70,13 @@ class CommandHandler {
 
         if (masterCommands.includes(cmd.name) && !isMaster) return false;
         if (adminCommands.includes(cmd.name) && !isAdmin && !isMaster) return false;
-        
+
         return true;
     }
 
     getPermissionMessage(cmd, isMaster, isAdmin) {
         const masterCommands = ['stopall', 'status', 'removeadmin', 'masterid', 'mastercommand', 'listadmins', 'list', 'kick', 'addadmin'];
-        
+
         if (masterCommands.includes(cmd.name)) {
             return "🚫 ये कमांड सिर्फ मास्टर के लिए है! 🕉️";
         } else {
@@ -82,25 +88,24 @@ class CommandHandler {
         try {
             const botID = botState.sessions[userId].botID;
             const stopBot = require('../utils/botManager').stopBot;
-            
+
             console.log(`[CMD] Executing: ${cmd.name} with args:`, cleanArgs);
-            
-            // Extra safety - timeout agar command hang ho jaye
+
+            // ✅ Safe timeout (15s) with error handling
             const timeoutPromise = new Promise((_, reject) => {
-                setTimeout(() => reject(new Error('Command timeout')), 30000);
+                setTimeout(() => reject(new Error('Command timeout')), 15000);
             });
-            
+
             const commandPromise = Promise.resolve().then(() => {
                 return cmd.execute(api, threadID, cleanArgs, event, botState, isMaster, botID, stopBot);
             });
-            
-            // Race between command and timeout
+
             Promise.race([commandPromise, timeoutPromise])
                 .catch(err => {
                     console.error(`[CMD-SAFETY-ERROR] ${cmd.name}:`, err);
-                    api.sendMessage(`❌ कमांड timeout/error: ${err.message}`, threadID, messageID);
+                    api.sendMessage(`❌ कमांड error: ${err.message}`, threadID, messageID);
                 });
-                
+
         } catch (err) {
             console.error(`[CMD-ERROR] ${cmd.name}:`, err);
             api.sendMessage(`❌ कमांड error: ${err.message}`, threadID, messageID);
@@ -112,7 +117,7 @@ class CommandHandler {
             botState.commandCooldowns[threadID] = {};
         }
         botState.commandCooldowns[threadID][command] = { timestamp: Date.now() };
-        
+
         setTimeout(() => {
             if (botState.commandCooldowns[threadID]?.[command]) {
                 delete botState.commandCooldowns[threadID][command];
