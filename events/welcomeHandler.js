@@ -71,7 +71,6 @@ function handleGoodbye(api, event, botState, userId) {
         return;
     }
 
-    // Send goodbye message
     sendGoodbyeMessage(api, threadID, leftID, event.author, botState, userId);
 }
 
