@@ -10,10 +10,13 @@ module.exports = {
         return;
       }
 
-      if (args[1] === 'on') {
+      // ✅ args[0] instead of args[1]
+      const option = args[0]?.toLowerCase();
+
+      if (option === 'on') {
         botConfig.antiOut = true;
         api.sendMessage('🛡️ Anti-out सिस्टम चालू! अब मेंबर्स ग्रुप छोड़ नहीं सकते!', threadID);
-      } else if (args[1] === 'off') {
+      } else if (option === 'off') {
         botConfig.antiOut = false;
         api.sendMessage('🛡️ Anti-out सिस्टम बंद!', threadID);
       } else {
