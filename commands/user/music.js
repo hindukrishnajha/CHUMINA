@@ -1,92 +1,92 @@
 const fs = require("fs");
 const path = require("path");
 const yts = require("yt-search");
-const ytdl = require("ytdl-core");
+const play = require("play-dl");
 const ffmpeg = require("fluent-ffmpeg");
 const ffmpegPath = require("@ffmpeg-installer/ffmpeg").path;
 ffmpeg.setFfmpegPath(ffmpegPath);
 
-// Queue system
 const songQueue = {};
 const CACHE_DIR = path.join(__dirname, "../cache");
 if (!fs.existsSync(CACHE_DIR)) fs.mkdirSync(CACHE_DIR, { recursive: true });
 
 module.exports = {
   name: "music",
-  description: "Play music from YouTube",
+  description: "Plays a song from YouTube safely.",
   async execute(api, threadID, args, event, botState) {
-    const query = args.join(" ").trim();
+    const query = args.join(" ");
     if (!query) return api.sendMessage("❌ गाना नाम डालो।", threadID);
 
-    // Initialize queue
     if (!songQueue[threadID]) songQueue[threadID] = [];
 
-    try {
-      api.sendMessage(`🔍 Searching for: "${query}"...`, threadID);
+    const processSong = async () => {
+      if (songQueue[threadID].length === 0) return;
 
-      // Search YouTube
-      const search = await yts(query);
-      if (!search.videos.length) {
-        return api.sendMessage("❌ कोई गाना नहीं मिला।", threadID);
-      }
+      const songReq = songQueue[threadID][0];
 
-      const video = search.videos[0];
-      const videoUrl = video.url;
-      const title = video.title;
-      const duration = video.duration;
+      try {
+        const cacheFile = path.join(CACHE_DIR, encodeURIComponent(songReq.query) + ".mp3");
+        if (fs.existsSync(cacheFile)) {
+          await sendSong(cacheFile, songReq);
+          return;
+        }
 
-      // Check duration (max 10 minutes)
-      if (duration.seconds > 600) {
-        return api.sendMessage("❌ गाना 10 minute से ज्यादा लंबा है।", threadID);
-      }
+        const search = await yts(songReq.query);
+        if (!search.videos.length) {
+          api.sendMessage("❌ गाना नहीं मिला।", threadID);
+          songQueue[threadID].shift();
+          processSong();
+          return;
+        }
 
-      api.sendMessage(`⬇️ Downloading: ${title} (${duration.timestamp})...`, threadID);
+        const song = search.videos[0];
+        songReq.url = song.url;
+        songReq.title = song.title;
 
-      // Create cache filename
-      const cacheFile = path.join(CACHE_DIR, `${Date.now()}_${title.replace(/[^a-zA-Z0-9]/g, "_")}.mp3`);
-
-      // Download and convert
-      await new Promise((resolve, reject) => {
-        const stream = ytdl(videoUrl, { 
-          filter: 'audioonly',
-          quality: 'highestaudio' 
+        const stream = await play.stream(song.url, { quality: 2 });
+        const webmPath = path.join(CACHE_DIR, `${Date.now()}.webm`);
+        await new Promise((resolve, reject) => {
+          const ws = fs.createWriteStream(webmPath);
+          stream.stream.pipe(ws);
+          ws.on("finish", resolve);
+          ws.on("error", reject);
         });
 
-        ffmpeg(stream)
-          .audioBitrate(128)
-          .toFormat('mp3')
-          .on('end', () => {
-            console.log('Conversion finished');
-            resolve();
-          })
-          .on('error', (err) => {
-            console.error('Conversion error:', err);
-            reject(err);
-          })
-          .save(cacheFile);
-      });
+        await new Promise((resolve, reject) => {
+          ffmpeg(webmPath)
+            .toFormat("mp3")
+            .audioBitrate(128)
+            .on("end", resolve)
+            .on("error", reject)
+            .save(cacheFile);
+        });
 
-      // Send the song
-      api.sendMessage({
-        body: `🎵 ${title}\n⏱️ ${duration.timestamp}\n🔗 ${videoUrl}`,
-        attachment: fs.createReadStream(cacheFile)
-      }, threadID, (err) => {
-        // Clean up file after sending
-        if (fs.existsSync(cacheFile)) {
-          fs.unlink(cacheFile, (unlinkErr) => {
-            if (unlinkErr) console.error('File delete error:', unlinkErr);
-          });
-        }
-        
-        if (err) {
-          console.error('Send error:', err);
-          api.sendMessage("❌ गाना भेजने में error आई।", threadID);
-        }
-      });
+        if (fs.existsSync(webmPath)) fs.unlinkSync(webmPath);
+        await sendSong(cacheFile, songReq);
 
-    } catch (error) {
-      console.error('Music command error:', error);
-      api.sendMessage("❌ Error: " + error.message, threadID);
-    }
+      } catch (err) {
+        console.error("Music command error:", err);
+        api.sendMessage("❌ गाना भेजने में गलती हुई।", threadID);
+      } finally {
+        songQueue[threadID].shift();
+        if (songQueue[threadID].length > 0) processSong();
+      }
+    };
+
+    const sendSong = async (filePath, songReq) => {
+      api.sendMessage(
+        {
+          body: `🎵 गाना: ${songReq.title || songReq.query}\n🔗 ${songReq.url || 'URL not available'}`,
+          attachment: fs.createReadStream(filePath)
+        },
+        threadID,
+        (err) => {
+          if (err) console.error("SendMessage error:", err);
+        }
+      );
+    };
+
+    songQueue[threadID].push({ query });
+    if (songQueue[threadID].length === 1) processSong();
   }
 };
