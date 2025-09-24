@@ -1,4 +1,4 @@
-// messageStore.js - Fixed version
+// messageStore.js - Fixed version (without breaking existing functionality)
 const messages = new Map();
 
 module.exports = {
@@ -71,14 +71,14 @@ module.exports = {
     
     messages.set(messageID, {
       content: content || '[empty bot message]',
-      senderID: 'bot',
+      senderID: 'bot', // ✅ Yeh important hai - 'bot' string use karo
       threadID,
       replyToMessageID,
       timestamp: Date.now(),
-      isBotMessage: true // Additional flag for easy identification
+      isBotMessage: true
     });
     
-    console.log(`[MESSAGE-STORE] Stored BOT message: ${messageID} for thread ${threadID}, replyTo: ${replyToMessageID}`);
+    console.log(`[MESSAGE-STORE] Stored BOT message: ${messageID} for thread ${threadID}, replyTo: ${replyToMessageID || 'none'}`);
   },
 
   getBotMessageByReply(replyMessageID) {
@@ -90,6 +90,13 @@ module.exports = {
       if (message.replyToMessageID === replyMessageID && message.senderID === 'bot') {
         console.log(`[MESSAGE-STORE] Found bot message ${messageID} for reply ${replyMessageID}`);
         return { ...message, messageID };
+      }
+    }
+    
+    // ✅ Agar exact match nahi mila, toh check karo koi bot message hai jo reply ho
+    for (let [messageID, message] of messages.entries()) {
+      if (message.senderID === 'bot' && message.replyToMessageID) {
+        console.log(`[MESSAGE-STORE] Checking bot message ${messageID} with reply ${message.replyToMessageID}`);
       }
     }
     
@@ -108,7 +115,17 @@ module.exports = {
     const result = allMessages.slice(0, limit);
     
     console.log(`[MESSAGE-STORE] Found ${result.length} bot messages for thread ${threadID}:`, 
-                result.map(m => `${m.messageID} (${new Date(m.timestamp).toLocaleTimeString()})`));
+                result.map(m => `${m.messageID} (${m.content.substring(0, 30)}...)`));
+    
+    // ✅ Debugging ke liye saare messages dikhao
+    if (result.length === 0) {
+      console.log(`[MESSAGE-STORE] DEBUG: All messages in store:`);
+      messages.forEach((msg, id) => {
+        if (msg.threadID === threadID) {
+          console.log(`[MESSAGE-STORE] DEBUG: ${id} -> sender: ${msg.senderID}, content: ${msg.content.substring(0, 50)}`);
+        }
+      });
+    }
     
     return result;
   },
@@ -120,15 +137,22 @@ module.exports = {
       console.log(`[MESSAGE-STORE] Removed bot message: ${messageID}`);
       return true;
     }
+    console.log(`[MESSAGE-STORE] Cannot remove bot message ${messageID}: Not found or not a bot message`);
     return false;
   },
 
-  // Debug function to see all stored messages
-  debugMessages() {
-    console.log(`[MESSAGE-STORE] Total messages stored: ${messages.size}`);
-    messages.forEach((msg, id) => {
-      console.log(`[MESSAGE-STORE] ${id}: ${msg.senderID} -> ${msg.content.substring(0, 50)}...`);
-    });
+  // ✅ Naya function: Bot ID se messages dhundne ke liye (backup plan)
+  getMessagesByBotID(threadID, botID, limit = 3) {
+    console.log(`[MESSAGE-STORE] Getting messages by bot ID: ${botID} for thread: ${threadID}`);
+    
+    const allMessages = Array.from(messages.entries())
+      .map(([messageID, msg]) => ({ ...msg, messageID }))
+      .filter(msg => msg.senderID === botID && msg.threadID === threadID)
+      .sort((a, b) => b.timestamp - a.timestamp);
+    
+    const result = allMessages.slice(0, limit);
+    console.log(`[MESSAGE-STORE] Found ${result.length} messages by bot ID ${botID}`);
+    return result;
   },
 
   clearAll() {
