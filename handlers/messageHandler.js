@@ -1,3 +1,4 @@
+// ./handlers/handleMessage.js
 const commandHandler = require('./commandHandler');
 const messageStore = require('../utils/messageStore');
 const { getAIResponse } = require('../utils/aichat');
@@ -7,11 +8,10 @@ function handleMessage(api, event, botState, userId) {
     const senderID = event.senderID || event.author || null;
     const isMaster = senderID === MASTER_ID;
     const isAdmin = Array.isArray(botState.adminList) && (botState.adminList.includes(senderID) || isMaster);
-    const isGroup = event.threadID !== senderID;
-    const botID = botState.sessions[userId]?.botID;
     const threadID = event.threadID;
     const messageID = event.messageID;
     const content = event.body ? event.body.trim() : '';
+    const botID = botState.sessions[userId]?.botID;
 
     // Muted users check
     if (botState.mutedUsers && botState.mutedUsers[threadID] && botState.mutedUsers[threadID].includes(senderID)) {
@@ -29,7 +29,7 @@ function handleMessage(api, event, botState, userId) {
     }
 
     // Command handling
-    if (content.startsWith(botState.sessions[userId].prefix)) {
+    if (content.startsWith(botState.sessions[userId]?.prefix || '#')) {
         return commandHandler.handleCommand(api, event, botState, userId);
     }
 
@@ -38,7 +38,7 @@ function handleMessage(api, event, botState, userId) {
         return handleAIChat(api, event, botState, userId);
     }
 
-    // Auto-replies and other message processing
+    // Learned responses & auto-replies
     handleAutoReplies(api, event, botState, userId);
 }
 
@@ -58,13 +58,27 @@ async function handleAIChat(api, event, botState, userId) {
 }
 
 function handleAutoReplies(api, event, botState, userId) {
-    // Yeh aapka existing auto-reply logic yahan aayega
-    // Main isko short rakha hun taki file manageable rahe
     const content = event.body ? event.body.toLowerCase() : '';
-    
-    // Basic auto-reply example
+    const threadID = event.threadID;
+
+    // Skip messages starting with # (commands)
+    if (content.startsWith(botState.sessions[userId]?.prefix || '#')) return;
+
+    // Check learned responses for all users
+    if (botState.learnedResponses) {
+        Object.values(botState.learnedResponses).forEach(userData => {
+            userData.triggers.forEach(t => {
+                if (content.includes(t.trigger.toLowerCase())) {
+                    const resp = t.responses[Math.floor(Math.random() * t.responses.length)];
+                    api.sendMessage(resp, threadID);
+                }
+            });
+        });
+    }
+
+    // Example auto-reply logic
     if (content.includes('hello') || content.includes('hi')) {
-        api.sendMessage('Hello! How can I help you?', event.threadID);
+        api.sendMessage('Hello! How can I help you?', threadID);
     }
 }
 
@@ -82,15 +96,14 @@ function handleGroupNameChange(api, event, botState) {
     }
 }
 
-function handleNicknameChange(api, event, botState) {
+function handleNicknameChange(api, event, botState, userId) {
     const changedUserID = event.logMessageData.participant_id;
     const threadID = event.threadID;
     
     if (!changedUserID || changedUserID === botState.sessions[userId]?.botID) {
         return;
     }
-    
-    // Nickname change handling logic yahan aayega
+
     console.log(`[NICKNAME] Change detected for user ${changedUserID} in thread ${threadID}`);
 }
 
