@@ -79,7 +79,7 @@ function sendGoodbyeMessage(api, threadID, leftID, authorID, botState, userId) {
     api.getThreadInfo(threadID, (err, info) => {
         if (err || !info) {
             console.error(`[GOODBYE] Error fetching thread info: ${err?.message}`);
-            sendDefaultGoodbye(api, threadID, leftID, botState);
+            sendDefaultGoodbye(api, threadID, leftID);
             return;
         }
 
@@ -111,8 +111,8 @@ function sendGoodbyeMessage(api, threadID, leftID, authorID, botState, userId) {
             
             api.sendMessage(randomGoodbye, threadID);
 
-            // Anti-out feature
-            if (botState.sessions[userId].botConfig.antiOut && !isAdminAction && leftID !== botState.sessions[userId].botID) {
+            // ✅ Anti-out feature for both admin & user
+            if (botState.sessions[userId]?.botConfig?.antiOut && leftID !== botState.sessions[userId].botID) {
                 handleAntiOut(api, threadID, leftID, userName);
             }
         });
@@ -130,7 +130,7 @@ function handleAntiOut(api, threadID, leftID, userName) {
     });
 }
 
-function sendDefaultGoodbye(api, threadID, leftID, botState) {
+function sendDefaultGoodbye(api, threadID, leftID) {
     const goodbyeMessages = [
         "😢 A user left the group",
         "👋 Someone left the group",
