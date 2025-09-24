@@ -1,10 +1,10 @@
-// unsend.js - Fixed version to handle all bot messages (text, sticker, etc.)
+// unsend.js - Fixed to handle all bot messages with dynamic botID
 const messageStore = require('../../utils/messageStore');
 
 module.exports = {
   name: 'unsend',
   description: 'Delete a replied-to bot message or the last 3 bot messages if no reply',
-  async execute(api, threadID, args, event, botState, isMaster, botID, stopBot) {
+  async execute(api, threadID, args, event, botState, isMaster, botID) {
     console.log(`[DEBUG UNSEND] Command started - event type: ${event.type}, body: "${event.body || 'undefined'}", reply: ${!!event.messageReply}, replyMessageID: ${event.messageReply?.messageID || 'none'}, senderID: ${event.senderID}, botID: ${botID}`);
 
     try {
@@ -74,7 +74,7 @@ module.exports = {
               });
             });
             console.log(`[DEBUG UNSEND] Message ${messageIDToDelete} unsent successfully`);
-            messageStore.removeBotMessage(messageIDToDelete);
+            messageStore.removeBotMessage(messageIDToDelete, botID);
             if (!responseSent) {
               responseSent = true;
               api.sendMessage('✅ मैसेज अनसेंड हो गया! 🕉️', threadID);
@@ -123,7 +123,7 @@ module.exports = {
               });
             });
             console.log(`[DEBUG UNSEND] Message ${msg.messageID} unsent successfully`);
-            messageStore.removeBotMessage(msg.messageID);
+            messageStore.removeBotMessage(msg.messageID, botID);
             success++;
             break;
           } catch (err) {
