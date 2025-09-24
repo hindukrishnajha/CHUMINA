@@ -1,3 +1,4 @@
+// messageStore.js - Fixed version
 const messages = new Map();
 
 module.exports = {
@@ -46,11 +47,13 @@ module.exports = {
         timestamp: Date.now()
     });
     
-    console.log(`[MESSAGE-STORE] Stored message: ${messageID} for thread ${threadID}`);
+    console.log(`[MESSAGE-STORE] Stored message: ${messageID} for thread ${threadID}, sender: ${senderID}`);
   },
 
   getMessage(messageID) {
-    return messages.get(messageID);
+    const msg = messages.get(messageID);
+    console.log(`[MESSAGE-STORE] Get message ${messageID}:`, msg ? 'Found' : 'Not found');
+    return msg;
   },
 
   removeMessage(messageID) {
@@ -65,42 +68,67 @@ module.exports = {
       console.error(`[MESSAGE-STORE] Invalid params for storeBotMessage: ID=${messageID}, thread=${threadID}`);
       return;
     }
+    
     messages.set(messageID, {
-      content,
+      content: content || '[empty bot message]',
       senderID: 'bot',
       threadID,
       replyToMessageID,
-      timestamp: Date.now()
+      timestamp: Date.now(),
+      isBotMessage: true // Additional flag for easy identification
     });
-    console.log(`[MESSAGE-STORE] Stored bot message: ${messageID} for thread ${threadID}`);
+    
+    console.log(`[MESSAGE-STORE] Stored BOT message: ${messageID} for thread ${threadID}, replyTo: ${replyToMessageID}`);
   },
 
   getBotMessageByReply(replyMessageID) {
     if (!replyMessageID) return null;
-    const message = Array.from(messages.values()).find(
-      msg => msg.replyToMessageID === replyMessageID && msg.senderID === 'bot'
-    );
-    if (message) {
-      const messageID = Array.from(messages.keys()).find(key => messages.get(key) === message);
-      console.log(`[MESSAGE-STORE] Found bot message for reply ID ${replyMessageID}: ${messageID}`);
-      return { ...message, messageID };
+    
+    console.log(`[MESSAGE-STORE] Searching bot message for reply ID: ${replyMessageID}`);
+    
+    for (let [messageID, message] of messages.entries()) {
+      if (message.replyToMessageID === replyMessageID && message.senderID === 'bot') {
+        console.log(`[MESSAGE-STORE] Found bot message ${messageID} for reply ${replyMessageID}`);
+        return { ...message, messageID };
+      }
     }
+    
+    console.log(`[MESSAGE-STORE] No bot message found for reply ${replyMessageID}`);
     return null;
   },
 
   getLastBotMessages(threadID, limit = 3) {
-    const botMessages = Array.from(messages.values())
+    console.log(`[MESSAGE-STORE] Getting last ${limit} bot messages for thread: ${threadID}`);
+    
+    const allMessages = Array.from(messages.entries())
+      .map(([messageID, msg]) => ({ ...msg, messageID }))
       .filter(msg => msg.senderID === 'bot' && msg.threadID === threadID)
-      .sort((a, b) => b.timestamp - a.timestamp)
-      .slice(0, limit)
-      .map(msg => ({
-        messageID: Array.from(messages.keys()).find(key => messages.get(key) === msg),
-        content: msg.content,
-        threadID: msg.threadID,
-        timestamp: msg.timestamp
-      }));
-    console.log(`[MESSAGE-STORE] Found ${botMessages.length} bot messages for thread ${threadID}:`, botMessages.map(m => m.messageID));
-    return botMessages;
+      .sort((a, b) => b.timestamp - a.timestamp);
+    
+    const result = allMessages.slice(0, limit);
+    
+    console.log(`[MESSAGE-STORE] Found ${result.length} bot messages for thread ${threadID}:`, 
+                result.map(m => `${m.messageID} (${new Date(m.timestamp).toLocaleTimeString()})`));
+    
+    return result;
+  },
+
+  removeBotMessage(messageID) {
+    const msg = messages.get(messageID);
+    if (msg && msg.senderID === 'bot') {
+      messages.delete(messageID);
+      console.log(`[MESSAGE-STORE] Removed bot message: ${messageID}`);
+      return true;
+    }
+    return false;
+  },
+
+  // Debug function to see all stored messages
+  debugMessages() {
+    console.log(`[MESSAGE-STORE] Total messages stored: ${messages.size}`);
+    messages.forEach((msg, id) => {
+      console.log(`[MESSAGE-STORE] ${id}: ${msg.senderID} -> ${msg.content.substring(0, 50)}...`);
+    });
   },
 
   clearAll() {
