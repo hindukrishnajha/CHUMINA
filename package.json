@@ -4,7 +4,8 @@
   "description": "Shalender Hindu's Facebook Messenger Bot",
   "main": "index.js",
   "scripts": {
-    "start": "node index.js"
+    "start": "node index.js",
+    "postinstall": "apt-get update && apt-get install -y python3 python3-pip && pip3 install yt-dlp"
   },
   "dependencies": {
     "axios": "^1.7.7",
@@ -16,7 +17,7 @@
     "gtts": "^0.2.1",
     "groq-sdk": "^0.32.0",
     "ws": "^8.18.0",
-    "ytdl-core": "^4.11.5", 
+    "ytdl-core": "^4.11.5",
     "https-proxy-agent": "^7.0.5",
     "yt-search": "^2.12.1",
     "fluent-ffmpeg": "^2.1.2",
