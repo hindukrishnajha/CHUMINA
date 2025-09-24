@@ -51,31 +51,14 @@ module.exports = {
         const messageIDToDelete = event.messageReply.messageID;
         console.log(`[DEBUG UNSEND] Reply detected - ID: ${messageIDToDelete}`);
 
-        // ✅ Multiple methods try karo bot message dhundne ke liye
         let storedMessage = messageStore.getMessage(messageIDToDelete);
         
         if (!storedMessage) {
-          // Method 2: Bot message by reply
           storedMessage = messageStore.getBotMessageByReply(messageIDToDelete);
         }
-        
-        if (!storedMessage) {
-          // Method 3: Check if the message itself is a bot message by ID
-          storedMessage = messageStore.getMessage(messageIDToDelete);
-          if (storedMessage && storedMessage.senderID !== 'bot' && storedMessage.senderID !== botID) {
-            storedMessage = null;
-          }
-        }
 
-        if (!storedMessage) {
-          console.log('[DEBUG UNSEND] Not a bot message (reply)');
-          api.sendMessage('❌ सिर्फ मेरे मैसेज डिलीट कर सकता हूँ! 🕉️', threadID);
-          return;
-        }
-
-        // ✅ Verify it's really a bot message
-        if (storedMessage.senderID !== 'bot' && storedMessage.senderID !== botID) {
-          console.log('[DEBUG UNSEND] Message sender is not bot:', storedMessage.senderID);
+        if (!storedMessage || (!storedMessage.isBotMessage && storedMessage.senderID !== botID)) {
+          console.log('[DEBUG UNSEND] Not a bot message (reply):', storedMessage ? storedMessage.senderID : 'Not found');
           api.sendMessage('❌ सिर्फ मेरे मैसेज डिलीट कर सकता हूँ! 🕉️', threadID);
           return;
         }
@@ -118,14 +101,7 @@ module.exports = {
       // Case 2: No reply - delete last 3 bot messages
       console.log('[DEBUG UNSEND] No reply - deleting last 3 bot messages');
       
-      // ✅ Multiple methods try karo
-      let botMessages = messageStore.getLastBotMessages(threadID, 3);
-      
-      // ✅ Agar nahi mile toh bot ID se try karo
-      if (botMessages.length === 0) {
-        console.log('[DEBUG UNSEND] Trying to get messages by bot ID');
-        botMessages = messageStore.getMessagesByBotID(threadID, botID, 3);
-      }
+      const botMessages = messageStore.getLastBotMessages(threadID, 3, botID);
       
       if (botMessages.length === 0) {
         console.log('[DEBUG UNSEND] No bot messages found in messageStore');
@@ -138,7 +114,6 @@ module.exports = {
       let success = 0, error = 0;
       for (let i = 0; i < botMessages.length; i++) {
         const msg = botMessages[i];
-        let done = false;
         for (let attempt = 1; attempt <= 3; attempt++) {
           try {
             await new Promise((resolve, reject) => {
