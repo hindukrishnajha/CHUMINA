@@ -16,7 +16,6 @@
     "gtts": "^0.2.1",
     "groq-sdk": "^0.32.0",
     "ws": "^8.18.0",
-    "play-dl": "^1.9.7",
     "yt-search": "^3.3.0",
     "ytdl-core": "^4.11.5",
     "fluent-ffmpeg": "^2.1.2",
