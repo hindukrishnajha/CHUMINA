@@ -16,8 +16,8 @@
     "gtts": "^0.2.1",
     "groq-sdk": "^0.32.0",
     "ws": "^8.18.0",
-    "ytdl-core": "^4.11.5", // Added ytdl-core
-    "https-proxy-agent": "^7.0.5", // Added for proxy support
+    "ytdl-core": "^4.11.5", 
+    "https-proxy-agent": "^7.0.5",
     "yt-search": "^2.12.1",
     "fluent-ffmpeg": "^2.1.2",
     "@ffmpeg-installer/ffmpeg": "^1.1.0"
