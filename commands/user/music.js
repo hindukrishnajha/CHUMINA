@@ -65,6 +65,9 @@ async function processQueue(api) {
 
           try {
             await new Promise((resolve, reject) => {
+              // Optional: Add proxy if needed
+              // const proxy = 'http://your_proxy_ip:port';
+              // exec(`yt-dlp --cookies ${cookieFile} --proxy ${proxy} -x --audio-format mp3 -o "${cacheFile}" "${song.url}"`, (err) => {
               exec(`yt-dlp --cookies ${cookieFile} -x --audio-format mp3 -o "${cacheFile}" "${song.url}"`, (err) => {
                 if (err) reject(err);
                 else resolve();
@@ -85,7 +88,7 @@ async function processQueue(api) {
     }
   } catch (err) {
     console.error("Music error:", err);
-    if (err.message.includes("410") || err.message.includes("not available")) {
+    if (err.message.includes("not available") || err.message.includes("410")) {
       api.sendMessage("❌ गाना उपलब्ध नहीं है, कृपया दूसरा गाना ट्राई करें।", threadID);
     } else if (err.message.includes("429")) {
       cleanCache(0);
