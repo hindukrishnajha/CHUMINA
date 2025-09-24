@@ -2,7 +2,7 @@
 const messages = new Map();
 
 module.exports = {
-  storeMessage(messageID, content, senderID, threadID, attachment = null) {
+  storeMessage(messageID, content, senderID, threadID, attachment = null, isBot = false) {
     if (!messageID || !threadID) {
       console.error(`[MESSAGE-STORE] Invalid params for storeMessage: ID=${messageID}, thread=${threadID}`);
       return;
@@ -44,10 +44,11 @@ module.exports = {
         senderID,
         threadID,
         attachment: attachmentData,
-        timestamp: Date.now()
+        timestamp: Date.now(),
+        isBotMessage: isBot  // ✅ Unsund से रिलेटेड: isBot फ्लैग ऐड किया, लेकिन डिफॉल्ट false है ताकि दूसरी कमांड्स प्रभावित न हों
     });
     
-    console.log(`[MESSAGE-STORE] Stored message: ${messageID} for thread ${threadID}, sender: ${senderID}`);
+    console.log(`[MESSAGE-STORE] Stored message: ${messageID} for thread ${threadID}, sender: ${senderID}, isBot: ${isBot}`);
   },
 
   getMessage(messageID) {
@@ -63,7 +64,7 @@ module.exports = {
     }
   },
 
-  storeBotMessage(messageID, content, threadID, replyToMessageID = null) {
+  storeBotMessage(messageID, content, threadID, replyToMessageID = null, botID) {
     if (!messageID || !threadID) {
       console.error(`[MESSAGE-STORE] Invalid params for storeBotMessage: ID=${messageID}, thread=${threadID}`);
       return;
@@ -71,11 +72,11 @@ module.exports = {
     
     messages.set(messageID, {
       content: content || '[empty bot message]',
-      senderID: 'bot', // ✅ Yeh important hai - 'bot' string use karo
+      senderID: botID,  // ✅ botID यूज किया 'bot' की जगह
       threadID,
       replyToMessageID,
       timestamp: Date.now(),
-      isBotMessage: true
+      isBotMessage: true  // ✅ Explicit bot फ्लैग
     });
     
     console.log(`[MESSAGE-STORE] Stored BOT message: ${messageID} for thread ${threadID}, replyTo: ${replyToMessageID || 'none'}`);
@@ -87,7 +88,7 @@ module.exports = {
     console.log(`[MESSAGE-STORE] Searching bot message for reply ID: ${replyMessageID}`);
     
     for (let [messageID, message] of messages.entries()) {
-      if (message.replyToMessageID === replyMessageID && message.senderID === 'bot') {
+      if (message.replyToMessageID === replyMessageID && message.isBotMessage) {
         console.log(`[MESSAGE-STORE] Found bot message ${messageID} for reply ${replyMessageID}`);
         return { ...message, messageID };
       }
@@ -95,7 +96,7 @@ module.exports = {
     
     // ✅ Agar exact match nahi mila, toh check karo koi bot message hai jo reply ho
     for (let [messageID, message] of messages.entries()) {
-      if (message.senderID === 'bot' && message.replyToMessageID) {
+      if (message.isBotMessage && message.replyToMessageID) {
         console.log(`[MESSAGE-STORE] Checking bot message ${messageID} with reply ${message.replyToMessageID}`);
       }
     }
@@ -104,12 +105,12 @@ module.exports = {
     return null;
   },
 
-  getLastBotMessages(threadID, limit = 3) {
+  getLastBotMessages(threadID, limit = 3, botID) {
     console.log(`[MESSAGE-STORE] Getting last ${limit} bot messages for thread: ${threadID}`);
     
     const allMessages = Array.from(messages.entries())
       .map(([messageID, msg]) => ({ ...msg, messageID }))
-      .filter(msg => msg.senderID === 'bot' && msg.threadID === threadID)
+      .filter(msg => (msg.isBotMessage || msg.senderID === botID) && msg.threadID === threadID)
       .sort((a, b) => b.timestamp - a.timestamp);
     
     const result = allMessages.slice(0, limit);
@@ -132,7 +133,7 @@ module.exports = {
 
   removeBotMessage(messageID) {
     const msg = messages.get(messageID);
-    if (msg && msg.senderID === 'bot') {
+    if (msg && (msg.isBotMessage || msg.senderID === botID)) {
       messages.delete(messageID);
       console.log(`[MESSAGE-STORE] Removed bot message: ${messageID}`);
       return true;
@@ -147,7 +148,7 @@ module.exports = {
     
     const allMessages = Array.from(messages.entries())
       .map(([messageID, msg]) => ({ ...msg, messageID }))
-      .filter(msg => msg.senderID === botID && msg.threadID === threadID)
+      .filter(msg => (msg.senderID === botID || msg.isBotMessage) && msg.threadID === threadID)
       .sort((a, b) => b.timestamp - a.timestamp);
     
     const result = allMessages.slice(0, limit);
