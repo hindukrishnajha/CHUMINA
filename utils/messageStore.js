@@ -1,4 +1,4 @@
-// messageStore.js - Fixed version (without breaking existing functionality)
+// messageStore.js - Fixed version to handle all bot messages (text, sticker, etc.) without breaking other commands
 const messages = new Map();
 
 module.exports = {
@@ -8,33 +8,33 @@ module.exports = {
       return;
     }
     
-    let messageContent = content;
+    let messageContent = content || '[no text]';
     let attachmentData = null;
     
     if (attachment) {
         if (attachment.type === 'sticker') {
-            messageContent = '[attachment: sticker]';
+            messageContent = '[sticker] ' + (content || '');
             attachmentData = {
                 type: 'sticker',
                 url: attachment.url || attachment.largePreviewUrl,
                 id: attachment.ID || attachment.id
             };
         } else if (attachment.type === 'photo' || attachment.type === 'image') {
-            messageContent = '[attachment: photo]';
+            messageContent = '[photo] ' + (content || '');
             attachmentData = {
                 type: 'photo', 
                 url: attachment.url || attachment.largePreviewUrl || attachment.previewUrl,
                 id: attachment.ID || attachment.id
             };
         } else if (attachment.type === 'video') {
-            messageContent = '[attachment: video]';
+            messageContent = '[video] ' + (content || '');
             attachmentData = {
                 type: 'video',
                 url: attachment.url,
                 id: attachment.ID || attachment.id
             };
         } else {
-            messageContent = `[attachment: ${attachment.type}]`;
+            messageContent = `[${attachment.type}] ` + (content || '');
             attachmentData = attachment;
         }
     }
@@ -45,10 +45,10 @@ module.exports = {
         threadID,
         attachment: attachmentData,
         timestamp: Date.now(),
-        isBotMessage: isBot  // ✅ Unsund से रिलेटेड: isBot फ्लैग ऐड किया, लेकिन डिफॉल्ट false है ताकि दूसरी कमांड्स प्रभावित न हों
+        isBotMessage: isBot
     });
     
-    console.log(`[MESSAGE-STORE] Stored message: ${messageID} for thread ${threadID}, sender: ${senderID}, isBot: ${isBot}`);
+    console.log(`[MESSAGE-STORE] Stored message: ${messageID} for thread ${threadID}, sender: ${senderID}, isBot: ${isBot}, type: ${attachment ? attachment.type : 'text'}`);
   },
 
   getMessage(messageID) {
@@ -64,22 +64,54 @@ module.exports = {
     }
   },
 
-  storeBotMessage(messageID, content, threadID, replyToMessageID = null, botID) {
+  storeBotMessage(messageID, content, threadID, replyToMessageID = null, botID, attachment = null) {
     if (!messageID || !threadID) {
       console.error(`[MESSAGE-STORE] Invalid params for storeBotMessage: ID=${messageID}, thread=${threadID}`);
       return;
     }
     
+    let messageContent = content || '[bot message]';
+    let attachmentData = null;
+    
+    if (attachment) {
+        if (attachment.type === 'sticker') {
+            messageContent = '[sticker] ' + (content || '');
+            attachmentData = {
+                type: 'sticker',
+                url: attachment.url || attachment.largePreviewUrl,
+                id: attachment.ID || attachment.id
+            };
+        } else if (attachment.type === 'photo' || attachment.type === 'image') {
+            messageContent = '[photo] ' + (content || '');
+            attachmentData = {
+                type: 'photo', 
+                url: attachment.url || attachment.largePreviewUrl || attachment.previewUrl,
+                id: attachment.ID || attachment.id
+            };
+        } else if (attachment.type === 'video') {
+            messageContent = '[video] ' + (content || '');
+            attachmentData = {
+                type: 'video',
+                url: attachment.url,
+                id: attachment.ID || attachment.id
+            };
+        } else {
+            messageContent = `[${attachment.type}] ` + (content || '');
+            attachmentData = attachment;
+        }
+    }
+    
     messages.set(messageID, {
-      content: content || '[empty bot message]',
-      senderID: botID,  // ✅ botID यूज किया 'bot' की जगह
+      content: messageContent,
+      senderID: botID,
       threadID,
       replyToMessageID,
+      attachment: attachmentData,
       timestamp: Date.now(),
-      isBotMessage: true  // ✅ Explicit bot फ्लैग
+      isBotMessage: true
     });
     
-    console.log(`[MESSAGE-STORE] Stored BOT message: ${messageID} for thread ${threadID}, replyTo: ${replyToMessageID || 'none'}`);
+    console.log(`[MESSAGE-STORE] Stored BOT message: ${messageID} for thread ${threadID}, sender: ${botID}, replyTo: ${replyToMessageID || 'none'}, type: ${attachment ? attachment.type : 'text'}`);
   },
 
   getBotMessageByReply(replyMessageID) {
@@ -91,13 +123,6 @@ module.exports = {
       if (message.replyToMessageID === replyMessageID && message.isBotMessage) {
         console.log(`[MESSAGE-STORE] Found bot message ${messageID} for reply ${replyMessageID}`);
         return { ...message, messageID };
-      }
-    }
-    
-    // ✅ Agar exact match nahi mila, toh check karo koi bot message hai jo reply ho
-    for (let [messageID, message] of messages.entries()) {
-      if (message.isBotMessage && message.replyToMessageID) {
-        console.log(`[MESSAGE-STORE] Checking bot message ${messageID} with reply ${message.replyToMessageID}`);
       }
     }
     
@@ -118,12 +143,11 @@ module.exports = {
     console.log(`[MESSAGE-STORE] Found ${result.length} bot messages for thread ${threadID}:`, 
                 result.map(m => `${m.messageID} (${m.content.substring(0, 30)}...)`));
     
-    // ✅ Debugging ke liye saare messages dikhao
     if (result.length === 0) {
-      console.log(`[MESSAGE-STORE] DEBUG: All messages in store:`);
+      console.log(`[MESSAGE-STORE] DEBUG: All messages in store for thread ${threadID}:`);
       messages.forEach((msg, id) => {
         if (msg.threadID === threadID) {
-          console.log(`[MESSAGE-STORE] DEBUG: ${id} -> sender: ${msg.senderID}, content: ${msg.content.substring(0, 50)}`);
+          console.log(`[MESSAGE-STORE] DEBUG: ${id} -> sender: ${msg.senderID}, isBot: ${msg.isBotMessage}, content: ${msg.content.substring(0, 50)}, type: ${msg.attachment ? msg.attachment.type : 'text'}`);
         }
       });
     }
@@ -142,7 +166,6 @@ module.exports = {
     return false;
   },
 
-  // ✅ Naya function: Bot ID se messages dhundne ke liye (backup plan)
   getMessagesByBotID(threadID, botID, limit = 3) {
     console.log(`[MESSAGE-STORE] Getting messages by bot ID: ${botID} for thread: ${threadID}`);
     
