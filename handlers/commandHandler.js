@@ -12,7 +12,7 @@ class CommandHandler {
         const fullCommand = content.split(' ')[0].toLowerCase();
         const command = fullCommand.slice(prefix.length).toLowerCase();
 
-        // ✅ cleanArgs fix: trim + remove empty strings
+        // ✅ cleanArgs fix
         const cleanArgs = content.split(' ')
                                  .slice(1)
                                  .map(arg => arg.trim())
@@ -24,6 +24,11 @@ class CommandHandler {
         const threadID = event.threadID;
         const messageID = event.messageID;
 
+        // ⚡ Duplicate event detection
+        const eventKey = `${threadID}_${messageID}`;
+        if (botState.lastProcessedEvent === eventKey) return;
+        botState.lastProcessedEvent = eventKey;
+
         console.log(`[CMD] Detected: ${command}, Args:`, cleanArgs);
 
         const cmd = this.commands.get(command);
@@ -32,7 +37,7 @@ class CommandHandler {
             return;
         }
 
-        // ✅ Group-wide Cooldown check (spam fix)
+        // ✅ Group-wide Cooldown
         if (this.isOnCooldown(botState, threadID, command)) {
             const warnKey = `${threadID}_${command}`;
             if (!this.cooldownWarnings[warnKey]) {
@@ -81,7 +86,6 @@ class CommandHandler {
 
     getPermissionMessage(cmd, isMaster, isAdmin) {
         const masterCommands = ['stopall', 'status', 'removeadmin', 'masterid', 'mastercommand', 'listadmins', 'list', 'kick', 'addadmin'];
-
         if (masterCommands.includes(cmd.name)) {
             return "🚫 ये कमांड सिर्फ मास्टर के लिए है! 🕉️";
         } else {
@@ -96,7 +100,6 @@ class CommandHandler {
 
             console.log(`[CMD] Executing: ${cmd.name} with args:`, cleanArgs);
 
-            // ✅ Safe timeout (15s) with error handling
             const timeoutPromise = new Promise((_, reject) => {
                 setTimeout(() => reject(new Error('Command timeout')), 15000);
             });
@@ -118,9 +121,7 @@ class CommandHandler {
     }
 
     setCooldown(botState, threadID, command) {
-        if (!botState.commandCooldowns[threadID]) {
-            botState.commandCooldowns[threadID] = {};
-        }
+        if (!botState.commandCooldowns[threadID]) botState.commandCooldowns[threadID] = {};
         botState.commandCooldowns[threadID][command] = { timestamp: Date.now() };
 
         setTimeout(() => {
