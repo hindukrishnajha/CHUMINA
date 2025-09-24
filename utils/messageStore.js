@@ -1,4 +1,4 @@
-// messageStore.js - Fixed version to handle all bot messages (text, sticker, etc.) without breaking other commands
+// messageStore.js - Fixed to handle all bot messages with dynamic botID
 const messages = new Map();
 
 module.exports = {
@@ -65,8 +65,8 @@ module.exports = {
   },
 
   storeBotMessage(messageID, content, threadID, replyToMessageID = null, botID, attachment = null) {
-    if (!messageID || !threadID) {
-      console.error(`[MESSAGE-STORE] Invalid params for storeBotMessage: ID=${messageID}, thread=${threadID}`);
+    if (!messageID || !threadID || !botID) {
+      console.error(`[MESSAGE-STORE] Invalid params for storeBotMessage: ID=${messageID}, thread=${threadID}, botID=${botID}`);
       return;
     }
     
@@ -131,7 +131,7 @@ module.exports = {
   },
 
   getLastBotMessages(threadID, limit = 3, botID) {
-    console.log(`[MESSAGE-STORE] Getting last ${limit} bot messages for thread: ${threadID}`);
+    console.log(`[MESSAGE-STORE] Getting last ${limit} bot messages for thread: ${threadID}, botID: ${botID}`);
     
     const allMessages = Array.from(messages.entries())
       .map(([messageID, msg]) => ({ ...msg, messageID }))
@@ -155,7 +155,7 @@ module.exports = {
     return result;
   },
 
-  removeBotMessage(messageID) {
+  removeBotMessage(messageID, botID) {
     const msg = messages.get(messageID);
     if (msg && (msg.isBotMessage || msg.senderID === botID)) {
       messages.delete(messageID);
