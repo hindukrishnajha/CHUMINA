@@ -1,4 +1,3 @@
-// ./config/botConfig.js
 module.exports = {
   botConfig: {
     prefix: '#',
