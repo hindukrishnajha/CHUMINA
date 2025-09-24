@@ -1,16 +1,15 @@
 const fs = require("fs");
 const path = require("path");
 const yts = require("yt-search");
-const play = require("play-dl");
+const ytdl = require("ytdl-core"); // Switch to ytdl-core
 const ffmpeg = require("fluent-ffmpeg");
 const ffmpegPath = require("@ffmpeg-installer/ffmpeg").path;
-const { HttpsProxyAgent } = require("https-proxy-agent"); // Add this for proxy support
 ffmpeg.setFfmpegPath(ffmpegPath);
 
 const CACHE_DIR = path.join(__dirname, "../cache");
 if (!fs.existsSync(CACHE_DIR)) fs.mkdirSync(CACHE_DIR, { recursive: true });
 
-const YT_COOKIES = JSON.parse(process.env.YOUTUBE_COOKIES || "[]"); // Parse cookies from env
+const YT_COOKIES = JSON.parse(process.env.YOUTUBE_COOKIES || "[]");
 const wait = (ms) => new Promise((res) => setTimeout(res, ms));
 
 const globalQueue = [];
@@ -51,27 +50,35 @@ async function processQueue(api) {
         job.url = song.url;
         job.title = song.title;
 
-        await wait(1000 + Math.random() * 1000); // Random delay
+        await wait(2000 + Math.random() * 2000); // 2-4s delay
 
         let attempt = 0, stream;
         const maxAttempts = 10;
+        const cookieString = YT_COOKIES.map(c => `${c.name}=${c.value}`).join("; ");
+
         // Optional: Proxy setup (uncomment to use)
+        // const { HttpsProxyAgent } = require("https-proxy-agent");
         // const proxy = 'http://your_proxy_ip:port';
-        // play.set_option('agent', new HttpsProxyAgent(proxy));
+        // const agent = new HttpsProxyAgent(proxy);
 
         while (attempt < maxAttempts) {
           try {
             console.log(`Request for ${query}, attempt ${attempt + 1}`);
-            stream = await play.stream(song.url, {
-              quality: 2,
-              cookies: YT_COOKIES.length ? YT_COOKIES : undefined // Use parsed cookies
+            stream = ytdl(song.url, {
+              quality: "highestaudio",
+              requestOptions: {
+                headers: {
+                  cookie: cookieString,
+                  "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+                }
+                // agent // Uncomment to use proxy
+              }
             });
-            console.log('Stream headers:', stream.headers); // Log headers for debugging
             break;
           } catch (err) {
             attempt++;
             if (err.message.includes("429") || err.message.includes("rate")) {
-              const backoff = 3000 * Math.pow(2, attempt) + Math.random() * 1500;
+              const backoff = 5000 * Math.pow(2, attempt) + Math.random() * 2000;
               console.warn(`⚠️ 429 error, retry #${attempt} in ${Math.round(backoff)}ms`);
               await wait(backoff);
             } else {
@@ -83,7 +90,7 @@ async function processQueue(api) {
         if (!stream) throw new Error("Stream fetch failed after retries");
 
         await new Promise((resolve, reject) => {
-          ffmpeg(stream.stream)
+          ffmpeg(stream)
             .audioBitrate(128)
             .format("mp3")
             .on("end", resolve)
@@ -98,7 +105,7 @@ async function processQueue(api) {
   } catch (err) {
     console.error("Music error:", err);
     if (err.message.includes("429")) {
-      cleanCache(0); // Clear cache on 429
+      cleanCache(0);
       api.sendMessage("❌ Rate limit error, thodi der baad try karo।", threadID);
     } else {
       api.sendMessage(`❌ गाना भेजने में गलती हुई: ${err.message}`, threadID);
