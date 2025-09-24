@@ -1,7 +1,7 @@
 const fs = require("fs");
 const path = require("path");
 const yts = require("yt-search");
-const ytdl = require("ytdl-core"); // Switch to ytdl-core
+const ytdl = require("ytdl-core");
 const ffmpeg = require("fluent-ffmpeg");
 const ffmpegPath = require("@ffmpeg-installer/ffmpeg").path;
 ffmpeg.setFfmpegPath(ffmpegPath);
@@ -46,48 +46,62 @@ async function processQueue(api) {
       if (!search.videos.length) {
         api.sendMessage("❌ गाना नहीं मिला।", threadID);
       } else {
-        const song = search.videos[0];
-        job.url = song.url;
-        job.title = song.title;
-
-        await wait(2000 + Math.random() * 2000); // 2-4s delay
-
-        let attempt = 0, stream;
-        const maxAttempts = 10;
+        // Try up to 3 videos to handle 410 errors
+        let videoIndex = 0;
+        let stream = null;
+        const maxVideos = Math.min(search.videos.length, 3); // Try max 3 videos
         const cookieString = YT_COOKIES.map(c => `${c.name}=${c.value}`).join("; ");
 
-        // Optional: Proxy setup (uncomment to use)
-        // const { HttpsProxyAgent } = require("https-proxy-agent");
-        // const proxy = 'http://your_proxy_ip:port';
-        // const agent = new HttpsProxyAgent(proxy);
+        while (videoIndex < maxVideos && !stream) {
+          const song = search.videos[videoIndex];
+          job.url = song.url;
+          job.title = song.title;
+          console.log(`Trying video: ${job.title} (${job.url})`);
 
-        while (attempt < maxAttempts) {
-          try {
-            console.log(`Request for ${query}, attempt ${attempt + 1}`);
-            stream = ytdl(song.url, {
-              quality: "highestaudio",
-              requestOptions: {
-                headers: {
-                  cookie: cookieString,
-                  "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+          await wait(2000 + Math.random() * 2000); // 2-4s delay
+
+          let attempt = 0;
+          const maxAttempts = 10;
+
+          // Optional: Proxy setup (uncomment to use)
+          // const { HttpsProxyAgent } = require("https-proxy-agent");
+          // const proxy = 'http://your_proxy_ip:port';
+          // const agent = new HttpsProxyAgent(proxy);
+
+          while (attempt < maxAttempts) {
+            try {
+              console.log(`Request for ${query}, attempt ${attempt + 1}, video ${videoIndex + 1}`);
+              stream = ytdl(song.url, {
+                quality: "highestaudio",
+                requestOptions: {
+                  headers: {
+                    cookie: cookieString,
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+                  }
+                  // agent // Uncomment to use proxy
                 }
-                // agent // Uncomment to use proxy
+              });
+              break; // Stream successful, exit retry loop
+            } catch (err) {
+              attempt++;
+              if (err.message.includes("410") || err.message.includes("Status code: 410")) {
+                console.warn(`⚠️ 410 error for ${song.url}, moving to next video`);
+                stream = null; // Clear stream to try next video
+                break; // Exit retry loop and try next video
+              } else if (err.message.includes("429") || err.message.includes("rate")) {
+                const backoff = 5000 * Math.pow(2, attempt) + Math.random() * 2000;
+                console.warn(`⚠️ 429 error, retry #${attempt} in ${Math.round(backoff)}ms`);
+                await wait(backoff);
+              } else {
+                console.error('Stream error:', err);
+                throw err;
               }
-            });
-            break;
-          } catch (err) {
-            attempt++;
-            if (err.message.includes("429") || err.message.includes("rate")) {
-              const backoff = 5000 * Math.pow(2, attempt) + Math.random() * 2000;
-              console.warn(`⚠️ 429 error, retry #${attempt} in ${Math.round(backoff)}ms`);
-              await wait(backoff);
-            } else {
-              console.error('Stream error:', err);
-              throw err;
             }
           }
+          videoIndex++; // Move to next video if stream fails
         }
-        if (!stream) throw new Error("Stream fetch failed after retries");
+
+        if (!stream) throw new Error("No playable video found after trying multiple sources");
 
         await new Promise((resolve, reject) => {
           ffmpeg(stream)
@@ -104,9 +118,11 @@ async function processQueue(api) {
     }
   } catch (err) {
     console.error("Music error:", err);
-    if (err.message.includes("429")) {
+    if (err.message.includes("410")) {
+      api.sendMessage("❌ गाना उपलब्ध नहीं है, कृपया दूसरा गाना ट्राई करें।", threadID);
+    } else if (err.message.includes("429")) {
       cleanCache(0);
-      api.sendMessage("❌ Rate limit error, thodi der baad try karo।", threadID);
+      api.sendMessage("❌ Rate limit error, थोड़ी देर बाद ट्राई करें।", threadID);
     } else {
       api.sendMessage(`❌ गाना भेजने में गलती हुई: ${err.message}`, threadID);
     }
@@ -130,7 +146,7 @@ async function sendSong(api, threadID, filePath, job) {
 
 module.exports = {
   name: "music",
-  description: "Plays YouTube music safely using cookies (handles 429).",
+  description: "Plays YouTube music safely using cookies (handles 410 and 429).",
   async execute(api, threadID, args) {
     const query = args.join(" ");
     if (!query) return api.sendMessage("❌ गाना नाम डालो।", threadID);
