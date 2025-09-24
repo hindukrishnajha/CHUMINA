@@ -1,33 +1,25 @@
-// unsend.js - Delete bot messages reliably
+// unsend.js - Final Version (Works with auto-stored bot messages)
 const messageStore = require('../../utils/messageStore');
 
 module.exports = {
   name: 'unsend',
   description: 'Delete a replied-to bot message or the last 3 bot messages if no reply',
   async execute(api, threadID, args, event, botState, isMaster, botID) {
-    console.log(`[DEBUG UNSEND] Command started - reply: ${!!event.messageReply}, senderID: ${event.senderID}, botID: ${botID}`);
-
     try {
-      // Case 1: Reply to a specific message
+      // Case 1: Reply to a specific bot message
       if (event.messageReply && event.messageReply.messageID) {
         const messageIDToDelete = event.messageReply.messageID;
-        console.log(`[DEBUG UNSEND] Reply detected - ID: ${messageIDToDelete}`);
 
-        let storedMessage = messageStore.getMessage(messageIDToDelete);
-        if (!storedMessage) {
-          storedMessage = messageStore.getBotMessageByReply(messageIDToDelete);
-        }
+        let storedMessage = messageStore.getMessage(messageIDToDelete)
+          || messageStore.getBotMessageByReply(messageIDToDelete);
 
         if (!storedMessage || (!storedMessage.isBotMessage && storedMessage.senderID !== botID)) {
-          console.log('[DEBUG UNSEND] Not a bot message (reply):', storedMessage ? storedMessage.senderID : 'Not found');
           api.sendMessage('❌ सिर्फ मेरे मैसेज डिलीट कर सकता हूँ! 🕉️', threadID);
           return;
         }
 
-        // Unsend
         api.unsendMessage(messageIDToDelete, (err) => {
           if (err) {
-            console.error(`[ERROR UNSEND] Failed: ${err.message}`);
             api.sendMessage(`❌ डिलीट फेल: ${err.message}`, threadID);
             return;
           }
@@ -37,8 +29,7 @@ module.exports = {
         return;
       }
 
-      // Case 2: No reply - delete last 3 bot messages
-      console.log('[DEBUG UNSEND] No reply - deleting last 3 bot messages');
+      // Case 2: No reply -> delete last 3 bot messages
       const botMessages = messageStore.getLastBotMessages(threadID, 3, botID);
 
       if (botMessages.length === 0) {
@@ -57,8 +48,7 @@ module.exports = {
           });
           messageStore.removeBotMessage(msg.messageID, botID);
           success++;
-        } catch (err) {
-          console.error(`[ERROR UNSEND] Failed to unsend ${msg.messageID}:`, err.message);
+        } catch {
           error++;
         }
       }
@@ -66,7 +56,6 @@ module.exports = {
       api.sendMessage(`✅ ${success}/${botMessages.length} मैसेज डिलीट! (एरर: ${error}) 🕉️`, threadID);
 
     } catch (e) {
-      console.error(`[ERROR UNSEND] General error:`, e.message);
       api.sendMessage(`⚠️ अनसेंड कमांड में गलती: ${e.message} 🕉️`, threadID);
     }
   }
