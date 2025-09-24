@@ -1,4 +1,4 @@
-// unsend.js - Fixed version with async/await and robust error handling
+// unsend.js - Fixed version with better bot message detection
 const messageStore = require('../../utils/messageStore');
 
 module.exports = {
@@ -26,7 +26,7 @@ module.exports = {
             api.sendMessage('⚠️ ग्रुप जानकारी लाने में गलती। बाद में ट्राई करें। 🕉️', threadID);
             return;
           }
-          await new Promise(resolve => setTimeout(resolve, 1000)); // Wait 1 second before retry
+          await new Promise(resolve => setTimeout(resolve, 1000));
         }
       }
 
@@ -51,10 +51,31 @@ module.exports = {
         const messageIDToDelete = event.messageReply.messageID;
         console.log(`[DEBUG UNSEND] Reply detected - ID: ${messageIDToDelete}`);
 
-        // Verify if it's a bot message
-        const storedMessage = messageStore.getMessage(messageIDToDelete) || messageStore.getBotMessageByReply(messageIDToDelete);
+        // ✅ Multiple methods try karo bot message dhundne ke liye
+        let storedMessage = messageStore.getMessage(messageIDToDelete);
+        
+        if (!storedMessage) {
+          // Method 2: Bot message by reply
+          storedMessage = messageStore.getBotMessageByReply(messageIDToDelete);
+        }
+        
+        if (!storedMessage) {
+          // Method 3: Check if the message itself is a bot message by ID
+          storedMessage = messageStore.getMessage(messageIDToDelete);
+          if (storedMessage && storedMessage.senderID !== 'bot' && storedMessage.senderID !== botID) {
+            storedMessage = null;
+          }
+        }
+
         if (!storedMessage) {
           console.log('[DEBUG UNSEND] Not a bot message (reply)');
+          api.sendMessage('❌ सिर्फ मेरे मैसेज डिलीट कर सकता हूँ! 🕉️', threadID);
+          return;
+        }
+
+        // ✅ Verify it's really a bot message
+        if (storedMessage.senderID !== 'bot' && storedMessage.senderID !== botID) {
+          console.log('[DEBUG UNSEND] Message sender is not bot:', storedMessage.senderID);
           api.sendMessage('❌ सिर्फ मेरे मैसेज डिलीट कर सकता हूँ! 🕉️', threadID);
           return;
         }
@@ -96,7 +117,16 @@ module.exports = {
 
       // Case 2: No reply - delete last 3 bot messages
       console.log('[DEBUG UNSEND] No reply - deleting last 3 bot messages');
-      const botMessages = messageStore.getLastBotMessages(threadID, 3);
+      
+      // ✅ Multiple methods try karo
+      let botMessages = messageStore.getLastBotMessages(threadID, 3);
+      
+      // ✅ Agar nahi mile toh bot ID se try karo
+      if (botMessages.length === 0) {
+        console.log('[DEBUG UNSEND] Trying to get messages by bot ID');
+        botMessages = messageStore.getMessagesByBotID(threadID, botID, 3);
+      }
+      
       if (botMessages.length === 0) {
         console.log('[DEBUG UNSEND] No bot messages found in messageStore');
         api.sendMessage('❌ कोई बॉट मैसेज नहीं मिला। 🕉️', threadID);
