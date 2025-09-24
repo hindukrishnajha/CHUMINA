@@ -11,7 +11,12 @@ class CommandHandler {
         const prefix = botState.sessions[userId].prefix;
         const fullCommand = content.split(' ')[0].toLowerCase();
         const command = fullCommand.slice(prefix.length).toLowerCase();
-        const cleanArgs = content.split(' ').slice(1);
+
+        // ✅ cleanArgs fix: trim + remove empty strings
+        const cleanArgs = content.split(' ')
+                                 .slice(1)
+                                 .map(arg => arg.trim())
+                                 .filter(arg => arg.length > 0);
 
         const senderID = event.senderID;
         const isMaster = senderID === require('../config/constants').MASTER_ID;
@@ -44,7 +49,7 @@ class CommandHandler {
             return;
         }
 
-        // Execute command
+        // Execute command safely
         this.executeCommand(api, cmd, threadID, cleanArgs, event, botState, isMaster, userId, messageID);
 
         // Set group-wide cooldown
