@@ -1,4 +1,4 @@
-const botConfig = require('../../config/botConfig');
+const { botConfig } = require('../../config/botConfig');
 
 module.exports = {
   name: "antiout",
@@ -11,11 +11,17 @@ module.exports = {
 
       const option = args[0]?.toLowerCase(); // ✅ args[0] fix
 
+      // Save setting in botState too for runtime usage
+      if (!botState.sessions[event.senderID]) botState.sessions[event.senderID] = {};
+      if (!botState.sessions[event.senderID].botConfig) botState.sessions[event.senderID].botConfig = {};
+
       if (option === 'on') {
         botConfig.antiOut = true;
+        botState.sessions[event.senderID].botConfig.antiOut = true;
         api.sendMessage('🛡️ Anti-out सिस्टम चालू! अब मेंबर्स ग्रुप छोड़ नहीं सकते!', threadID);
       } else if (option === 'off') {
         botConfig.antiOut = false;
+        botState.sessions[event.senderID].botConfig.antiOut = false;
         api.sendMessage('🛡️ Anti-out सिस्टम बंद!', threadID);
       } else {
         api.sendMessage(`उपयोग: ${botState.sessions[event.senderID]?.prefix || '#'}antiout on/off`, threadID);
