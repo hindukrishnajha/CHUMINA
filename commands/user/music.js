@@ -9,7 +9,7 @@ ffmpeg.setFfmpegPath(ffmpegPath);
 module.exports = {
   name: "music",
   description: "Plays a song from YouTube.",
-  async execute(api, threadID, args, event, botState, isMaster, botID, stopBot) {
+  async execute(api, threadID, args, event, botState) {
     const query = args.join(" ");
     if (!query) return api.sendMessage("❌ गाना नाम डालो।", threadID);
 
@@ -18,13 +18,28 @@ module.exports = {
       if (!search.videos.length) return api.sendMessage("❌ गाना नहीं मिला।", threadID);
 
       const song = search.videos[0];
-      const cacheDir = path.join(__dirname, "../cache", `${botID}`);
-      if (!fs.existsSync(cacheDir)) fs.mkdirSync(cacheDir, { recursive: true });
+      const cacheDir = path.join(__dirname, "../cache");
+      if (!fs.existsSync(cacheDir)) fs.mkdirSync(cacheDir);
 
-      const webmPath = path.join(cacheDir, `${Date.now()}.webm`);
+      const webmPath = path.join(cacheDir, `${Date.now()}_temp.webm`);
       const mp3Path = path.join(cacheDir, `${Date.now()}.mp3`);
 
-      const stream = await play.stream(song.url, { quality: 2 });
+      // Retry logic for play-dl stream
+      let stream;
+      let attempts = 0;
+      while (attempts < 3) {
+        try {
+          stream = await play.stream(song.url, { quality: 2 });
+          break;
+        } catch (err) {
+          attempts++;
+          console.warn(`⚠️ Stream attempt ${attempts} failed: ${err.message}`);
+          if (attempts === 3) throw err;
+          await new Promise(r => setTimeout(r, 2000)); // 2 sec delay before retry
+        }
+      }
+
+      // Save webm
       await new Promise((resolve, reject) => {
         const ws = fs.createWriteStream(webmPath);
         stream.stream.pipe(ws);
@@ -32,6 +47,7 @@ module.exports = {
         ws.on("error", reject);
       });
 
+      // Convert to mp3
       await new Promise((resolve, reject) => {
         ffmpeg(webmPath)
           .toFormat("mp3")
@@ -41,6 +57,7 @@ module.exports = {
           .save(mp3Path);
       });
 
+      // Send music
       api.sendMessage(
         { 
           body: `🎵 गाना: ${song.title}\n⏱ ${song.timestamp}\n🔗 ${song.url}`,
@@ -48,21 +65,15 @@ module.exports = {
         },
         threadID,
         (err) => {
-          if (err) console.error("SendMessage error:", err);
-          // Cleanup temp files
+          if(err) console.error("SendMessage error:", err);
+          // Cleanup files
           [webmPath, mp3Path].forEach(f => fs.existsSync(f) && fs.unlinkSync(f));
         }
       );
 
-      // Auto-clear bot cache for this session after stop
-      if (!botState.sessions[botID]) return;
-      process.on('exit', () => {
-        if (fs.existsSync(cacheDir)) fs.rmSync(cacheDir, { recursive: true, force: true });
-      });
-
     } catch (err) {
       console.error("Music command error:", err);
-      api.sendMessage("❌ गाना भेजने में गलती हुई।", threadID);
+      api.sendMessage("❌ गाना भेजने में गलती हुई। Retry later.", threadID);
     }
   }
 };
