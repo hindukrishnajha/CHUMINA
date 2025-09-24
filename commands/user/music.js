@@ -9,6 +9,9 @@ ffmpeg.setFfmpegPath(ffmpegPath);
 const CACHE_DIR = path.join(__dirname, "../cache");
 if (!fs.existsSync(CACHE_DIR)) fs.mkdirSync(CACHE_DIR, { recursive: true });
 
+// use environment variable for cookies
+const YT_COOKIES = process.env.YOUTUBE_COOKIES || "";
+
 // simple wait
 const wait = (ms) => new Promise((res) => setTimeout(res, ms));
 
@@ -26,9 +29,7 @@ function cleanCache(maxFiles = 50) {
     files.sort((a, b) => a.time - b.time); // oldest first
     const toDelete = files.slice(0, files.length - maxFiles);
     for (const f of toDelete) {
-      try {
-        fs.unlinkSync(path.join(CACHE_DIR, f.name));
-      } catch {}
+      try { fs.unlinkSync(path.join(CACHE_DIR, f.name)); } catch {}
     }
   }
 }
@@ -54,24 +55,27 @@ async function processQueue(api) {
         job.url = song.url;
         job.title = song.title;
 
-        // retry on 429
+        // retry on 429 using cookies
         let attempt = 0, stream;
         while (attempt < 4) {
           try {
-            stream = await play.stream(song.url, { quality: 2 });
+            stream = await play.stream(song.url, {
+              quality: 2,
+              cookies: YT_COOKIES || undefined
+            });
             break;
           } catch (err) {
             attempt++;
             if (err.message.includes("429") || err.message.includes("rate")) {
               const backoff = 1000 * Math.pow(2, attempt) + Math.random() * 500;
-              console.warn(`429 error, retry in ${backoff}ms`);
+              console.warn(`429 error, retry #${attempt} in ${backoff}ms`);
               await wait(backoff);
             } else throw err;
           }
         }
         if (!stream) throw new Error("Stream fetch failed");
 
-        // direct convert to mp3, no temp files
+        // direct convert to mp3
         await new Promise((resolve, reject) => {
           ffmpeg(stream.stream)
             .audioBitrate(128)
@@ -82,12 +86,12 @@ async function processQueue(api) {
         });
 
         await sendSong(api, threadID, cacheFile, job);
-        cleanCache(50); // keep cache small
+        cleanCache(50);
       }
     }
   } catch (err) {
     console.error("Music error:", err);
-    api.sendMessage("❌ गाना भेजने में गलती हुई।", job.threadID);
+    api.sendMessage("❌ गाना भेजने में गलती हुई।", threadID);
   } finally {
     globalQueue.shift();
     isProcessing = false;
@@ -102,15 +106,13 @@ async function sendSong(api, threadID, filePath, job) {
       attachment: fs.createReadStream(filePath),
     },
     threadID,
-    (err) => {
-      if (err) console.error("Send error:", err);
-    }
+    (err) => { if (err) console.error("Send error:", err); }
   );
 }
 
 module.exports = {
   name: "music",
-  description: "Plays YouTube music safely (no cookies, low memory).",
+  description: "Plays YouTube music safely using cookies (low memory).",
   async execute(api, threadID, args) {
     const query = args.join(" ");
     if (!query) return api.sendMessage("❌ गाना नाम डालो।", threadID);
