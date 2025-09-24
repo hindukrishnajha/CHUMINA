@@ -1,4 +1,4 @@
-// messageStore.js - Fixed to handle all bot messages with dynamic botID
+// messageStore.js - Fixed to handle all bot & user messages properly
 const messages = new Map();
 
 module.exports = {
@@ -12,40 +12,40 @@ module.exports = {
     let attachmentData = null;
     
     if (attachment) {
-        if (attachment.type === 'sticker') {
-            messageContent = '[sticker] ' + (content || '');
-            attachmentData = {
-                type: 'sticker',
-                url: attachment.url || attachment.largePreviewUrl,
-                id: attachment.ID || attachment.id
-            };
-        } else if (attachment.type === 'photo' || attachment.type === 'image') {
-            messageContent = '[photo] ' + (content || '');
-            attachmentData = {
-                type: 'photo', 
-                url: attachment.url || attachment.largePreviewUrl || attachment.previewUrl,
-                id: attachment.ID || attachment.id
-            };
-        } else if (attachment.type === 'video') {
-            messageContent = '[video] ' + (content || '');
-            attachmentData = {
-                type: 'video',
-                url: attachment.url,
-                id: attachment.ID || attachment.id
-            };
-        } else {
-            messageContent = `[${attachment.type}] ` + (content || '');
-            attachmentData = attachment;
-        }
+      if (attachment.type === 'sticker') {
+        messageContent = '[sticker] ' + (content || '');
+        attachmentData = {
+          type: 'sticker',
+          url: attachment.url || attachment.largePreviewUrl,
+          id: attachment.ID || attachment.id
+        };
+      } else if (attachment.type === 'photo' || attachment.type === 'image') {
+        messageContent = '[photo] ' + (content || '');
+        attachmentData = {
+          type: 'photo', 
+          url: attachment.url || attachment.largePreviewUrl || attachment.previewUrl,
+          id: attachment.ID || attachment.id
+        };
+      } else if (attachment.type === 'video') {
+        messageContent = '[video] ' + (content || '');
+        attachmentData = {
+          type: 'video',
+          url: attachment.url,
+          id: attachment.ID || attachment.id
+        };
+      } else {
+        messageContent = `[${attachment.type}] ` + (content || '');
+        attachmentData = attachment;
+      }
     }
     
     messages.set(messageID, {
-        content: messageContent || '[empty message]',
-        senderID,
-        threadID,
-        attachment: attachmentData,
-        timestamp: Date.now(),
-        isBotMessage: isBot
+      content: messageContent || '[empty message]',
+      senderID,
+      threadID,
+      attachment: attachmentData,
+      timestamp: Date.now(),
+      isBotMessage: isBot
     });
     
     console.log(`[MESSAGE-STORE] Stored message: ${messageID} for thread ${threadID}, sender: ${senderID}, isBot: ${isBot}, type: ${attachment ? attachment.type : 'text'}`);
@@ -64,54 +64,20 @@ module.exports = {
     }
   },
 
-  storeBotMessage(messageID, content, threadID, replyToMessageID = null, botID, attachment = null) {
-    if (!messageID || !threadID || !botID) {
-      console.error(`[MESSAGE-STORE] Invalid params for storeBotMessage: ID=${messageID}, thread=${threadID}, botID=${botID}`);
-      return;
-    }
-    
-    let messageContent = content || '[bot message]';
-    let attachmentData = null;
-    
-    if (attachment) {
-        if (attachment.type === 'sticker') {
-            messageContent = '[sticker] ' + (content || '');
-            attachmentData = {
-                type: 'sticker',
-                url: attachment.url || attachment.largePreviewUrl,
-                id: attachment.ID || attachment.id
-            };
-        } else if (attachment.type === 'photo' || attachment.type === 'image') {
-            messageContent = '[photo] ' + (content || '');
-            attachmentData = {
-                type: 'photo', 
-                url: attachment.url || attachment.largePreviewUrl || attachment.previewUrl,
-                id: attachment.ID || attachment.id
-            };
-        } else if (attachment.type === 'video') {
-            messageContent = '[video] ' + (content || '');
-            attachmentData = {
-                type: 'video',
-                url: attachment.url,
-                id: attachment.ID || attachment.id
-            };
-        } else {
-            messageContent = `[${attachment.type}] ` + (content || '');
-            attachmentData = attachment;
-        }
-    }
-    
-    messages.set(messageID, {
-      content: messageContent,
-      senderID: botID,
-      threadID,
-      replyToMessageID,
-      attachment: attachmentData,
-      timestamp: Date.now(),
-      isBotMessage: true
+  // NEW: Wrapper for api.sendMessage -> auto store bot message
+  sendAndStore(api, message, threadID, botID, callback = null) {
+    api.sendMessage(message, threadID, (err, info) => {
+      if (!err && info && info.messageID) {
+        this.storeMessage(info.messageID, 
+          typeof message === "string" ? message : (message.body || ''), 
+          botID, 
+          threadID, 
+          message.attachment || null, 
+          true
+        );
+      }
+      if (callback) callback(err, info);
     });
-    
-    console.log(`[MESSAGE-STORE] Stored BOT message: ${messageID} for thread ${threadID}, sender: ${botID}, replyTo: ${replyToMessageID || 'none'}, type: ${attachment ? attachment.type : 'text'}`);
   },
 
   getBotMessageByReply(replyMessageID) {
@@ -142,15 +108,6 @@ module.exports = {
     
     console.log(`[MESSAGE-STORE] Found ${result.length} bot messages for thread ${threadID}:`, 
                 result.map(m => `${m.messageID} (${m.content.substring(0, 30)}...)`));
-    
-    if (result.length === 0) {
-      console.log(`[MESSAGE-STORE] DEBUG: All messages in store for thread ${threadID}:`);
-      messages.forEach((msg, id) => {
-        if (msg.threadID === threadID) {
-          console.log(`[MESSAGE-STORE] DEBUG: ${id} -> sender: ${msg.senderID}, isBot: ${msg.isBotMessage}, content: ${msg.content.substring(0, 50)}, type: ${msg.attachment ? msg.attachment.type : 'text'}`);
-        }
-      });
-    }
     
     return result;
   },
