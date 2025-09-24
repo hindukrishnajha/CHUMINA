@@ -1,4 +1,4 @@
-// unsend.js - Fixed version with better bot message detection
+// unsend.js - Fixed version to handle all bot messages (text, sticker, etc.)
 const messageStore = require('../../utils/messageStore');
 
 module.exports = {
