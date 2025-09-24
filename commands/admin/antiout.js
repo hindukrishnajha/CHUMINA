@@ -1,4 +1,3 @@
-// ./commands/admin/antiout.js
 const botConfig = require('../../config/botConfig');
 
 module.exports = {
@@ -10,8 +9,7 @@ module.exports = {
         return;
       }
 
-      // ✅ args[0] instead of args[1]
-      const option = args[0]?.toLowerCase();
+      const option = args[0]?.toLowerCase(); // ✅ args[0] fix
 
       if (option === 'on') {
         botConfig.antiOut = true;
