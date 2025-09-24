@@ -5,48 +5,32 @@ const play = require("play-dl");
 const ffmpeg = require("fluent-ffmpeg");
 const ffmpegPath = require("@ffmpeg-installer/ffmpeg").path;
 
-// ✅ Set ffmpeg path for Render
 ffmpeg.setFfmpegPath(ffmpegPath);
 
 module.exports = {
   config: {
     name: "music",
     aliases: ["song", "audio"],
-    version: "1.2",
-    author: "Fixed by ChatGPT",
-    role: 0,
-    cooldown: 10,
-    shortDescription: "Play music from YouTube",
-    longDescription: "Search a song on YouTube and play it as audio",
-    category: "music",
-    guide: {
-      en: "{p}music <song name>"
-    }
+    cooldown: 10
   },
 
   onStart: async function ({ api, event, args }) {
     const query = args.join(" ");
-    if (!query) {
-      return api.sendMessage("❌ Please provide a song name.", event.threadID, event.messageID);
-    }
+    if (!query) return api.sendMessage("❌ Provide a song name.", event.threadID);
 
     try {
-      // 🔍 Search song
       const search = await yts(query);
-      if (!search.videos.length) {
-        return api.sendMessage("❌ No results found.", event.threadID, event.messageID);
-      }
+      if (!search.videos.length) return api.sendMessage("❌ No results found.", event.threadID);
 
       const song = search.videos[0];
       const fileName = `music_${Date.now()}`;
       const cacheDir = path.join(__dirname, "cache");
-
       if (!fs.existsSync(cacheDir)) fs.mkdirSync(cacheDir);
 
       const webmPath = path.join(cacheDir, `${fileName}.webm`);
       const mp3Path = path.join(cacheDir, `${fileName}.mp3`);
 
-      // 🎶 Download with play-dl
+      // Download
       const stream = await play.stream(song.url, { quality: 2 });
       await new Promise((resolve, reject) => {
         const writeStream = fs.createWriteStream(webmPath);
@@ -55,7 +39,7 @@ module.exports = {
         writeStream.on("error", reject);
       });
 
-      // 🔄 Convert webm → mp3
+      // Convert
       await new Promise((resolve, reject) => {
         ffmpeg(webmPath)
           .toFormat("mp3")
@@ -65,23 +49,24 @@ module.exports = {
           .save(mp3Path);
       });
 
-      // 📤 Send to FB
+      // Send
       api.sendMessage(
         {
-          body: `🎵 Now Playing: ${song.title}\n⏱ Duration: ${song.timestamp}\n🔗 Link: ${song.url}`,
+          body: `🎵 Now Playing: ${song.title}\n⏱ ${song.timestamp}\n🔗 ${song.url}`,
           attachment: fs.createReadStream(mp3Path)
         },
         event.threadID,
         () => {
-          // cleanup
-          try { fs.unlinkSync(webmPath); } catch {}
-          try { fs.unlinkSync(mp3Path); } catch {}
+          // Cleanup temp files immediately
+          [webmPath, mp3Path].forEach(file => {
+            if (fs.existsSync(file)) fs.unlinkSync(file);
+          });
         }
       );
 
     } catch (err) {
       console.error("Music error:", err);
-      api.sendMessage("⚠️ Failed to fetch music.", event.threadID, event.messageID);
+      api.sendMessage("⚠️ Failed to fetch music.", event.threadID);
     }
   }
 };
