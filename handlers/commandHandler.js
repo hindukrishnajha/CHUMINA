@@ -100,8 +100,11 @@ class CommandHandler {
 
             console.log(`[CMD] Executing: ${cmd.name} with args:`, cleanArgs);
 
+            // ✅ Timeout extension for music command only
+            const timeoutDuration = cmd.name === 'music' ? 60000 : 15000;
+
             const timeoutPromise = new Promise((_, reject) => {
-                setTimeout(() => reject(new Error('Command timeout')), 15000);
+                setTimeout(() => reject(new Error('Command timeout')), timeoutDuration);
             });
 
             const commandPromise = Promise.resolve().then(() => {
