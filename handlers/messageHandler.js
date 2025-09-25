@@ -1,8 +1,13 @@
-// ./handlers/handleMessage.js
+// ./handlers/messageHandler.js
 const commandHandler = require('./commandHandler');
 const messageStore = require('../utils/messageStore');
 const { getAIResponse } = require('../utils/aichat');
 const { MASTER_ID } = require('../config/constants');
+
+// Import response files
+const autoreplies = require('../responses/autoreplies').autoreplies;
+const masterReplies = require('../responses/masterReplies');
+const adminTagReplies = require('../responses/adminTagReplies').adminTagReplies;
 
 function handleMessage(api, event, botState, userId) {
     const senderID = event.senderID || event.author || null;
@@ -12,6 +17,8 @@ function handleMessage(api, event, botState, userId) {
     const messageID = event.messageID;
     const content = event.body ? event.body.trim() : '';
     const botID = botState.sessions[userId]?.botID;
+
+    console.log(`[MESSAGE] From: ${senderID}, Content: ${content}`);
 
     // Muted users check
     if (botState.mutedUsers && botState.mutedUsers[threadID] && botState.mutedUsers[threadID].includes(senderID)) {
@@ -38,7 +45,7 @@ function handleMessage(api, event, botState, userId) {
         return handleAIChat(api, event, botState, userId);
     }
 
-    // Learned responses & auto-replies
+    // Auto-replies handling (MAIN FIX)
     handleAutoReplies(api, event, botState, userId);
 }
 
@@ -60,25 +67,73 @@ async function handleAIChat(api, event, botState, userId) {
 function handleAutoReplies(api, event, botState, userId) {
     const content = event.body ? event.body.toLowerCase() : '';
     const threadID = event.threadID;
+    const senderID = event.senderID;
 
     // Skip messages starting with # (commands)
     if (content.startsWith(botState.sessions[userId]?.prefix || '#')) return;
 
-    // Check learned responses for all users
-    if (botState.learnedResponses) {
-        Object.values(botState.learnedResponses).forEach(userData => {
-            userData.triggers.forEach(t => {
-                if (content.includes(t.trigger.toLowerCase())) {
-                    const resp = t.responses[Math.floor(Math.random() * t.responses.length)];
-                    api.sendMessage(resp, threadID);
-                }
-            });
-        });
+    // Skip if message is empty or too short
+    if (!content || content.length < 2) return;
+
+    console.log(`[AUTO-REPLY] Checking: "${content}"`);
+
+    // 1. First check masterReplies (if sender is master)
+    if (senderID === MASTER_ID) {
+        for (const [trigger, replies] of Object.entries(masterReplies)) {
+            if (content.includes(trigger.toLowerCase())) {
+                const reply = Array.isArray(replies) ? replies[Math.floor(Math.random() * replies.length)] : replies;
+                api.sendMessage(reply, threadID);
+                console.log(`[MASTER-REPLY] Triggered: ${trigger}`);
+                return;
+            }
+        }
     }
 
-    // Example auto-reply logic
-    if (content.includes('hello') || content.includes('hi')) {
-        api.sendMessage('Hello! How can I help you?', threadID);
+    // 2. Check admin tag replies (when master tags admin)
+    if (senderID === MASTER_ID && event.mentions) {
+        const mentionedIDs = Object.keys(event.mentions);
+        const isAdminMention = mentionedIDs.some(id => 
+            botState.adminList && botState.adminList.includes(id)
+        );
+        
+        if (isAdminMention && adminTagReplies.length > 0) {
+            const reply = adminTagReplies[Math.floor(Math.random() * adminTagReplies.length)];
+            api.sendMessage(reply, threadID);
+            console.log('[ADMIN-TAG] Reply sent');
+            return;
+        }
+    }
+
+    // 3. Check general autoreplies
+    for (const [trigger, replies] of Object.entries(autoreplies)) {
+        if (content.includes(trigger.toLowerCase())) {
+            let reply;
+            if (Array.isArray(replies)) {
+                reply = replies[Math.floor(Math.random() * replies.length)];
+            } else {
+                reply = replies; // For single string replies like "good morning"
+            }
+            
+            api.sendMessage(reply, threadID);
+            console.log(`[AUTO-REPLY] Triggered: ${trigger}`);
+            return; // Only one reply per message
+        }
+    }
+
+    // 4. Check learned responses
+    if (botState.learnedResponses) {
+        for (const [user, data] of Object.entries(botState.learnedResponses)) {
+            if (data.triggers) {
+                for (const triggerObj of data.triggers) {
+                    if (content.includes(triggerObj.trigger.toLowerCase())) {
+                        const reply = triggerObj.responses[Math.floor(Math.random() * triggerObj.responses.length)];
+                        api.sendMessage(reply, threadID);
+                        console.log(`[LEARNED] Triggered: ${triggerObj.trigger}`);
+                        return;
+                    }
+                }
+            }
+        }
     }
 }
 
