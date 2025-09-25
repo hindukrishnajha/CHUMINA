@@ -11,9 +11,15 @@ const randomBotReplies = require('../responses/randomBotReplies');
 const welcomeMessages = require('../responses/welcome').welcomeMessages;
 const goodbyeMessages = require('../responses/goodbye').goodbyeMessages;
 
+// Utility for exact word match
+function isWordMatch(content, trigger) {
+    const regex = new RegExp(`\\b${trigger.toLowerCase()}\\b`, 'i'); // Word boundary, case-insensitive
+    return regex.test(content);
+}
+
 function handleMessage(api, event, botState, userId) {
     const senderID = event.senderID || event.author || null;
-    const isMaster = String(senderID) === String(MASTER_ID); // Type-safe comparison
+    const isMaster = String(senderID) === String(MASTER_ID);
     const isAdmin = Array.isArray(botState.adminList) && (botState.adminList.includes(senderID) || isMaster);
     const threadID = event.threadID;
     const messageID = event.messageID;
@@ -23,41 +29,34 @@ function handleMessage(api, event, botState, userId) {
     console.log(`[MESSAGE] From: ${senderID}, Content: ${content}`);
     console.log(`[DEBUG] SenderID: ${senderID}, MASTER_ID: ${MASTER_ID}, IsMaster: ${isMaster}`);
 
-    // Handle group join/leave events
     if (event.logMessageType === 'log:subscribe') {
         handleGroupJoin(api, event, botState, userId);
     } else if (event.logMessageType === 'log:unsubscribe') {
         handleGroupLeave(api, event, botState, userId);
     }
 
-    // Muted users check
     if (botState.mutedUsers && botState.mutedUsers[threadID] && botState.mutedUsers[threadID].includes(senderID)) {
         console.log(`[MUTE] Ignoring message from muted user ${senderID}`);
         return;
     }
 
-    // Store message
     const attachment = event.attachments && event.attachments.length > 0 ? event.attachments[0] : null;
     messageStore.storeMessage(messageID, content, senderID, threadID, attachment);
 
-    // Master reactions
     if (isMaster && event.type === 'message') {
         api.setMessageReaction('😍', messageID, (err) => {
             if (err) console.error(`[ERROR] Reaction failed: ${err.message}`);
         });
     }
 
-    // Command handling
     if (content.startsWith(botState.sessions[userId]?.prefix || '#')) {
         return commandHandler.handleCommand(api, event, botState, userId);
     }
 
-    // AI chat handling
     if (content.toLowerCase().startsWith('#ai') || content.toLowerCase().startsWith('@ai')) {
         return handleAIChat(api, event, botState, userId);
     }
 
-    // Auto-replies handling
     handleAutoReplies(api, event, botState, userId);
 }
 
@@ -65,7 +64,7 @@ async function handleAIChat(api, event, botState, userId) {
     const threadID = event.threadID;
     const messageID = event.messageID;
     const content = event.body || '';
-    
+
     if (botState.chatEnabled[threadID] !== true) {
         api.sendMessage('❌ मालिक, चैट ऑफ है! पहले #chat on करो। 🕉️', threadID, messageID);
         return;
@@ -77,26 +76,22 @@ async function handleAIChat(api, event, botState, userId) {
 }
 
 function handleAutoReplies(api, event, botState, userId) {
-    const rawContent = event.body ? event.body.toLowerCase() : '';
-    const normalizedContent = rawContent.replace(/[^a-z0-9\s]/g, '');
+    const content = event.body ? event.body.toLowerCase() : ''; // Keep original text for word boundary
     const threadID = event.threadID;
     const senderID = event.senderID;
 
-    // Skip messages starting with # (commands)
-    if (rawContent.startsWith(botState.sessions[userId]?.prefix || '#')) return;
+    if (content.startsWith(botState.sessions[userId]?.prefix || '#')) return;
+    if (!content || content.length < 2) return;
 
-    // Skip if message is empty or too short
-    if (!rawContent || rawContent.length < 2) return;
+    console.log(`[AUTO-REPLY] Checking: "${content}"`);
 
-    console.log(`[AUTO-REPLY] Checking: "${rawContent}"`);
-
-    // 1. First check masterReplies (if sender is master)
+    // Master Replies
     if (String(senderID) === String(MASTER_ID)) {
         console.log(`[MASTER-REPLY] Sender is master: ${senderID}`);
         for (const category of Object.values(masterReplies)) {
             if (category.triggers && category.replies) {
                 for (const trigger of category.triggers) {
-                    if (normalizedContent.includes(trigger.toLowerCase().replace(/[^a-z0-9\s]/g, ''))) {
+                    if (isWordMatch(content, trigger)) {
                         const reply = Array.isArray(category.replies) 
                             ? category.replies[Math.floor(Math.random() * category.replies.length)] 
                             : category.replies;
@@ -108,7 +103,7 @@ function handleAutoReplies(api, event, botState, userId) {
             }
             if (category.replies && !category.triggers) {
                 for (const [trigger, replies] of Object.entries(category)) {
-                    if (normalizedContent.includes(trigger.toLowerCase().replace(/[^a-z0-9\s]/g, ''))) {
+                    if (isWordMatch(content, trigger)) {
                         const reply = Array.isArray(replies) 
                             ? replies[Math.floor(Math.random() * replies.length)] 
                             : replies;
@@ -119,26 +114,23 @@ function handleAutoReplies(api, event, botState, userId) {
                 }
             }
         }
-        console.log(`[MASTER-REPLY] No trigger matched for content: "${rawContent}"`);
-    } else {
-        console.log(`[MASTER-REPLY] Sender ${senderID} is not master`);
+        console.log(`[MASTER-REPLY] No trigger matched for content: "${content}"`);
     }
 
-    // 2. Check randomBotReplies for non-master users
-    if (normalizedContent.includes('bot')) {
+    // Random bot replies
+    if (isWordMatch(content, 'bot')) {
         const reply = randomBotReplies[Math.floor(Math.random() * randomBotReplies.length)];
         api.sendMessage(reply, threadID);
-        console.log(`[RANDOM-BOT-REPLY] Triggered for content: "${normalizedContent}"`);
+        console.log(`[RANDOM-BOT-REPLY] Triggered for content: "${content}"`);
         return;
     }
 
-    // 3. Check admin tag replies (when master tags admin)
+    // Admin tag replies
     if (String(senderID) === String(MASTER_ID) && event.mentions) {
         const mentionedIDs = Object.keys(event.mentions);
         const isAdminMention = mentionedIDs.some(id => 
             botState.adminList && botState.adminList.includes(id)
         );
-        
         if (isAdminMention && adminTagReplies.length > 0) {
             const reply = adminTagReplies[Math.floor(Math.random() * adminTagReplies.length)];
             api.sendMessage(reply, threadID);
@@ -147,38 +139,24 @@ function handleAutoReplies(api, event, botState, userId) {
         }
     }
 
-    // 4. Check general autoreplies (safe emoji handling)
+    // General autoreplies
     for (const [trigger, replies] of Object.entries(autoreplies)) {
-        let checkContent;
-        let checkTrigger;
-
-        // अगर trigger सिर्फ emoji है → rawContent से match
-        if (/^[\p{Emoji}\p{Extended_Pictographic}]+$/u.test(trigger)) {
-            checkContent = rawContent;
-            checkTrigger = trigger;
-        } else {
-            checkContent = normalizedContent;
-            checkTrigger = trigger.toLowerCase().replace(/[^a-z0-9\s]/g, '');
-        }
-
-        if (checkTrigger && checkContent.includes(checkTrigger)) {
-            let reply = Array.isArray(replies) 
-                ? replies[Math.floor(Math.random() * replies.length)] 
-                : replies;
+        console.log(`[AUTO-REPLY] Checking trigger: ${trigger}`);
+        if (isWordMatch(content, trigger)) {
+            let reply = Array.isArray(replies) ? replies[Math.floor(Math.random() * replies.length)] : replies;
             api.sendMessage(reply, threadID);
             console.log(`[AUTO-REPLY] Triggered: ${trigger}, Reply: ${reply}`);
             return;
         }
     }
 
-    // 5. Check learned responses
+    // Learned responses
     if (botState.learnedResponses) {
         console.log(`[LEARNED] Checking learnedResponses: ${JSON.stringify(botState.learnedResponses)}`);
         for (const [user, data] of Object.entries(botState.learnedResponses)) {
             if (data.triggers) {
                 for (const triggerObj of data.triggers) {
-                    const normTrigger = triggerObj.trigger.toLowerCase().replace(/[^a-z0-9\s]/g, '');
-                    if (normalizedContent.includes(normTrigger)) {
+                    if (isWordMatch(content, triggerObj.trigger)) {
                         const reply = triggerObj.responses[Math.floor(Math.random() * triggerObj.responses.length)];
                         api.sendMessage(reply, threadID);
                         console.log(`[LEARNED] Triggered: ${triggerObj.trigger}, Reply: ${reply}`);
@@ -197,9 +175,7 @@ function handleGroupJoin(api, event, botState, userId) {
     addedParticipants.forEach(participant => {
         const name = participant.full_name || participant.userFbId || 'Unknown';
         const reply = welcomeMessages[Math.floor(Math.random() * welcomeMessages.length)].replace('{name}', name);
-        api.sendMessage(reply, threadID, (err) => {
-            if (err) console.error(`[ERROR] Welcome message failed: ${err.message}`);
-        });
+        api.sendMessage(reply, threadID);
         console.log(`[WELCOME] Sent for ${name} in thread ${threadID}: ${reply}`);
     });
 }
@@ -223,9 +199,7 @@ function handleGroupLeave(api, event, botState, userId) {
             reply = goodbyeMessages.member[Math.floor(Math.random() * goodbyeMessages.member.length)].replace('{name}', name);
         }
         
-        api.sendMessage(reply, threadID, (err) => {
-            if (err) console.error(`[ERROR] Goodbye message failed: ${err.message}`);
-        });
+        api.sendMessage(reply, threadID);
         console.log(`[GOODBYE] Sent for ${name} in thread ${threadID}: ${reply}`);
     });
 }
