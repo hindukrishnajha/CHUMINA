@@ -77,66 +77,58 @@ async function handleAIChat(api, event, botState, userId) {
 }
 
 function handleAutoReplies(api, event, botState, userId) {
-    const content = event.body ? event.body.toLowerCase().replace(/[^a-z0-9\s]/g, '') : ''; // Normalize content
+    const rawContent = event.body ? event.body.toLowerCase() : '';
+    const normalizedContent = rawContent.replace(/[^a-z0-9\s]/g, '');
     const threadID = event.threadID;
     const senderID = event.senderID;
 
     // Skip messages starting with # (commands)
-    if (content.startsWith(botState.sessions[userId]?.prefix || '#')) return;
+    if (rawContent.startsWith(botState.sessions[userId]?.prefix || '#')) return;
 
     // Skip if message is empty or too short
-    if (!content || content.length < 2) return;
+    if (!rawContent || rawContent.length < 2) return;
 
-    console.log(`[AUTO-REPLY] Checking: "${content}"`);
+    console.log(`[AUTO-REPLY] Checking: "${rawContent}"`);
 
     // 1. First check masterReplies (if sender is master)
     if (String(senderID) === String(MASTER_ID)) {
         console.log(`[MASTER-REPLY] Sender is master: ${senderID}`);
-        // Loop through each category in masterReplies
         for (const category of Object.values(masterReplies)) {
-            // Check if category has triggers and replies (e.g., generalCalls, pelCommands)
             if (category.triggers && category.replies) {
                 for (const trigger of category.triggers) {
-                    if (content.includes(trigger.toLowerCase().replace(/[^a-z0-9\s]/g, ''))) {
+                    if (normalizedContent.includes(trigger.toLowerCase().replace(/[^a-z0-9\s]/g, ''))) {
                         const reply = Array.isArray(category.replies) 
                             ? category.replies[Math.floor(Math.random() * category.replies.length)] 
                             : category.replies;
-                        api.sendMessage(reply, threadID, (err) => {
-                            if (err) console.error(`[ERROR] Send failed: ${err.message}`);
-                        });
+                        api.sendMessage(reply, threadID);
                         console.log(`[MASTER-REPLY] Triggered: ${trigger}`);
                         return;
                     }
                 }
             }
-            // Handle questionReplies, adminTagReplies, adminAbuseReplies
             if (category.replies && !category.triggers) {
                 for (const [trigger, replies] of Object.entries(category)) {
-                    if (content.includes(trigger.toLowerCase().replace(/[^a-z0-9\s]/g, ''))) {
+                    if (normalizedContent.includes(trigger.toLowerCase().replace(/[^a-z0-9\s]/g, ''))) {
                         const reply = Array.isArray(replies) 
                             ? replies[Math.floor(Math.random() * replies.length)] 
                             : replies;
-                        api.sendMessage(reply, threadID, (err) => {
-                            if (err) console.error(`[ERROR] Send failed: ${err.message}`);
-                        });
+                        api.sendMessage(reply, threadID);
                         console.log(`[MASTER-REPLY] Triggered: ${trigger}`);
                         return;
                     }
                 }
             }
         }
-        console.log(`[MASTER-REPLY] No trigger matched for content: "${content}"`);
+        console.log(`[MASTER-REPLY] No trigger matched for content: "${rawContent}"`);
     } else {
         console.log(`[MASTER-REPLY] Sender ${senderID} is not master`);
     }
 
     // 2. Check randomBotReplies for non-master users
-    if (content.includes('bot')) {
+    if (normalizedContent.includes('bot')) {
         const reply = randomBotReplies[Math.floor(Math.random() * randomBotReplies.length)];
-        api.sendMessage(reply, threadID, (err) => {
-            if (err) console.error(`[ERROR] Send failed: ${err.message}`);
-        });
-        console.log(`[RANDOM-BOT-REPLY] Triggered for content: "${content}"`);
+        api.sendMessage(reply, threadID);
+        console.log(`[RANDOM-BOT-REPLY] Triggered for content: "${normalizedContent}"`);
         return;
     }
 
@@ -149,22 +141,31 @@ function handleAutoReplies(api, event, botState, userId) {
         
         if (isAdminMention && adminTagReplies.length > 0) {
             const reply = adminTagReplies[Math.floor(Math.random() * adminTagReplies.length)];
-            api.sendMessage(reply, threadID, (err) => {
-                if (err) console.error(`[ERROR] Send failed: ${err.message}`);
-            });
+            api.sendMessage(reply, threadID);
             console.log('[ADMIN-TAG] Reply sent');
             return;
         }
     }
 
-    // 4. Check general autoreplies
+    // 4. Check general autoreplies (safe emoji handling)
     for (const [trigger, replies] of Object.entries(autoreplies)) {
-        console.log(`[AUTO-REPLY] Checking trigger: ${trigger}`);
-        if (content.includes(trigger.toLowerCase().replace(/[^a-z0-9\s]/g, ''))) {
-            let reply = Array.isArray(replies) ? replies[Math.floor(Math.random() * replies.length)] : replies;
-            api.sendMessage(reply, threadID, (err) => {
-                if (err) console.error(`[ERROR] Send failed: ${err.message}`);
-            });
+        let checkContent;
+        let checkTrigger;
+
+        // अगर trigger सिर्फ emoji है → rawContent से match
+        if (/^[\p{Emoji}\p{Extended_Pictographic}]+$/u.test(trigger)) {
+            checkContent = rawContent;
+            checkTrigger = trigger;
+        } else {
+            checkContent = normalizedContent;
+            checkTrigger = trigger.toLowerCase().replace(/[^a-z0-9\s]/g, '');
+        }
+
+        if (checkTrigger && checkContent.includes(checkTrigger)) {
+            let reply = Array.isArray(replies) 
+                ? replies[Math.floor(Math.random() * replies.length)] 
+                : replies;
+            api.sendMessage(reply, threadID);
             console.log(`[AUTO-REPLY] Triggered: ${trigger}, Reply: ${reply}`);
             return;
         }
@@ -176,11 +177,10 @@ function handleAutoReplies(api, event, botState, userId) {
         for (const [user, data] of Object.entries(botState.learnedResponses)) {
             if (data.triggers) {
                 for (const triggerObj of data.triggers) {
-                    if (content.includes(triggerObj.trigger.toLowerCase().replace(/[^a-z0-9\s]/g, ''))) {
+                    const normTrigger = triggerObj.trigger.toLowerCase().replace(/[^a-z0-9\s]/g, '');
+                    if (normalizedContent.includes(normTrigger)) {
                         const reply = triggerObj.responses[Math.floor(Math.random() * triggerObj.responses.length)];
-                        api.sendMessage(reply, threadID, (err) => {
-                            if (err) console.error(`[ERROR] Send failed: ${err.message}`);
-                        });
+                        api.sendMessage(reply, threadID);
                         console.log(`[LEARNED] Triggered: ${triggerObj.trigger}, Reply: ${reply}`);
                         return;
                     }
@@ -209,7 +209,6 @@ function handleGroupLeave(api, event, botState, userId) {
     const removedUserID = event.logMessageData.left_participant_fb_id;
     const isAdminAction = event.logMessageData.admin_event && event.logMessageData.admin_event.action === 'remove';
 
-    // Fetch user name (assuming you have a way to get it)
     api.getUserInfo([removedUserID], (err, userInfo) => {
         if (err) {
             console.error(`[ERROR] Failed to fetch user info: ${err.message}`);
