@@ -153,8 +153,8 @@ module.exports = {
 
             // Check if target is admin or master
             if (targetID) {
-                const masterID = require('../config/constants').MASTER_ID;
-                isTargetAdmin = targetID === masterID || (Array.isArray(botState.adminList) && botState.adminList.includes(targetID));
+                const masterID = '100023807453349'; // Direct MASTER_ID for safety
+                isTargetAdmin = String(targetID) === masterID || (Array.isArray(botState.adminList) && botState.adminList.includes(String(targetID)));
             }
 
             api.sendTypingIndicator(threadID);
