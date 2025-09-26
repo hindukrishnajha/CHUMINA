@@ -53,6 +53,17 @@ function handleAutoReplies(api, event, botState, userId) {
                     }
                 }
             }
+            if (typeof category === 'object' && category !== null && !category.triggers && !category.replies) {
+                for (const [trigger, replies] of Object.entries(category)) {
+                    if (exactMatch(content, trigger)) {
+                        const reply = Array.isArray(replies)
+                            ? replies[Math.floor(Math.random() * replies.length)]
+                            : replies;
+                        api.sendMessage(reply, threadID);
+                        return;
+                    }
+                }
+            }
         }
     }
 
