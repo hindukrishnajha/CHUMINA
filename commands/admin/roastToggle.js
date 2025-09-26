@@ -68,7 +68,7 @@ async function generateResponse(isTargetAdmin, targetMessage, targetName) {
                     content: prompt
                 }
             ],
-            model: "grok-4",
+            model: "llama-3.3-70b-versatile",
             temperature: 0.9,
             max_tokens: 100,
             top_p: 1,
