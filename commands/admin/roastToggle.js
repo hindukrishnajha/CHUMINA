@@ -4,54 +4,78 @@ const groq = new Groq({
     apiKey: process.env.GROQ_API_KEY
 });
 
-async function generateRoast(targetMessage, targetName) {
+async function generateResponse(isTargetAdmin, targetMessage, targetName) {
     try {
-        const prompt = `
-        User ke message ka pura roast karo. 30-40 words tak. Complete roast ho.
-        
-        STRICT RULES:
-        1. FAMILY & RELATIVES COMPLETELY BANNED: maa, behen, baap, bhai, dadi, nani, chacha, mausi, bua, chachi, patni, biwi, mummy, papa, aunty, uncle - YE SAB WORDS BILKUL BANNED HAI
-        2. "AUKAT" WORD BILKUL BANNED HAI
-        3. Sirf ye words use kar sakta hai: gandu, chutia, kinnar, lund, chut, gaand, lavde, chutiye
-        4. Sirf USER ko directly roast karo - kisi aur ko involve mat karo
-        5. User ke message ka directly related jawab do
-        6. Hindi mixed with English
-        
-        User: "${targetMessage}"
-        
-        Tera complete roast:`;
+        let prompt;
+        if (isTargetAdmin) {
+            // Support mode for admin/master: Treat as king, support message, act as true friend/slave
+            prompt = `
+            User ke message ka full support karo. 30-40 words tak. User ko raja ya king ki tarah treat karo, khud ko gulam ya dost maano. User ke message ko agree karo aur uske sath do, jaise ek sachcha dost. Hindi mixed with English.
+
+            STRICT RULES:
+            1. FAMILY & RELATIVES COMPLETELY BANNED: maa, behen, baap, bhai, dadi, nani, chacha, mausi, bua, chachi, patni, biwi, mummy, papa, aunty, uncle, bhabhi - YE SAB WORDS BILKUL BANNED HAI
+            2. Koi gaali ya abuse nahi (madarchod, behenchod, etc.)
+            3. User ke message ke words ya context se directly related jawab do, apne aap kuch invent mat karo
+            4. User ko "bhai", "malik", "raja" jaise shabd se address karo, khud ko "gulam" ya "dost"
+            5. Full supportive tone, example: agar user bole "abe ram ko gandu nikla yaar", to jawab "ha bhai ram to shuru se gandu tha mene tujhe btaya bhi tha"
+
+            User: "${targetMessage}"
+            Target Name: "${targetName}"
+
+            Tera complete supportive response:`;
+        } else {
+            // Roast mode for non-admin: Full adult insulting roast
+            prompt = `
+            User ke message ka pura roast karo. 30-40 words tak. Full adult aur maximum insulting roast ho, lekin koi gaali (madarchod, behenchod, etc.) nahi.
+
+            STRICT RULES:
+            1. FAMILY & RELATIVES COMPLETELY BANNED: maa, behen, baap, bhai, dadi, nani, chacha, mausi, bua, chachi, patni, biwi, mummy, papa, aunty, uncle - YE SAB WORDS BILKUL BANNED HAI
+            2. "AUKAT" WORD BILKUL BANNED HAI
+            3. Ye words use kar sakta hai: chut, lund, chutad, lavdi, lulli, girlfriend ki bra, girlfriend ki chut, girlfriend ki gaand, girlfriend ka bhosda, girlfriend ke boobs, girlfriend ki chikni gaand, girlfriend ki sexy kamar, girlfriend ko pregnant kar duga, teri gaand me baarood bhar duga
+            4. Sirf USER ko directly roast karo - kisi aur ko involve mat karo
+            5. User ke message ke words ya context se directly related roast karo, apne aap kuch invent mat karo
+            6. Hindi mixed with English, full adult tone, lekin gaaliyon se dur raho
+            7. Roast hamesha user ke message ke specific words ya theme pe based ho, example: agar user ne "madarchod hai shivam" likha, to shivam ko target karte hue uske message ke words (jaise "madarchod") ko twist karke roast karo bina family words use kiye
+
+            User: "${targetMessage}"
+            Target Name: "${targetName}"
+
+            Tera complete roast:`;
+        }
 
         const completion = await groq.chat.completions.create({
             messages: [
                 {
                     role: "system", 
-                    content: "Tu ek professional roaster hai. Family aur relatives ki gaaliyan completely banned hain. Sirf user ko directly roast karta hai. 'AUKAT' word bilkul banned hai."
+                    content: isTargetAdmin 
+                        ? "Tu ek supportive dost hai jo admin/master ko king ki tarah treat karta hai. Family aur relatives ki gaaliyan completely banned hain. Sirf user ke message ko support karta hai, uske words ke basis pe."
+                        : "Tu ek professional roaster hai jo full adult aur insulting roasts deta hai. Family aur relatives ki gaaliyan completely banned hain. Sirf user ko directly roast karta hai, uske message ke words ya context ke basis pe. 'AUKAT' word bilkul banned hai. Allowed adult words: chut, lund, chutad, lavdi, lulli, girlfriend-related phrases."
                 },
                 {
                     role: "user",
                     content: prompt
                 }
             ],
-            model: "llama-3.3-70b-versatile", // ✅ FIXED
+            model: "llama-3.3-70b-versatile",
             temperature: 0.9,
             max_tokens: 100,
             top_p: 1,
             stream: false,
         });
 
-        let roastResponse = completion.choices[0]?.message?.content || "Aaj dimaag kaam nahi kar raha, kal try kar gandu!";
+        let response = completion.choices[0]?.message?.content || (isTargetAdmin ? "Ha malik, aap sahi keh rahe ho!" : "Aaj dimaag kaam nahi kar raha, kal try kar chutia!");
         
         // Banned words filter
-        const bannedWords = ['maa', 'behen', 'baap', 'bhai', 'dadi', 'nani', 'chacha', 'mausi', 'bua', 'chachi', 'patni', 'biwi', 'mummy', 'papa', 'aunty', 'uncle', 'aukat'];
+        const bannedWords = ['maa', 'behen', 'baap', 'bhai', 'dadi', 'nani', 'chacha', 'mausi', 'bua', 'chachi', 'patni', 'biwi', 'mummy', 'papa', 'aunty', 'uncle', 'aukat', 'bhabhi'];
         bannedWords.forEach(word => {
             const regex = new RegExp(word, 'gi');
-            roastResponse = roastResponse.replace(regex, '');
+            response = response.replace(regex, '');
         });
         
-        return roastResponse;
+        return response;
     } catch (error) {
-        console.error("Roast generation error:", error);
-        return "Server slow hai, thodi der baad try kar chutia!";
+        console.error("Response generation error:", error);
+        return isTargetAdmin ? "Server slow hai, thodi der baad try kar malik!" : "Server slow hai, thodi der baad try kar chutia!";
     }
 }
 
@@ -97,17 +121,20 @@ module.exports = {
       // Manual roast command
       let targetMessage = "";
       let targetName = "Unknown";
+      let targetID = null;
+      let isTargetAdmin = false;
 
       if (event.messageReply) {
         targetMessage = event.messageReply.body || "";
+        targetID = event.messageReply.senderID;
         try {
-          const userInfo = await api.getUserInfo(event.messageReply.senderID);
-          targetName = userInfo[event.messageReply.senderID]?.name || "Unknown";
+          const userInfo = await api.getUserInfo(targetID);
+          targetName = userInfo[targetID]?.name || "Unknown";
         } catch (e) {
           targetName = "Unknown";
         }
       } else if (Object.keys(event.mentions).length > 0) {
-        const targetID = Object.keys(event.mentions)[0];
+        targetID = Object.keys(event.mentions)[0];
         targetName = event.mentions[targetID];
         targetMessage = event.body.replace(/@.*?/g, '').replace(/^#roast\s+manual\s*/i, '').trim();
       } else {
@@ -118,13 +145,18 @@ module.exports = {
         return api.sendMessage("❌ Kisi message ko reply karo ya kuch text do roast karne ke liye!", threadID);
       }
 
+      // Check if target is admin or master
+      if (targetID) {
+        isTargetAdmin = Array.isArray(botState.adminList) && botState.adminList.includes(targetID) || targetID === MASTER_ID;
+      }
+
       api.sendTypingIndicator(threadID);
-      const roastResponse = await generateRoast(targetMessage, targetName);
+      const response = await generateResponse(isTargetAdmin, targetMessage, targetName);
       
       if (targetName !== "Unknown") {
-        api.sendMessage(`${targetName}, ${roastResponse}`, threadID);
+        api.sendMessage(`${targetName}, ${response}`, threadID);
       } else {
-        api.sendMessage(roastResponse, threadID);
+        api.sendMessage(response, threadID);
       }
       return;
     } else {
