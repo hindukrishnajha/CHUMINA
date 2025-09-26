@@ -122,7 +122,7 @@ module.exports = {
                         return api.sendMessage("❌ Error fetching user info!", threadID);
                     }
                     let names = mentionedIDs.map(id => userInfo[id]?.name || 'User').join(', ');
-                    console.log(`[ROAST] Targeted roast enabled for: ${names}, ThreadID: ${threadID}`);
+                    console.log(`[ROAST] Targeted roast enabled for: ${names}, ThreadID: ${threadID}, State: ${JSON.stringify(botState.roastTargets[threadID])}`);
                     api.sendMessage(`✅ Targeted roast on for ${names}! Ab sirf yeh users roast honge jab message karenge. 🕉️`, threadID);
                 });
             } else {
@@ -132,6 +132,21 @@ module.exports = {
                 console.log(`[ROAST] General roast enabled for thread: ${threadID}, State: ${JSON.stringify(botState.roastEnabled)}`);
                 api.sendMessage('🔥 Auto-roast ON for all users! Har message pe beizzati, 30 sec gap ke saath. 🕉️', threadID);
             }
+            // Force save state
+            try {
+                const fs = require('fs');
+                const path = require('path');
+                const LEARNED_RESPONSES_PATH = path.join(__dirname, '../../config/learned_responses.json');
+                if (!botState.learnedResponses) botState.learnedResponses = {};
+                botState.learnedResponses[threadID] = {
+                    roastEnabled: botState.roastEnabled ? botState.roastEnabled[threadID] : false,
+                    roastTargets: botState.roastTargets ? botState.roastTargets[threadID] : {}
+                };
+                fs.writeFileSync(LEARNED_RESPONSES_PATH, JSON.stringify(botState.learnedResponses, null, 2), 'utf8');
+                console.log(`[ROAST] Forced state save for thread: ${threadID}`);
+            } catch (e) {
+                console.error(`[ROAST] Error saving learned_responses: ${e.message}`);
+            }
         } else if (command === 'off') {
             if (!botState.roastEnabled) botState.roastEnabled = {};
             botState.roastEnabled[threadID] = false;
@@ -140,6 +155,21 @@ module.exports = {
             }
             console.log(`[ROAST] Roast disabled for thread: ${threadID}, State: ${JSON.stringify(botState.roastEnabled)}`);
             api.sendMessage('✅ Auto-roast OFF! Ab koi beizzati nahi. 🕉️', threadID);
+            // Force save state
+            try {
+                const fs = require('fs');
+                const path = require('path');
+                const LEARNED_RESPONSES_PATH = path.join(__dirname, '../../config/learned_responses.json');
+                if (!botState.learnedResponses) botState.learnedResponses = {};
+                botState.learnedResponses[threadID] = {
+                    roastEnabled: botState.roastEnabled ? botState.roastEnabled[threadID] : false,
+                    roastTargets: botState.roastTargets ? botState.roastTargets[threadID] : {}
+                };
+                fs.writeFileSync(LEARNED_RESPONSES_PATH, JSON.stringify(botState.learnedResponses, null, 2), 'utf8');
+                console.log(`[ROAST] Forced state save for thread: ${threadID}`);
+            } catch (e) {
+                console.error(`[ROAST] Error saving learned_responses: ${e.message}`);
+            }
         } else if (command === 'manual') {
             // Manual roast command
             let targetMessage = "";
@@ -192,21 +222,6 @@ module.exports = {
         } else {
             console.log(`[ROAST] Invalid command: ${args.join(' ')}`);
             api.sendMessage('❌ Use: #roast on (all users) or #roast on @user1 @user2 (targeted, max 4) or #roast off or #roast manual 🕉️', threadID);
-        }
-
-        // Save to learned_responses
-        if (botState.learnedResponses && botState.learnedResponses[threadID]) {
-            botState.learnedResponses[threadID].roastEnabled = botState.roastEnabled ? botState.roastEnabled[threadID] : false;
-            botState.learnedResponses[threadID].roastTargets = botState.roastTargets ? botState.roastTargets[threadID] : {};
-            const fs = require('fs');
-            const path = require('path');
-            const LEARNED_RESPONSES_PATH = path.join(__dirname, '../../config/learned_responses.json');
-            try {
-                fs.writeFileSync(LEARNED_RESPONSES_PATH, JSON.stringify(botState.learnedResponses, null, 2), 'utf8');
-                console.log(`[ROAST] Saved roast state to learned_responses for thread: ${threadID}`);
-            } catch (e) {
-                console.error(`[ROAST] Error saving learned_responses: ${e.message}`);
-            }
         }
     }
 };
