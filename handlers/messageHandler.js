@@ -30,6 +30,10 @@ function handleAutoReplies(api, event, botState, userId) {
 
     // 1. Master replies
     if (String(senderID) === String(MASTER_ID)) {
+        // If roast mode is on, skip masterReplies to avoid double replies
+        if (botState.roastEnabled && botState.roastEnabled[threadID]) {
+            return; // Let roastToggle.js handle the response
+        }
         for (const category of Object.values(masterReplies)) {
             if (category.triggers && category.replies) {
                 for (const trigger of category.triggers) {
