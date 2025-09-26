@@ -65,6 +65,13 @@ function loadCommands() {
         console.log(`[COMMAND-LOADER] 🔍 Delete command details:`, deleteCmd.name, deleteCmd.aliases);
     }
     
+    // SPECIAL DEBUG: Check if roast command exists
+    const roastCmd = commands.get('roast');
+    console.log(`[COMMAND-LOADER] 🔍 Roast command found: ${!!roastCmd}`);
+    if (roastCmd) {
+        console.log(`[COMMAND-LOADER] 🔍 Roast command details:`, roastCmd.name, roastCmd.aliases);
+    }
+    
     return commands;
 }
 
