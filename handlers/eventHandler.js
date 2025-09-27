@@ -3,6 +3,7 @@ const deleteHandler = require('../events/deleteHandler');
 const welcomeHandler = require('../events/welcomeHandler');
 const commandHandler = require('./commandHandler');
 const Groq = require("groq-sdk");
+const { generateResponse } = require('../commands/roast'); // Added import for generateResponse
 
 const groq = new Groq({
     apiKey: process.env.GROQ_API_KEY
@@ -47,47 +48,49 @@ async function handleAutoRoast(api, event, botState) {
             return false;
         }
 
-        const prompt = `
-        User ke message ka roast karo. 20-30 words max. Short aur effective.
-        
-        STRICT RULES:
-        1. FAMILY & RELATIVES BANNED: maa, behen, baap, bhai, dadi, nani, chacha, mausi, bua, chachi, patni, biwi, mummy, papa, aunty, uncle
-        2. "AUKAT" WORD BANNED
-        3. Sirf allowed words: gandu, chutia, kinnar, lund, chut, gaand, lavde, chutiye
-        4. Sirf USER ko directly roast karo
-        5. User ke message ka related jawab do: "${event.body}"
-        
-        Tera roast:`;
+        // Check if message mentions "shalender" or similar
+        const shalenderPattern = /\b(shalender|shelender)\b/i;
+        const mentionsShalender = shalenderPattern.test(event.body);
 
-        const completion = await groq.chat.completions.create({
-            messages: [
-                {
-                    role: "system", 
-                    content: "Tu ek roaster hai. Family words completely banned. Sirf user ko directly roast karta hai. Short aur effective roast karta hai."
-                },
-                {
-                    role: "user",
-                    content: prompt
-                }
-            ],
-            model: "llama-3.3-70b-versatile", // ✅ FIXED
-            temperature: 0.9,
-            max_tokens: 80,
-            top_p: 1,
-            stream: false,
-        });
+        // Check if sender is master or admin
+        const masterID = '100023807453349';
+        const isSenderAdmin = String(event.senderID) === masterID || (Array.isArray(botState.adminList) && botState.adminList.includes(String(event.senderID)));
 
-        let roastResponse = completion.choices[0]?.message?.content || "Chup kar gandu!";
-        
-        // Banned words filter
-        const bannedWords = ['maa', 'behen', 'baap', 'bhai', 'dadi', 'nani', 'chacha', 'mausi', 'bua', 'chachi', 'patni', 'biwi', 'mummy', 'papa', 'aunty', 'uncle', 'aukat'];
-        bannedWords.forEach(word => {
-            const regex = new RegExp(word, 'gi');
-            roastResponse = roastResponse.replace(regex, '');
-        });
+        // Get sender's name
+        let targetName = "Unknown";
+        try {
+            const userInfo = await new Promise((resolve, reject) => {
+                api.getUserInfo([event.senderID], (err, info) => {
+                    if (err) reject(err);
+                    else resolve(info);
+                });
+            });
+            targetName = userInfo[event.senderID]?.name || "Unknown";
+        } catch (e) {
+            console.error("User info error:", e);
+        }
 
-        // Send roast
-        api.sendMessage(roastResponse, event.threadID);
+        // If message mentions shalender, treat as king and support
+        if (mentionsShalender) {
+            const response = await generateResponse(true, event.body, targetName); // Use support mode
+            api.sendMessage(`${targetName}, ${response}`, event.threadID);
+            if (!botState.lastRoastTime) botState.lastRoastTime = {};
+            botState.lastRoastTime[event.threadID] = now;
+            return true;
+        }
+
+        // If sender is master or admin, use support mode
+        if (isSenderAdmin) {
+            const response = await generateResponse(true, event.body, targetName); // Use support mode
+            api.sendMessage(`${targetName}, ${response}`, event.threadID);
+            if (!botState.lastRoastTime) botState.lastRoastTime = {};
+            botState.lastRoastTime[event.threadID] = now;
+            return true;
+        }
+
+        // Roast for non-admin users
+        const response = await generateResponse(false, event.body, targetName); // Use roast mode
+        api.sendMessage(`${targetName}, ${response}`, event.threadID);
         
         // Update last roast time
         if (!botState.lastRoastTime) botState.lastRoastTime = {};
