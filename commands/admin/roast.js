@@ -196,3 +196,11 @@ module.exports = {
         }
     }
 };
+
+module.exports = {
+    name: 'roast',
+    aliases: ['roast'],
+    description: 'Toggle auto-roast mode (general or targeted) or manual roast',
+    execute,
+    generateResponse // Added generateResponse to exports
+};
