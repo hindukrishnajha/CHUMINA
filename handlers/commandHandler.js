@@ -26,8 +26,11 @@ class CommandHandler {
 
         // ⚡ Duplicate event detection
         const eventKey = `${threadID}_${messageID}`;
-        if (botState.lastProcessedEvent === eventKey) return;
-        botState.lastProcessedEvent = eventKey;
+        if (botState.eventProcessed[eventKey]) {
+            console.log(`[CMD] Duplicate event detected: ${eventKey}, skipping`);
+            return;
+        }
+        botState.eventProcessed[eventKey] = true;
 
         console.log(`[CMD] Detected: ${command}, Args:`, cleanArgs);
 
@@ -100,11 +103,13 @@ class CommandHandler {
 
             console.log(`[CMD] Executing: ${cmd.name} with args:`, cleanArgs);
 
-            // ✅ Timeout extension for music command only
-            const timeoutDuration = cmd.name === 'music' ? 60000 : 15000;
+            // ✅ Timeout extension for all commands
+            const timeoutDuration = cmd.name === 'music' ? 60000 : 30000; // 30 sec for non-music commands
 
             const timeoutPromise = new Promise((_, reject) => {
-                setTimeout(() => reject(new Error('Command timeout')), timeoutDuration);
+                const timeoutId = setTimeout(() => reject(new Error('Command timeout')), timeoutDuration);
+                // Clear timeout on command completion
+                commandPromise.then(() => clearTimeout(timeoutId)).catch(() => clearTimeout(timeoutId));
             });
 
             const commandPromise = Promise.resolve().then(() => {
@@ -112,9 +117,14 @@ class CommandHandler {
             });
 
             Promise.race([commandPromise, timeoutPromise])
+                .then(() => {
+                    console.log(`[CMD] ${cmd.name} executed successfully`);
+                })
                 .catch(err => {
                     console.error(`[CMD-SAFETY-ERROR] ${cmd.name}:`, err);
-                    api.sendMessage(`❌ कमांड error: ${err.message}`, threadID, messageID);
+                    if (err.message !== 'Command timeout') { // Only send error if not timeout
+                        api.sendMessage(`❌ कमांड error: ${err.message}`, threadID, messageID);
+                    }
                 });
 
         } catch (err) {
