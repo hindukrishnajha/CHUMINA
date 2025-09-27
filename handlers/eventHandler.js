@@ -3,7 +3,7 @@ const deleteHandler = require('../events/deleteHandler');
 const welcomeHandler = require('../events/welcomeHandler');
 const commandHandler = require('./commandHandler');
 const Groq = require("groq-sdk");
-const { generateResponse } = require('../commands/roast'); // Added import for generateResponse
+const { generateResponse } = require('../commands/admin/roast'); // Fixed import path for roast.js
 
 const groq = new Groq({
     apiKey: process.env.GROQ_API_KEY
@@ -70,17 +70,8 @@ async function handleAutoRoast(api, event, botState) {
             console.error("User info error:", e);
         }
 
-        // If message mentions shalender, treat as king and support
-        if (mentionsShalender) {
-            const response = await generateResponse(true, event.body, targetName); // Use support mode
-            api.sendMessage(`${targetName}, ${response}`, event.threadID);
-            if (!botState.lastRoastTime) botState.lastRoastTime = {};
-            botState.lastRoastTime[event.threadID] = now;
-            return true;
-        }
-
-        // If sender is master or admin, use support mode
-        if (isSenderAdmin) {
+        // If message mentions shalender or sender is master/admin, use support mode
+        if (mentionsShalender || isSenderAdmin) {
             const response = await generateResponse(true, event.body, targetName); // Use support mode
             api.sendMessage(`${targetName}, ${response}`, event.threadID);
             if (!botState.lastRoastTime) botState.lastRoastTime = {};
