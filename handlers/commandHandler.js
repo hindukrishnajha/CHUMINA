@@ -26,12 +26,8 @@ class CommandHandler {
 
         // ⚡ Duplicate event detection
         const eventKey = `${threadID}_${messageID}`;
-        if (botState.eventProcessed && botState.eventProcessed[eventKey]) {
-            console.log(`[CMD] Duplicate event detected: ${eventKey}, skipping`);
-            return;
-        }
-        if (!botState.eventProcessed) botState.eventProcessed = {};
-        botState.eventProcessed[eventKey] = true;
+        if (botState.lastProcessedEvent === eventKey) return;
+        botState.lastProcessedEvent = eventKey;
 
         console.log(`[CMD] Detected: ${command}, Args:`, cleanArgs);
 
@@ -104,8 +100,8 @@ class CommandHandler {
 
             console.log(`[CMD] Executing: ${cmd.name} with args:`, cleanArgs);
 
-            // ✅ Timeout extension for all commands
-            const timeoutDuration = cmd.name === 'music' ? 60000 : 30000;
+            // ✅ Timeout extension for music command only
+            const timeoutDuration = cmd.name === 'music' ? 60000 : 15000;
 
             const timeoutPromise = new Promise((_, reject) => {
                 setTimeout(() => reject(new Error('Command timeout')), timeoutDuration);
@@ -118,18 +114,12 @@ class CommandHandler {
             Promise.race([commandPromise, timeoutPromise])
                 .catch(err => {
                     console.error(`[CMD-SAFETY-ERROR] ${cmd.name}:`, err);
-                    // Only send critical errors to group, skip timeout
-                    if (err.message !== 'Command timeout') {
-                        api.sendMessage(`❌ कमांड error: ${err.message}`, threadID, messageID);
-                    }
+                    api.sendMessage(`❌ कमांड error: ${err.message}`, threadID, messageID);
                 });
 
         } catch (err) {
             console.error(`[CMD-ERROR] ${cmd.name}:`, err);
-            // Only send critical errors to group
-            if (!err.message.includes('ReferenceError')) {
-                api.sendMessage(`❌ कमांड error: ${err.message}`, threadID, messageID);
-            }
+            api.sendMessage(`❌ कमांड error: ${err.message}`, threadID, messageID);
         }
     }
 
