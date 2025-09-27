@@ -90,117 +90,112 @@ async function generateResponse(isTargetAdmin, targetMessage, targetName) {
     }
 }
 
-module.exports = {
-    name: 'roast',
-    aliases: ['roast'],
-    description: 'Toggle auto-roast mode (general or targeted) or manual roast',
-    async execute(api, threadID, args, event, botState, isMaster, botID, stopBot) {
-        const isAdmin = Array.isArray(botState.adminList) && botState.adminList.includes(event.senderID) || isMaster;
-        if (!isAdmin) {
-            return api.sendMessage('🚫 Yeh command sirf admins ya master ke liye hai! 🕉️', threadID);
-        }
-
-        const masterID = '100023807453349'; // Direct MASTER_ID for safety
-        const command = args[0]?.toLowerCase();
-        const mentionedIDs = Object.keys(event.mentions || {});
-
-        if (!event.isGroup) {
-            return api.sendMessage("❌ Roast command only works in groups!", threadID);
-        }
-
-        if (command === 'on') {
-            if (mentionedIDs.length > 0 && mentionedIDs.length <= 4) {
-                // Targeted roast
-                if (!botState.roastTargets) botState.roastTargets = {};
-                if (!botState.roastTargets[threadID]) botState.roastTargets[threadID] = {};
-                mentionedIDs.forEach(id => {
-                    // Skip masterID and admins for targeted roast
-                    if (id !== masterID && !(Array.isArray(botState.adminList) && botState.adminList.includes(id))) {
-                        botState.roastTargets[threadID][id] = true;
-                    }
-                });
-                api.getUserInfo(mentionedIDs, (err, userInfo) => {
-                    let names = mentionedIDs
-                        .filter(id => id !== masterID && !(Array.isArray(botState.adminList) && botState.adminList.includes(id)))
-                        .map(id => userInfo[id]?.name || 'User')
-                        .join(', ');
-                    api.sendMessage(names ? `✅ Targeted roast on for ${names}! Ab sirf yeh users roast honge jab message karenge. 🕉️` : '❌ Master ya admins ko roast nahi kar sakte!', threadID);
-                });
-            } else {
-                // General roast
-                if (!botState.roastEnabled) botState.roastEnabled = {};
-                botState.roastEnabled[threadID] = true;
-                api.sendMessage('🔥 Auto-roast ON for all non-admin users! Har message pe beizzati, 30 sec gap ke saath. 🕉️', threadID);
-            }
-        } else if (command === 'off') {
-            if (!botState.roastEnabled) botState.roastEnabled = {};
-            botState.roastEnabled[threadID] = false;
-            if (botState.roastTargets && botState.roastTargets[threadID]) {
-                delete botState.roastTargets[threadID];
-            }
-            api.sendMessage('✅ Auto-roast OFF! Ab koi beizzati nahi. 🕉️', threadID);
-        } else if (command === 'manual') {
-            // Manual roast command
-            let targetMessage = "";
-            let targetName = "Unknown";
-            let targetID = null;
-            let isTargetAdmin = false;
-
-            if (event.messageReply) {
-                targetMessage = event.messageReply.body || "";
-                targetID = event.messageReply.senderID;
-                try {
-                    const userInfo = await api.getUserInfo(targetID);
-                    targetName = userInfo[targetID]?.name || "Unknown";
-                } catch (e) {
-                    targetName = "Unknown";
-                }
-            } else if (Object.keys(event.mentions).length > 0) {
-                targetID = Object.keys(event.mentions)[0];
-                targetName = event.mentions[targetID];
-                targetMessage = event.body.replace(/@\[.*?\]/g, '').replace(/^#roast\s+manual\s*/i, '').trim();
-            } else {
-                targetMessage = event.body.replace(/^#roast\s+manual\s*/i, '').trim();
-            }
-
-            if (!targetMessage && !event.messageReply) {
-                return api.sendMessage("❌ Kisi message ko reply karo ya kuch text do roast karne ke liye!", threadID);
-            }
-
-            // Check if target is admin or master
-            if (targetID) {
-                isTargetAdmin = String(targetID) === masterID || (Array.isArray(botState.adminList) && botState.adminList.includes(String(targetID)));
-            }
-
-            api.sendTypingIndicator(threadID);
-            const response = await generateResponse(isTargetAdmin, targetMessage, targetName);
-            
-            if (targetName !== "Unknown") {
-                api.sendMessage(`${targetName}, ${response}`, threadID);
-            } else {
-                api.sendMessage(response, threadID);
-            }
-            return;
-        } else {
-            api.sendMessage('❌ Use: #roast on (all users) or #roast on @user1 @user2 (targeted, max 4) or #roast off or #roast manual 🕉️', threadID);
-        }
-
-        // Save to learned_responses
-        if (botState.learnedResponses && botState.learnedResponses[threadID]) {
-            botState.learnedResponses[threadID].roastEnabled = botState.roastEnabled ? botState.roastEnabled[threadID] : false;
-            botState.learnedResponses[threadID].roastTargets = botState.roastTargets ? botState.roastTargets[threadID] : {};
-            const fs = require('fs');
-            const path = require('path');
-            const LEARNED_RESPONSES_PATH = path.join(__dirname, '../../config/learned_responses.json');
-            fs.writeFileSync(LEARNED_RESPONSES_PATH, JSON.stringify(botState.learnedResponses, null, 2), 'utf8');
-        }
+async function execute(api, threadID, args, event, botState, isMaster, botID, stopBot) {
+    const isAdmin = Array.isArray(botState.adminList) && botState.adminList.includes(event.senderID) || isMaster;
+    if (!isAdmin) {
+        return api.sendMessage('🚫 Yeh command sirf admins ya master ke liye hai! 🕉️', threadID);
     }
-};
+
+    const masterID = '100023807453349'; // Direct MASTER_ID for safety
+    const command = args[0]?.toLowerCase();
+    const mentionedIDs = Object.keys(event.mentions || {});
+
+    if (!event.isGroup) {
+        return api.sendMessage("❌ Roast command only works in groups!", threadID);
+    }
+
+    if (command === 'on') {
+        if (mentionedIDs.length > 0 && mentionedIDs.length <= 4) {
+            // Targeted roast
+            if (!botState.roastTargets) botState.roastTargets = {};
+            if (!botState.roastTargets[threadID]) botState.roastTargets[threadID] = {};
+            mentionedIDs.forEach(id => {
+                // Skip masterID and admins for targeted roast
+                if (id !== masterID && !(Array.isArray(botState.adminList) && botState.adminList.includes(id))) {
+                    botState.roastTargets[threadID][id] = true;
+                }
+            });
+            api.getUserInfo(mentionedIDs, (err, userInfo) => {
+                let names = mentionedIDs
+                    .filter(id => id !== masterID && !(Array.isArray(botState.adminList) && botState.adminList.includes(id)))
+                    .map(id => userInfo[id]?.name || 'User')
+                    .join(', ');
+                api.sendMessage(names ? `✅ Targeted roast on for ${names}! Ab sirf yeh users roast honge jab message karenge. 🕉️` : '❌ Master ya admins ko roast nahi kar sakte!', threadID);
+            });
+        } else {
+            // General roast
+            if (!botState.roastEnabled) botState.roastEnabled = {};
+            botState.roastEnabled[threadID] = true;
+            api.sendMessage('🔥 Auto-roast ON for all non-admin users! Har message pe beizzati, 30 sec gap ke saath. 🕉️', threadID);
+        }
+    } else if (command === 'off') {
+        if (!botState.roastEnabled) botState.roastEnabled = {};
+        botState.roastEnabled[threadID] = false;
+        if (botState.roastTargets && botState.roastTargets[threadID]) {
+            delete botState.roastTargets[threadID];
+        }
+        api.sendMessage('✅ Auto-roast OFF! Ab koi beizzati nahi. 🕉️', threadID);
+    } else if (command === 'manual') {
+        // Manual roast command
+        let targetMessage = "";
+        let targetName = "Unknown";
+        let targetID = null;
+        let isTargetAdmin = false;
+
+        if (event.messageReply) {
+            targetMessage = event.messageReply.body || "";
+            targetID = event.messageReply.senderID;
+            try {
+                const userInfo = await api.getUserInfo(targetID);
+                targetName = userInfo[targetID]?.name || "Unknown";
+            } catch (e) {
+                targetName = "Unknown";
+            }
+        } else if (Object.keys(event.mentions).length > 0) {
+            targetID = Object.keys(event.mentions)[0];
+            targetName = event.mentions[targetID];
+            targetMessage = event.body.replace(/@\[.*?\]/g, '').replace(/^#roast\s+manual\s*/i, '').trim();
+        } else {
+            targetMessage = event.body.replace(/^#roast\s+manual\s*/i, '').trim();
+        }
+
+        if (!targetMessage && !event.messageReply) {
+            return api.sendMessage("❌ Kisi message ko reply karo ya kuch text do roast karne ke liye!", threadID);
+        }
+
+        // Check if target is admin or master
+        if (targetID) {
+            isTargetAdmin = String(targetID) === masterID || (Array.isArray(botState.adminList) && botState.adminList.includes(String(targetID)));
+        }
+
+        api.sendTypingIndicator(threadID);
+        const response = await generateResponse(isTargetAdmin, targetMessage, targetName);
+        
+        if (targetName !== "Unknown") {
+            api.sendMessage(`${targetName}, ${response}`, threadID);
+        } else {
+            api.sendMessage(response, threadID);
+        }
+        return;
+    } else {
+        api.sendMessage('❌ Use: #roast on (all users) or #roast on @user1 @user2 (targeted, max 4) or #roast off or #roast manual 🕉️', threadID);
+    }
+
+    // Save to learned_responses
+    if (botState.learnedResponses && botState.learnedResponses[threadID]) {
+        botState.learnedResponses[threadID].roastEnabled = botState.roastEnabled ? botState.roastEnabled[threadID] : false;
+        botState.learnedResponses[threadID].roastTargets = botState.roastTargets ? botState.roastTargets[threadID] : {};
+        const fs = require('fs');
+        const path = require('path');
+        const LEARNED_RESPONSES_PATH = path.join(__dirname, '../../config/learned_responses.json');
+        fs.writeFileSync(LEARNED_RESPONSES_PATH, JSON.stringify(botState.learnedResponses, null, 2), 'utf8');
+    }
+}
 
 module.exports = {
     name: 'roast',
     aliases: ['roast'],
     description: 'Toggle auto-roast mode (general or targeted) or manual roast',
     execute,
-    generateResponse // Added generateResponse to exports
+    generateResponse
 };
