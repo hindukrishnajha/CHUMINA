@@ -103,18 +103,15 @@ class CommandHandler {
 
             console.log(`[CMD] Executing: ${cmd.name} with args:`, cleanArgs);
 
-            // ✅ Timeout extension for music command only
-            const timeoutDuration = cmd.name === 'music' ? 60000 : 30000;
-
             // ✅ Define commandPromise first
             const commandPromise = Promise.resolve().then(() => {
                 return cmd.execute(api, threadID, cleanArgs, event, botState, isMaster, botID, stopBot);
             });
 
-            // Timeout promise
+            // ✅ Timeout logic
+            const timeoutDuration = cmd.name === 'music' ? 60000 : 30000; // 30 sec for non-music
             const timeoutPromise = new Promise((_, reject) => {
                 const timeoutId = setTimeout(() => reject(new Error('Command timeout')), timeoutDuration);
-                // Clear timeout on completion
                 commandPromise.then(() => clearTimeout(timeoutId)).catch(() => clearTimeout(timeoutId));
             });
 
@@ -124,7 +121,7 @@ class CommandHandler {
                 })
                 .catch(err => {
                     console.error(`[CMD-SAFETY-ERROR] ${cmd.name}:`, err);
-                    // Do not send timeout or reference errors to group, only log to console
+                    // Only send critical errors to group, not timeout or reference errors
                     if (err.message !== 'Command timeout' && !err.message.includes('ReferenceError')) {
                         api.sendMessage(`❌ कमांड error: ${err.message}`, threadID, messageID);
                     }
@@ -132,7 +129,7 @@ class CommandHandler {
 
         } catch (err) {
             console.error(`[CMD-ERROR] ${cmd.name}:`, err);
-            // Do not send reference errors to group, only log to console
+            // Avoid sending reference errors to group
             if (!err.message.includes('ReferenceError')) {
                 api.sendMessage(`❌ कमांड error: ${err.message}`, threadID, messageID);
             }
