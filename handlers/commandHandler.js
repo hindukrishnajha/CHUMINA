@@ -26,10 +26,11 @@ class CommandHandler {
 
         // ⚡ Duplicate event detection
         const eventKey = `${threadID}_${messageID}`;
-        if (botState.eventProcessed[eventKey]) {
+        if (botState.eventProcessed && botState.eventProcessed[eventKey]) {
             console.log(`[CMD] Duplicate event detected: ${eventKey}, skipping`);
             return;
         }
+        if (!botState.eventProcessed) botState.eventProcessed = {};
         botState.eventProcessed[eventKey] = true;
 
         console.log(`[CMD] Detected: ${command}, Args:`, cleanArgs);
@@ -92,7 +93,7 @@ class CommandHandler {
         if (masterCommands.includes(cmd.name)) {
             return "🚫 ये कमांड सिर्फ मास्टर के लिए है! 🕉️";
         } else {
-            return "🚫 ये कमांड सिर्फ एडमिन्स या मास्टर के लिए है! 🕉️";
+            return "🚫 ये कमांड सिफ एडमिन्स या मास्टर के लिए है! 🕉️";
         }
     }
 
@@ -103,33 +104,29 @@ class CommandHandler {
 
             console.log(`[CMD] Executing: ${cmd.name} with args:`, cleanArgs);
 
-            // ✅ Define commandPromise first
+            // ✅ Timeout extension for all commands
+            const timeoutDuration = cmd.name === 'music' ? 60000 : 30000;
+
+            const timeoutPromise = new Promise((_, reject) => {
+                setTimeout(() => reject(new Error('Command timeout')), timeoutDuration);
+            });
+
             const commandPromise = Promise.resolve().then(() => {
                 return cmd.execute(api, threadID, cleanArgs, event, botState, isMaster, botID, stopBot);
             });
 
-            // ✅ Timeout logic
-            const timeoutDuration = cmd.name === 'music' ? 60000 : 30000; // 30 sec for non-music
-            const timeoutPromise = new Promise((_, reject) => {
-                const timeoutId = setTimeout(() => reject(new Error('Command timeout')), timeoutDuration);
-                commandPromise.then(() => clearTimeout(timeoutId)).catch(() => clearTimeout(timeoutId));
-            });
-
             Promise.race([commandPromise, timeoutPromise])
-                .then(() => {
-                    console.log(`[CMD] ${cmd.name} executed successfully`);
-                })
                 .catch(err => {
                     console.error(`[CMD-SAFETY-ERROR] ${cmd.name}:`, err);
-                    // Only send critical errors to group, not timeout or reference errors
-                    if (err.message !== 'Command timeout' && !err.message.includes('ReferenceError')) {
+                    // Only send critical errors to group, skip timeout
+                    if (err.message !== 'Command timeout') {
                         api.sendMessage(`❌ कमांड error: ${err.message}`, threadID, messageID);
                     }
                 });
 
         } catch (err) {
             console.error(`[CMD-ERROR] ${cmd.name}:`, err);
-            // Avoid sending reference errors to group
+            // Only send critical errors to group
             if (!err.message.includes('ReferenceError')) {
                 api.sendMessage(`❌ कमांड error: ${err.message}`, threadID, messageID);
             }
