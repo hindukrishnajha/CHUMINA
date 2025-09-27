@@ -25,7 +25,7 @@ function handleAutoReplies(api, event, botState, userId) {
     const threadID = event.threadID;
     const senderID = event.senderID;
 
-    if (content.startsWith(botState.sessions[userId]?.prefix || '#')) return; // Skip if command
+    if (content.startsWith(botState.sessions[userId]?.prefix || '#')) return;
     if (!content || content.length < 2) return;
 
     // 1. Master replies
@@ -140,11 +140,13 @@ function handleMessage(api, event, botState, userId) {
     const content = event.body ? event.body.trim() : '';
 
     // Prevent double processing
-    if (botState.eventProcessed[messageID]) {
-        console.log(`[MSG] Duplicate message detected: ${messageID}, skipping`);
+    const eventKey = `${threadID}_${messageID}`;
+    if (botState.eventProcessed && botState.eventProcessed[eventKey]) {
+        console.log(`[MSG] Duplicate message detected: ${eventKey}, skipping`);
         return;
     }
-    botState.eventProcessed[messageID] = true;
+    if (!botState.eventProcessed) botState.eventProcessed = {};
+    botState.eventProcessed[eventKey] = true;
 
     // Group join/leave
     if (event.logMessageType === 'log:subscribe') handleGroupJoin(api, event, botState, userId);
@@ -163,16 +165,10 @@ function handleMessage(api, event, botState, userId) {
     }
 
     // Command handling
-    if (content.startsWith(botState.sessions[userId]?.prefix || '#')) {
-        commandHandler.handleCommand(api, event, botState, userId);
-        return;
-    }
+    if (content.startsWith(botState.sessions[userId]?.prefix || '#')) return commandHandler.handleCommand(api, event, botState, userId);
 
     // AI chat
-    if (content.toLowerCase().startsWith('#ai') || content.toLowerCase().startsWith('@ai')) {
-        handleAIChat(api, event, botState, userId);
-        return;
-    }
+    if (content.toLowerCase().startsWith('#ai') || content.toLowerCase().startsWith('@ai')) return handleAIChat(api, event, botState, userId);
 
     // Auto replies
     handleAutoReplies(api, event, botState, userId);
