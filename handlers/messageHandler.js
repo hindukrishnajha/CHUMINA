@@ -139,15 +139,6 @@ function handleMessage(api, event, botState, userId) {
     const messageID = event.messageID;
     const content = event.body ? event.body.trim() : '';
 
-    // Prevent double processing
-    const eventKey = `${threadID}_${messageID}`;
-    if (botState.eventProcessed && botState.eventProcessed[eventKey]) {
-        console.log(`[MSG] Duplicate message detected: ${eventKey}, skipping`);
-        return;
-    }
-    if (!botState.eventProcessed) botState.eventProcessed = {};
-    botState.eventProcessed[eventKey] = true;
-
     // Group join/leave
     if (event.logMessageType === 'log:subscribe') handleGroupJoin(api, event, botState, userId);
     else if (event.logMessageType === 'log:unsubscribe') handleGroupLeave(api, event, botState, userId);
