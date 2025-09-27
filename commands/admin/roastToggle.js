@@ -95,6 +95,7 @@ module.exports = {
             return api.sendMessage('🚫 Yeh command sirf admins ya master ke liye hai! 🕉️', threadID);
         }
 
+        const masterID = '100023807453349'; // Direct MASTER_ID for safety
         const command = args[0]?.toLowerCase();
         const mentionedIDs = Object.keys(event.mentions || {});
 
@@ -108,17 +109,23 @@ module.exports = {
                 if (!botState.roastTargets) botState.roastTargets = {};
                 if (!botState.roastTargets[threadID]) botState.roastTargets[threadID] = {};
                 mentionedIDs.forEach(id => {
-                    botState.roastTargets[threadID][id] = true;
+                    // Skip masterID and admins for targeted roast
+                    if (id !== masterID && !(Array.isArray(botState.adminList) && botState.adminList.includes(id))) {
+                        botState.roastTargets[threadID][id] = true;
+                    }
                 });
                 api.getUserInfo(mentionedIDs, (err, userInfo) => {
-                    let names = mentionedIDs.map(id => userInfo[id]?.name || 'User').join(', ');
-                    api.sendMessage(`✅ Targeted roast on for ${names}! Ab sirf yeh users roast honge jab message karenge. 🕉️`, threadID);
+                    let names = mentionedIDs
+                        .filter(id => id !== masterID && !(Array.isArray(botState.adminList) && botState.adminList.includes(id)))
+                        .map(id => userInfo[id]?.name || 'User')
+                        .join(', ');
+                    api.sendMessage(names ? `✅ Targeted roast on for ${names}! Ab sirf yeh users roast honge jab message karenge. 🕉️` : '❌ Master ya admins ko roast nahi kar sakte!', threadID);
                 });
             } else {
                 // General roast
                 if (!botState.roastEnabled) botState.roastEnabled = {};
                 botState.roastEnabled[threadID] = true;
-                api.sendMessage('🔥 Auto-roast ON for all users! Har message pe beizzati, 30 sec gap ke saath. 🕉️', threadID);
+                api.sendMessage('🔥 Auto-roast ON for all non-admin users! Har message pe beizzati, 30 sec gap ke saath. 🕉️', threadID);
             }
         } else if (command === 'off') {
             if (!botState.roastEnabled) botState.roastEnabled = {};
@@ -157,7 +164,6 @@ module.exports = {
 
             // Check if target is admin or master
             if (targetID) {
-                const masterID = '100023807453349'; // Direct MASTER_ID for safety
                 isTargetAdmin = String(targetID) === masterID || (Array.isArray(botState.adminList) && botState.adminList.includes(String(targetID)));
             }
 
